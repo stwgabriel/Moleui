@@ -1042,7 +1042,7 @@ perform_cleanup() {
         freed_size_human="${freed_value}${freed_unit}"
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            local stats="Potential space: ${GREEN}${freed_size_human}{NC}"
+            local stats="Potential space: ${GREEN}${freed_size_human}${NC}"
             [[ $files_cleaned -gt 0 ]] && stats+=" | Items: $files_cleaned"
             [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
             summary_details+=("$stats")
