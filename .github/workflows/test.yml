@@ -54,21 +54,19 @@ jobs:
 
       - name: Build Go binaries
         run: |
-          cd cmd/analyze
-          go build -o analyze.exe .
-          cd ../status
-          go build -o status.exe .
+          go build -o bin/analyze.exe ./cmd/analyze/
+          go build -o bin/status.exe ./cmd/status/
         shell: pwsh
 
       - name: Verify binaries
         run: |
-          if (Test-Path cmd/analyze/analyze.exe) {
+          if (Test-Path bin/analyze.exe) {
             Write-Host "analyze.exe built successfully"
           } else {
             Write-Host "Failed to build analyze.exe"
             exit 1
           }
-          if (Test-Path cmd/status/status.exe) {
+          if (Test-Path bin/status.exe) {
             Write-Host "status.exe built successfully"
           } else {
             Write-Host "Failed to build status.exe"

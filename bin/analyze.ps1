@@ -15,7 +15,8 @@ $ErrorActionPreference = "Stop"
 # Script location
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $windowsDir = Split-Path -Parent $scriptDir
-$binPath = Join-Path $windowsDir "bin\analyze.exe"
+$defaultBinPath = Join-Path $windowsDir "bin\analyze.exe"
+. (Join-Path $windowsDir "lib\core\tui_binaries.ps1")
 
 # Help
 function Show-AnalyzeHelp {
@@ -47,29 +48,11 @@ if ($ShowHelp) {
     return
 }
 
-# Check if binary exists
-if (-not (Test-Path $binPath)) {
-    Write-Host "Building analyze tool..." -ForegroundColor Cyan
-    
-    $cmdDir = Join-Path $windowsDir "cmd\analyze"
-    $binDir = Join-Path $windowsDir "bin"
-    
-    if (-not (Test-Path $binDir)) {
-        New-Item -ItemType Directory -Path $binDir -Force | Out-Null
-    }
-    
-    Push-Location $windowsDir
-    try {
-        $result = & go build -o "$binPath" "./cmd/analyze/" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed to build analyze tool: $result" -ForegroundColor Red
-            Pop-Location
-            return
-        }
-    }
-    finally {
-        Pop-Location
-    }
+$binPath = Ensure-TuiBinary -Name "analyze" -WindowsDir $windowsDir -DestinationPath $defaultBinPath -SourcePath "./cmd/analyze/"
+if (-not $binPath) {
+    Write-Host "Analyze binary not found, no prerelease asset was available, and Go 1.24+ is not installed." -ForegroundColor Red
+    Write-Host "Install Go or wait for a Windows prerelease asset that includes analyze.exe." -ForegroundColor Yellow
+    exit 1
 }
 
 # Set path environment variable if provided

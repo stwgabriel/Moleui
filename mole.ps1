@@ -65,6 +65,8 @@ function Show-MainHelp {
     Write-Host "    ${cyan}optimize${nc}    System optimization and repairs"
     Write-Host "    ${cyan}analyze${nc}     Disk space analyzer"
     Write-Host "    ${cyan}status${nc}      System monitor"
+    Write-Host "    ${cyan}update${nc}      Update the source channel"
+    Write-Host "    ${cyan}remove${nc}      Remove Mole from this system"
     Write-Host "    ${cyan}purge${nc}       Clean project artifacts"
     Write-Host ""
     Write-Host "  ${green}OPTIONS:${nc}"
@@ -80,15 +82,11 @@ function Show-MainHelp {
     Write-Host "    ${gray}mo uninstall${nc}            ${gray}# Uninstall apps${nc}"
     Write-Host "    ${gray}mo analyze${nc}              ${gray}# Disk analyzer${nc}"
     Write-Host "    ${gray}mo status${nc}               ${gray}# System monitor${nc}"
+    Write-Host "    ${gray}mo update${nc}               ${gray}# Pull latest windows source${nc}"
+    Write-Host "    ${gray}mo remove${nc}               ${gray}# Remove Mole from this system${nc}"
     Write-Host "    ${gray}mo optimize${nc}             ${gray}# Optimize system (includes repairs)${nc}"
     Write-Host "    ${gray}mo optimize --dry-run${nc}   ${gray}# Preview optimizations${nc}"
     Write-Host "    ${gray}mo purge${nc}                ${gray}# Clean dev artifacts${nc}"
-    Write-Host "    ${gray}mo${nc}                     ${gray}# Interactive menu${nc}"
-    Write-Host "    ${gray}mo clean${nc}               ${gray}# Deep cleanup${nc}"
-    Write-Host "    ${gray}mo clean --dry-run${nc}     ${gray}# Preview cleanup${nc}"
-    Write-Host "    ${gray}mo optimize${nc}            ${gray}# Optimize system${nc}"
-    Write-Host "    ${gray}mo optimize --dry-run${nc}  ${gray}# Preview optimization${nc}"
-    Write-Host "    ${gray}mo uninstall${nc}           ${gray}# Uninstall apps${nc}"
     Write-Host ""
     Write-Host "  ${green}ENVIRONMENT:${nc}"
     Write-Host ""
@@ -134,6 +132,18 @@ function Show-MainMenu {
             Description = "System monitor"
             Command = "status"
             Icon = $script:Icons.Solid
+        }
+        @{
+            Name = "Update"
+            Description = "Pull latest source"
+            Command = "update"
+            Icon = $script:Icons.Arrow
+        }
+        @{
+            Name = "Remove"
+            Description = "Uninstall Mole"
+            Command = "remove"
+            Icon = $script:Icons.Trash
         }
         @{
             Name = "Purge"
@@ -273,7 +283,7 @@ function Main {
 
     # If command specified, route to it
     if ($effectiveCommand) {
-        $validCommands = @("clean", "uninstall", "analyze", "status", "optimize", "purge")
+        $validCommands = @("clean", "uninstall", "analyze", "status", "optimize", "update", "remove", "purge")
 
         if ($effectiveCommand -in $validCommands) {
             Invoke-MoleCommand -CommandName $effectiveCommand -Arguments $CommandArgs

@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/tag/tw93/mole?label=version&style=flat-square" alt="Version"></a>
+  <img src="https://img.shields.io/badge/channel-windows%20source-orange?style=flat-square" alt="Channel">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole?style=flat-square" alt="Commits"></a>
   <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
@@ -23,6 +23,7 @@
 - **Smart uninstaller**: Thoroughly removes apps along with AppData, preferences, and hidden remnants
 - **Disk insights**: Visualizes usage, manages large files, and refreshes system services
 - **Live monitoring**: Real-time stats for CPU, memory, disk, and network to diagnose performance issues
+- **Source channel updates**: Install from the `windows` branch and refresh to the latest source with `mo update`
 
 ## Platform Support
 
@@ -32,7 +33,8 @@ Mole is designed for Windows 10/11. This is the native Windows version ported fr
 
 - Windows 10/11
 - PowerShell 5.1 or later (pre-installed on Windows 10/11)
-- Go 1.24+ (for building TUI tools)
+- Git (required for source-channel install and `mo update`)
+- Go 1.24+ (optional, only needed when building TUI tools locally)
 
 ## Quick Start
 
@@ -44,25 +46,23 @@ Mole is designed for Windows 10/11. This is the native Windows version ported fr
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
 ```
 
-This will automatically download and install Mole with PATH configuration.
+This will clone the latest `windows` branch into your install directory and configure PATH.
 
 ### Manual Installation
 
 If you prefer to review the code first or customize the installation:
 
 ```powershell
-# Clone the repository
-git clone https://github.com/tw93/Mole.git
-cd Mole
+# Clone the windows branch into your install directory
+$installDir = "$env:LOCALAPPDATA\Mole"
+git clone --branch windows https://github.com/tw93/Mole.git $installDir
+cd $installDir
 
-# Switch to windows branch
-git checkout windows
-
-# Run the installer
-.\install.ps1 -AddToPath
+# Run the installer in place (keeps .git for mo update)
+.\install.ps1 -InstallDir $installDir -AddToPath
 
 # Optional: Create Start Menu shortcut
-.\install.ps1 -AddToPath -CreateShortcut
+.\install.ps1 -InstallDir $installDir -AddToPath -CreateShortcut
 ```
 
 Run:
@@ -74,6 +74,8 @@ mo uninstall             # Remove apps + leftovers
 mo optimize              # Refresh caches & services
 mo analyze               # Visual disk explorer
 mo status                # Live system health dashboard
+mo update                # Pull the latest windows source
+mo remove                # Remove Mole from this system
 mo purge                 # Clean project build artifacts
 
 mo --help                # Show help
@@ -87,6 +89,38 @@ mo optimize --dry-run    # Preview optimization actions
 mo optimize --debug      # Run with detailed operation logs
 mo purge --paths         # Configure project scan directories
 ```
+
+Source-channel installs can later be refreshed with:
+
+```powershell
+mo update
+```
+
+If a matching Windows prerelease exists for the installed version, Mole will reuse/download prebuilt `analyze` and `status` binaries before falling back to a local Go build.
+
+## macOS Parity
+
+Windows is closest to macOS on these commands:
+
+- `clean`
+- `uninstall`
+- `optimize`
+- `analyze`
+- `status`
+- `purge`
+- `update`
+- `remove`
+
+Still missing or intentionally platform-specific compared with `main`:
+
+- `installer`: no dedicated Windows installer-file cleanup command yet
+- `completion`: no PowerShell completion setup command yet
+- `touchid`: macOS-only, not applicable on Windows
+- Release channels: Windows currently uses a git source channel, not Homebrew/stable release installs
+- Update options: `mo update --nightly` is not implemented on Windows
+- Optimization controls: `mo optimize --whitelist` is not implemented on Windows
+- Some UI depth: macOS `status` and `analyze` expose richer device-specific details than Windows today
+- Windows prereleases use `Vx.y.z-windows` tags so they stay isolated from the macOS stable release channel
 
 ## Tips
 
@@ -245,14 +279,14 @@ Custom scan paths can be configured with `mo purge --paths`.
 ### Manual Installation
 
 ```powershell
-# Install to custom location
+# Install to custom location from a cloned windows branch
 .\install.ps1 -InstallDir C:\Tools\Mole -AddToPath
 
 # Create Start Menu shortcut
-.\install.ps1 -AddToPath -CreateShortcut
+.\install.ps1 -InstallDir C:\Tools\Mole -AddToPath -CreateShortcut
 
-# Optional: Custom install location
-.\install.ps1 -InstallDir C:\Tools\Mole -AddToPath
+# Refresh the source channel later
+mo update
 ```
 
 ### Uninstall
@@ -280,12 +314,14 @@ mole/ (windows branch)
 ├── go.mod            # Go module definition
 ├── go.sum            # Go dependencies
 ├── bin/
-301: │   ├── clean.ps1     # Deep cleanup orchestrator
-302: │   ├── uninstall.ps1 # Interactive app uninstaller
-303: │   ├── optimize.ps1  # System optimization
-304: │   ├── purge.ps1     # Project artifact cleanup
-305: │   ├── analyze.ps1   # Disk analyzer wrapper
-306: │   └── status.ps1    # Status monitor wrapper
+│   ├── clean.ps1     # Deep cleanup orchestrator
+│   ├── uninstall.ps1 # Interactive app uninstaller
+│   ├── optimize.ps1  # System optimization
+│   ├── purge.ps1     # Project artifact cleanup
+│   ├── analyze.ps1   # Disk analyzer wrapper
+│   ├── status.ps1    # Status monitor wrapper
+│   ├── update.ps1    # Source channel updater
+│   └── remove.ps1    # Self-uninstall wrapper
 ├── cmd/
 │   ├── analyze/      # Disk analyzer (Go TUI)
 │   │   └── main.go
@@ -297,6 +333,7 @@ mole/ (windows branch)
     │   ├── common.ps1    # Common functions loader
     │   ├── file_ops.ps1  # Safe file operations
     │   ├── log.ps1       # Logging functions
+    │   ├── tui_binaries.ps1 # TUI binary restore/build helpers
     │   └── ui.ps1        # Interactive UI components
     └── clean/
         ├── user.ps1      # User cleanup (temp, downloads, etc.)
@@ -308,7 +345,7 @@ mole/ (windows branch)
 
 ## Building TUI Tools
 
-The analyze and status commands require Go to be installed:
+Install Go if you want to build the analyze and status tools locally:
 
 ```powershell
 # From the repository root
@@ -320,7 +357,8 @@ make build
 go build -o bin/analyze.exe ./cmd/analyze/
 go build -o bin/status.exe ./cmd/status/
 
-# The wrapper scripts will auto-build if Go is available
+# The wrapper scripts try bin/ first, then Windows prerelease assets,
+# then auto-build if Go is available
 ```
 
 ## Support
@@ -351,6 +389,8 @@ go build -o bin/status.exe ./cmd/status/
 - [x] `cmd/status/` - Real-time system monitor (Go)
 - [x] `bin/analyze.ps1` - Analyzer wrapper
 - [x] `bin/status.ps1` - Status wrapper
+- [x] `bin/update.ps1` - Source channel updater
+- [x] `bin/remove.ps1` - Self-uninstall wrapper
 
 ### Phase 4: Testing & CI (Planned)
 

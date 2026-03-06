@@ -1,10 +1,8 @@
-name: Build Windows Release
+name: Build Windows Prerelease
 
 on:
   push:
     tags:
-      - 'v*.*.*'  # Trigger on version tags (e.g., v1.0.0)
-      - 'V*.*.*'  # Also support uppercase V (e.g., V1.0.0)
       - 'v*.*.*-windows'  # Windows-specific releases
       - 'V*.*.*-windows'  # Windows-specific releases (uppercase)
   workflow_dispatch:  # Allow manual trigger
@@ -19,7 +17,7 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows Release Artifacts
+    name: Build Windows Prerelease Artifacts
     runs-on: windows-latest
     
     steps:
@@ -31,7 +29,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24.6'
       
       - name: Setup PowerShell
         shell: pwsh
@@ -47,6 +45,7 @@ jobs:
             $version = "${{ github.event.inputs.version }}"
           } elseif ("${{ github.ref }}" -like "refs/tags/*") {
             $version = "${{ github.ref }}" -replace '^refs/tags/[Vv]', ''
+            $version = $version -replace '-windows$', ''
           } else {
             $content = Get-Content mole.ps1 -Raw
             if ($content -match '\$script:MOLE_VER\s*=\s*"([^"]+)"') {
@@ -79,6 +78,12 @@ jobs:
         shell: pwsh
         run: |
           & scripts\build-release.ps1 -Version ${{ steps.version.outputs.VERSION }}
+
+      - name: Prepare raw TUI binary assets
+        shell: pwsh
+        run: |
+          Copy-Item "bin\analyze.exe" "release\analyze-windows-x64.exe" -Force
+          Copy-Item "bin\status.exe" "release\status-windows-x64.exe" -Force
       
 
       - name: Build standalone EXE
@@ -117,22 +122,47 @@ jobs:
           name: checksums
           path: release/SHA256SUMS.txt
           if-no-files-found: error
+
+      - name: Upload TUI binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-binaries
+          path: |
+            release/analyze-windows-x64.exe
+            release/status-windows-x64.exe
+          if-no-files-found: error
+
+      - name: Collect release files
+        id: release_files
+        shell: pwsh
+        run: |
+          $files = @(
+            "release/mole-${{ steps.version.outputs.VERSION }}-x64.zip",
+            "release/analyze-windows-x64.exe",
+            "release/status-windows-x64.exe",
+            "release/SHA256SUMS.txt"
+          )
+          $optionalExe = "release/mole-${{ steps.version.outputs.VERSION }}-x64.exe"
+          if (Test-Path $optionalExe) {
+            $files += $optionalExe
+          }
+          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       
-      - name: Create GitHub Release
+      - name: Create GitHub Prerelease
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            release/mole-${{ steps.version.outputs.VERSION }}-x64.zip
-            release/mole-${{ steps.version.outputs.VERSION }}-x64.exe
-            release/SHA256SUMS.txt
+          files: ${{ steps.release_files.outputs.files }}
           draft: false
-          prerelease: false
+          prerelease: true
           generate_release_notes: true
           body: |
-            ## Windows System Maintenance Toolkit
+            ## Windows System Maintenance Toolkit (Prerelease)
             
             **Download:** `mole-${{ steps.version.outputs.VERSION }}-x64.zip` (portable) or `.exe` (launcher)
+            **TUI assets:** `analyze-windows-x64.exe` and `status-windows-x64.exe`
             
             **Install:**
             ```powershell
@@ -140,7 +170,9 @@ jobs:
             cd C:\mole
             .\install.ps1
             ```
-            
+
+            These assets are prerelease-only and do not affect the macOS stable release channel.
+
             **Verify:** Check SHA256SUMS.txt for file integrity.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

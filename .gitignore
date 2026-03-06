@@ -1,21 +1,86 @@
 # Windows Mole - .gitignore
 
-# Build artifacts
-bin/*.exe
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Go build cache
-.gocache/
-
-# IDE files
+# Editor files
+*~
+*.swp
+*.swo
 .idea/
 .vscode/
 *.code-workspace
 
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Cache
+.cache/
+*.cache
+.gocache/
+.gomod/
+
+# Backup files
+*.bak
+*.backup
+
+# System files
+*.pid
+*.lock
+
+# AI / local assistant files
+.agents/
+.claude/
+.gemini/
+.kiro/
+ANTIGRAVITY.md
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+WARP.md
+.cursorrules
+cmd/AGENTS.md
+lib/AGENTS.md
+tests/AGENTS.md
+
+# Build artifacts
+bin/*.exe
+cmd/analyze/*.exe
+cmd/status/*.exe
+release/
+mole-windows.zip
+mole-*-x64.zip
+mole-*-x64.exe
+mole-*-x64.msi
+SHA256SUMS.txt
+
 # Test artifacts
 *.test
+*.out
 coverage.out
+coverage.html
+coverage-go.out
+coverage-pester.xml
+test-results.xml
+tests/tmp-*/
+tests/*.tmp
+tests/*.log
 
-# Main branch specific files
-ANTIGRAVITY.md
-CLAUDE.md
+# Branch-specific local notes
 windows-readme-update.md
+mole_guidelines.md
+run_tests.ps1
+session.json

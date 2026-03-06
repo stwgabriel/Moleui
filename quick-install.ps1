@@ -4,6 +4,10 @@
 
 #Requires -Version 5.1
 
+param(
+    [string]$InstallDir = "$env:LOCALAPPDATA\Mole"
+)
+
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
@@ -32,11 +36,17 @@ function Write-ErrorMsg {
     Write-Host "  $($Colors.Red)✗$($Colors.NC) $Message"
 }
 
+function Test-SourceInstall {
+    param([string]$Path)
+
+    return (Test-Path (Join-Path $Path ".git"))
+}
+
 # Main installation
 try {
     Write-Host ""
     Write-Host "  $($Colors.Cyan)Mole Quick Installer$($Colors.NC)"
-    Write-Host "  $($Colors.Yellow)Installing experimental Windows version...$($Colors.NC)"
+    Write-Host "  $($Colors.Yellow)Installing experimental Windows source channel...$($Colors.NC)"
     Write-Host ""
 
     # Check prerequisites
@@ -50,38 +60,61 @@ try {
 
     Write-Success "Git found"
 
-    # Create temp directory
-    $TempDir = Join-Path $env:TEMP "mole-install-$(Get-Random)"
-    Write-Step "Downloading Mole..."
+    if (Test-Path $InstallDir) {
+        if (Test-SourceInstall -Path $InstallDir) {
+            Write-Step "Existing source install found, refreshing..."
 
-    # Clone windows branch
-    git clone --quiet --depth 1 --branch windows https://github.com/tw93/Mole.git $TempDir 2>&1 | Out-Null
+            Push-Location $InstallDir
+            try {
+                git fetch --quiet origin windows 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-ErrorMsg "Failed to fetch latest source"
+                    exit 1
+                }
 
-    if (-not (Test-Path "$TempDir\install.ps1")) {
-        Write-ErrorMsg "Failed to download installer"
-        exit 1
+                git pull --ff-only origin windows 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-ErrorMsg "Failed to fast-forward source install"
+                    exit 1
+                }
+            }
+            finally {
+                Pop-Location
+            }
+        }
+        else {
+            Write-ErrorMsg "Install directory already exists and is not a source install: $InstallDir"
+            Write-Host "    Remove it first or reinstall with the latest quick installer."
+            exit 1
+        }
     }
+    else {
+        Write-Step "Cloning Mole source..."
 
-    Write-Success "Downloaded to temp directory"
+        git clone --quiet --depth 1 --branch windows https://github.com/tw93/Mole.git $InstallDir 2>&1 | Out-Null
+
+        if (-not (Test-Path (Join-Path $InstallDir "install.ps1"))) {
+            Write-ErrorMsg "Failed to clone source installer"
+            exit 1
+        }
+
+        Write-Success "Cloned source to $InstallDir"
+    }
 
     # Run installer
     Write-Step "Running installer..."
     Write-Host ""
 
-    & "$TempDir\install.ps1" -AddToPath
+    & (Join-Path $InstallDir "install.ps1") -InstallDir $InstallDir -AddToPath
 
     Write-Host ""
     Write-Success "Installation complete!"
     Write-Host ""
     Write-Host "  Run ${Colors.Green}mole$($Colors.NC) to get started"
+    Write-Host "  Run ${Colors.Green}mo update$($Colors.NC) to pull the latest windows source later"
     Write-Host ""
 
 } catch {
     Write-ErrorMsg "Installation failed: $_"
     exit 1
-} finally {
-    # Cleanup
-    if (Test-Path $TempDir) {
-        Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
 }

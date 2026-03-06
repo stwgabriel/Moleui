@@ -39,6 +39,8 @@ $script:Colors = @{
     NC      = "$($script:ESC)[0m"
 }
 
+. (Join-Path $script:SourceDir "lib\core\tui_binaries.ps1")
+
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -65,6 +67,21 @@ function Write-MoleError {
     param([string]$Message)
     $c = $script:Colors
     Write-Host "  $($c.Red)ERROR$($c.NC) $Message"
+}
+
+function Get-NormalizedPath {
+    param([string]$Path)
+
+    return [System.IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+}
+
+function Test-SamePath {
+    param(
+        [string]$PathA,
+        [string]$PathB
+    )
+
+    return (Get-NormalizedPath -Path $PathA) -eq (Get-NormalizedPath -Path $PathB)
 }
 
 function Show-Banner {
@@ -227,12 +244,38 @@ function Remove-StartMenuShortcut {
 # Install
 # ============================================================================
 
+function Ensure-OptionalTuiTools {
+    param([string]$RootDir)
+
+    Write-Info "Ensuring optional TUI tools..."
+
+    $tools = @(
+        @{ Name = "analyze"; Output = "bin\analyze.exe"; Source = "./cmd/analyze/" },
+        @{ Name = "status"; Output = "bin\status.exe"; Source = "./cmd/status/" }
+    )
+
+    $version = Get-MoleVersionFromScriptFile -WindowsDir $RootDir
+
+    foreach ($tool in $tools) {
+        $destination = Join-Path $RootDir $tool.Output
+        $binPath = Ensure-TuiBinary -Name $tool.Name -WindowsDir $RootDir -DestinationPath $destination -SourcePath $tool.Source -Version $version
+        if ($binPath) {
+            Write-Success "Ready: $($tool.Name).exe"
+        }
+        else {
+            Write-MoleWarning "Could not prepare $($tool.Name).exe. Install Go or wait for a Windows prerelease asset."
+        }
+    }
+}
+
 function Install-Mole {
     Write-Info "Installing Mole v$script:VERSION..."
     Write-Host ""
 
+    $inPlaceInstall = Test-SamePath -PathA $script:SourceDir -PathB $InstallDir
+
     # Check if already installed
-    if ((Test-Path $InstallDir) -and -not $Force) {
+    if ((Test-Path $InstallDir) -and -not $Force -and -not $inPlaceInstall) {
         Write-MoleError "Mole is already installed at: $InstallDir"
         Write-Host ""
         Write-Host "  Use -Force to overwrite or -Uninstall to remove first"
@@ -252,39 +295,44 @@ function Install-Mole {
         }
     }
 
-    # Copy files
-    Write-Info "Copying files..."
+    if ($inPlaceInstall) {
+        Write-Info "Using in-place source installation in: $InstallDir"
+    }
+    else {
+        # Copy files
+        Write-Info "Copying files..."
 
-    $filesToCopy = @(
-        "mole.ps1"
-        "go.mod"
-        "go.sum"
-        "bin"
-        "lib"
-        "cmd"
-    )
+        $filesToCopy = @(
+            "mole.ps1"
+            "go.mod"
+            "go.sum"
+            "bin"
+            "lib"
+            "cmd"
+        )
 
-    foreach ($item in $filesToCopy) {
-        $src = Join-Path $script:SourceDir $item
-        $dst = Join-Path $InstallDir $item
+        foreach ($item in $filesToCopy) {
+            $src = Join-Path $script:SourceDir $item
+            $dst = Join-Path $InstallDir $item
 
-        if (Test-Path $src) {
-            try {
-                if ((Get-Item $src).PSIsContainer) {
-                    # For directories, remove destination first if exists to avoid nesting
-                    if (Test-Path $dst) {
-                        Remove-Item -Path $dst -Recurse -Force
+            if (Test-Path $src) {
+                try {
+                    if ((Get-Item $src).PSIsContainer) {
+                        # For directories, remove destination first if exists to avoid nesting
+                        if (Test-Path $dst) {
+                            Remove-Item -Path $dst -Recurse -Force
+                        }
+                        Copy-Item -Path $src -Destination $dst -Recurse -Force
                     }
-                    Copy-Item -Path $src -Destination $dst -Recurse -Force
+                    else {
+                        Copy-Item -Path $src -Destination $dst -Force
+                    }
+                    Write-Success "Copied: $item"
                 }
-                else {
-                    Copy-Item -Path $src -Destination $dst -Force
+                catch {
+                    Write-MoleError "Failed to copy $item`: $_"
+                    return $false
                 }
-                Write-Success "Copied: $item"
-            }
-            catch {
-                Write-MoleError "Failed to copy $item`: $_"
-                return $false
             }
         }
     }
@@ -297,6 +345,9 @@ function Install-Mole {
             New-Item -ItemType Directory -Path $dirPath -Force | Out-Null
         }
     }
+
+    Write-Host ""
+    Ensure-OptionalTuiTools -RootDir $InstallDir
 
     # Create launcher batch file for easier access
     # Note: Store %~dp0 immediately to avoid issues with delayed expansion in the parse loop
@@ -355,6 +406,8 @@ powershell.exe -ExecutionPolicy Bypass -NoLogo -NoProfile -Command "& '%MOLE_DIR
         Write-Host "    .\install.ps1 -AddToPath"
     }
 
+    Write-Host ""
+    Write-Host "  Run 'mo update' to pull the latest source from the windows branch"
     Write-Host ""
     return $true
 }

@@ -12,7 +12,8 @@ $ErrorActionPreference = "Stop"
 # Script location
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $windowsDir = Split-Path -Parent $scriptDir
-$binPath = Join-Path $windowsDir "bin\status.exe"
+$defaultBinPath = Join-Path $windowsDir "bin\status.exe"
+. (Join-Path $windowsDir "lib\core\tui_binaries.ps1")
 
 # Help
 function Show-StatusHelp {
@@ -45,29 +46,11 @@ if ($ShowHelp) {
     return
 }
 
-# Check if binary exists
-if (-not (Test-Path $binPath)) {
-    Write-Host "Building status tool..." -ForegroundColor Cyan
-    
-    $cmdDir = Join-Path $windowsDir "cmd\status"
-    $binDir = Join-Path $windowsDir "bin"
-    
-    if (-not (Test-Path $binDir)) {
-        New-Item -ItemType Directory -Path $binDir -Force | Out-Null
-    }
-    
-    Push-Location $windowsDir
-    try {
-        $result = & go build -o "$binPath" "./cmd/status/" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed to build status tool: $result" -ForegroundColor Red
-            Pop-Location
-            return
-        }
-    }
-    finally {
-        Pop-Location
-    }
+$binPath = Ensure-TuiBinary -Name "status" -WindowsDir $windowsDir -DestinationPath $defaultBinPath -SourcePath "./cmd/status/"
+if (-not $binPath) {
+    Write-Host "Status binary not found, no prerelease asset was available, and Go 1.24+ is not installed." -ForegroundColor Red
+    Write-Host "Install Go or wait for a Windows prerelease asset that includes status.exe." -ForegroundColor Yellow
+    exit 1
 }
 
 # Run the binary

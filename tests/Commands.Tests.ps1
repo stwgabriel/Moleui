@@ -109,6 +109,36 @@ Describe "Status Command" {
     }
 }
 
+Describe "Update Command" {
+    Context "Help Display" {
+        It "Should show help without error" {
+            $result = & powershell -ExecutionPolicy Bypass -File "$script:BinDir\update.ps1" -ShowHelp 2>&1
+            $result | Should -Not -BeNullOrEmpty
+            $LASTEXITCODE | Should -Be 0
+        }
+
+        It "Should explain the source channel" {
+            $result = & powershell -ExecutionPolicy Bypass -File "$script:BinDir\update.ps1" -ShowHelp 2>&1
+            $result -join "`n" | Should -Match "source|origin/windows|git"
+        }
+    }
+}
+
+Describe "Remove Command" {
+    Context "Help Display" {
+        It "Should show help without error" {
+            $result = & powershell -ExecutionPolicy Bypass -File "$script:BinDir\remove.ps1" -ShowHelp 2>&1
+            $result | Should -Not -BeNullOrEmpty
+            $LASTEXITCODE | Should -Be 0
+        }
+
+        It "Should mention uninstall behavior" {
+            $result = & powershell -ExecutionPolicy Bypass -File "$script:BinDir\remove.ps1" -ShowHelp 2>&1
+            $result -join "`n" | Should -Match "Remove Mole|PATH|config"
+        }
+    }
+}
+
 Describe "Main Entry Point" {
     Context "mole.ps1" {
         BeforeAll {
@@ -135,6 +165,8 @@ Describe "Main Entry Point" {
             $helpText | Should -Match "purge"
             $helpText | Should -Match "analyze"
             $helpText | Should -Match "status"
+            $helpText | Should -Match "update"
+            $helpText | Should -Match "remove"
         }
     }
 }
