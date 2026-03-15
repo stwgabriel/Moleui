@@ -10,6 +10,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# Never allow the scripted test run to trigger real sudo or Touch ID prompts.
+export MOLE_TEST_NO_AUTH=1
+
 # shellcheck source=lib/core/file_ops.sh
 source "$PROJECT_ROOT/lib/core/file_ops.sh"
 
