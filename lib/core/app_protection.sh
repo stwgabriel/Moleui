@@ -1056,6 +1056,31 @@ find_app_files() {
                 files_to_clean+=("$container")
             done < <(command find ~/Library/Group\ Containers -maxdepth 1 \( -name "*$bundle_id*" \) -print0 2> /dev/null)
         fi
+
+        # App extensions often use bundle-id-derived directories rather than the
+        # main bundle id exactly, for example share extensions or file providers.
+        local -a derived_bundle_roots=(
+            "$HOME/Library/Application Scripts"
+            "$HOME/Library/Containers"
+            "$HOME/Library/Application Support/FileProvider"
+        )
+        local derived_root=""
+        local derived_path=""
+        local existing_path=""
+        local already_added=false
+        for derived_root in "${derived_bundle_roots[@]}"; do
+            [[ -d "$derived_root" ]] || continue
+            while IFS= read -r -d '' derived_path; do
+                already_added=false
+                for existing_path in "${files_to_clean[@]}"; do
+                    if [[ "$existing_path" == "$derived_path" ]]; then
+                        already_added=true
+                        break
+                    fi
+                done
+                [[ "$already_added" == "true" ]] || files_to_clean+=("$derived_path")
+            done < <(command find "$derived_root" -maxdepth 1 -type d -name "*$bundle_id*" -print0 2> /dev/null)
+        done
     fi
 
     # Launch Agents by name (special handling)
