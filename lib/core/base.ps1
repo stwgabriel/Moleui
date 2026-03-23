@@ -13,7 +13,7 @@ $script:MOLE_BASE_LOADED = $true
 # Color Definitions (ANSI escape codes for modern terminals)
 # ============================================================================
 $script:ESC = [char]27
-$script:Colors = @{
+$script:DefaultColors = @{
     Green      = "$ESC[0;32m"
     Blue       = "$ESC[0;34m"
     Cyan       = "$ESC[0;36m"
@@ -29,7 +29,7 @@ $script:Colors = @{
 # ============================================================================
 # Icon Definitions
 # ============================================================================
-$script:Icons = @{
+$script:DefaultIcons = @{
     Confirm  = [char]0x25CE  # ◎
     Admin    = [char]0x2699  # ⚙
     Success  = [char]0x2713  # ✓
@@ -46,6 +46,30 @@ $script:Icons = @{
     File     = [char]0x25A1  # □ (file substitute)
     Trash    = [char]0x2718  # ✘ (trash substitute)
 }
+
+function Initialize-MoleVisualDefaults {
+    if (-not ($script:Colors -is [hashtable])) {
+        $script:Colors = @{}
+    }
+
+    foreach ($entry in $script:DefaultColors.GetEnumerator()) {
+        if (-not $script:Colors.ContainsKey($entry.Key)) {
+            $script:Colors[$entry.Key] = $entry.Value
+        }
+    }
+
+    if (-not ($script:Icons -is [hashtable])) {
+        $script:Icons = @{}
+    }
+
+    foreach ($entry in $script:DefaultIcons.GetEnumerator()) {
+        if (-not $script:Icons.ContainsKey($entry.Key)) {
+            $script:Icons[$entry.Key] = $entry.Value
+        }
+    }
+}
+
+Initialize-MoleVisualDefaults
 
 # ============================================================================
 # Global Configuration Constants

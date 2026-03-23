@@ -11,46 +11,7 @@ $script:MOLE_LOG_LOADED = $true
 # Import base module
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$scriptDir\base.ps1"
-
-# Fallbacks in case base.ps1 did not initialize icons/colors in this scope
-if (-not ($script:Icons -is [hashtable])) {
-    $script:Icons = @{}
-}
-
-$iconDefaults = @{
-    List    = "*"
-    Success = "+"
-    Warning = "!"
-    Error   = "x"
-    DryRun  = ">"
-    Arrow   = ">"
-}
-
-foreach ($key in $iconDefaults.Keys) {
-    if (-not $script:Icons.ContainsKey($key)) {
-        $script:Icons[$key] = $iconDefaults[$key]
-    }
-}
-
-if (-not ($script:Colors -is [hashtable])) {
-    $script:Colors = @{}
-}
-
-$colorDefaults = @{
-    Cyan       = ""
-    Green      = ""
-    Yellow     = ""
-    Red        = ""
-    Gray       = ""
-    PurpleBold = ""
-    NC         = ""
-}
-
-foreach ($key in $colorDefaults.Keys) {
-    if (-not $script:Colors.ContainsKey($key)) {
-        $script:Colors[$key] = $colorDefaults[$key]
-    }
-}
+Initialize-MoleVisualDefaults
 
 # ============================================================================
 # Log Configuration

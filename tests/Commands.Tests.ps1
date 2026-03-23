@@ -37,6 +37,20 @@ Describe "Clean Command" {
             # If we got here without exception, test passes
             $true | Should -Be $true
         }
+
+        It "Should not throw missing Solid property errors during dry-run startup" {
+            $job = Start-Job -ScriptBlock {
+                param($binDir)
+                & powershell -ExecutionPolicy Bypass -File "$binDir\clean.ps1" -DryRun 2>&1
+            } -ArgumentList $script:BinDir
+
+            Start-Sleep -Seconds 3
+            $output = (Receive-Job $job -Keep 2>&1 | Out-String)
+            Stop-Job $job -ErrorAction SilentlyContinue
+            Remove-Job $job -Force -ErrorAction SilentlyContinue
+
+            $output | Should -Not -Match "property 'Solid' cannot be found|找不到属性.?Solid"
+        }
     }
 }
 
@@ -162,6 +176,20 @@ Describe "Main Entry Point" {
             $result = & powershell -ExecutionPolicy Bypass -File $script:MolePath -Version 2>&1
             $result | Should -Not -BeNullOrEmpty
             $result -join "`n" | Should -Match "Mole|v\d+\.\d+"
+        }
+
+        It "Should not throw missing Solid property errors during menu startup" {
+            $job = Start-Job -ScriptBlock {
+                param($molePath)
+                & powershell -ExecutionPolicy Bypass -File $molePath 2>&1
+            } -ArgumentList $script:MolePath
+
+            Start-Sleep -Seconds 3
+            $output = (Receive-Job $job -Keep 2>&1 | Out-String)
+            Stop-Job $job -ErrorAction SilentlyContinue
+            Remove-Job $job -Force -ErrorAction SilentlyContinue
+
+            $output | Should -Not -Match "property 'Solid' cannot be found|找不到属性.?Solid"
         }
         
         It "Should list available commands in help" {

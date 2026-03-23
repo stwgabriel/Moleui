@@ -31,6 +31,9 @@ Describe "Base Module" {
             $script:Icons.Success | Should -Not -BeNullOrEmpty
             $script:Icons.Error | Should -Not -BeNullOrEmpty
             $script:Icons.Warning | Should -Not -BeNullOrEmpty
+            $script:Icons.Solid | Should -Not -BeNullOrEmpty
+            $script:Icons.Admin | Should -Not -BeNullOrEmpty
+            $script:Icons.Trash | Should -Not -BeNullOrEmpty
         }
     }
 
