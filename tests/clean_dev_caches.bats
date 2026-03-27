@@ -223,6 +223,20 @@ EOF
     [[ "$output" != *".local/share/mise"* ]]
 }
 
+@test "clean_dev_other_langs cleans configured composer cache paths" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" COMPOSER_HOME="$HOME/.config/composer-home" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "$2|$1"; }
+clean_dev_other_langs
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PHP Composer cache (legacy)|"* ]]
+    [[ "$output" == *"PHP Composer cache|"* ]]
+}
+
 @test "clean_developer_tools runs key stages" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
