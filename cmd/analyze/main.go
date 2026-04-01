@@ -246,6 +246,9 @@ func createOverviewEntries() []dirEntry {
 		dirEntry{Name: "System Library", Path: "/Library", IsDir: true, Size: -1},
 	)
 
+	// Hidden space insights — paths that silently accumulate disk usage.
+	entries = append(entries, createInsightEntries()...)
+
 	return entries
 }
 
@@ -1154,7 +1157,11 @@ func (m *model) removePathFromView(path string) {
 
 func scanOverviewPathCmd(path string, index int) tea.Cmd {
 	return func() tea.Msg {
-		size, err := measureOverviewSize(path)
+		var size int64
+		var err error
+
+		size, err = measureInsightSize(dirEntry{Path: path})
+
 		return overviewSizeMsg{
 			Path:  path,
 			Index: index,

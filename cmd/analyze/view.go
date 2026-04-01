@@ -168,9 +168,9 @@ func (m model) View() string {
 				}
 				totalSize := m.totalSize
 				// Overview paths are short; fixed width keeps layout stable.
-				nameWidth := 20
+				nameWidth := 22
 				for idx, entry := range m.entries {
-					icon := "📁"
+					icon := insightIcon(entry)
 					sizeVal := entry.Size
 					barValue := max(sizeVal, 0)
 					var percent float64
