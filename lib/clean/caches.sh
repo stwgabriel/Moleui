@@ -199,7 +199,7 @@ scan_project_cache_root() {
 
     local -a find_args=(
         find -P "$root" -maxdepth 9 -mount
-        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" ")"
+        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" -o -name "miniconda3" -o -name "anaconda3" -o -name "miniforge3" -o -name "mambaforge" -o -name "site-packages" ")"
         -prune -o
         -type d
         "(" -name ".next" -o -name "__pycache__" -o -name ".dart_tool" ")"
@@ -214,6 +214,12 @@ scan_project_cache_root() {
     if [[ -s "$tmp_file" ]]; then
         while IFS= read -r match_path; do
             [[ -z "$match_path" ]] && continue
+            # Skip __pycache__ dirs with no .pyc/.pyo files (empty or already cleaned)
+            if [[ "${match_path##*/}" == "__pycache__" ]]; then
+                local has_bytecode
+                has_bytecode=$(find "$match_path" -maxdepth 1 \( -name '*.pyc' -o -name '*.pyo' \) 2>/dev/null | head -1)
+                [[ -z "$has_bytecode" ]] && continue
+            fi
             local project_root=""
             project_root=$(project_cache_group_root "$root" "$match_path")
             [[ -z "$project_root" ]] && project_root="$root"

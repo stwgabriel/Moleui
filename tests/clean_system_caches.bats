@@ -196,6 +196,27 @@ EOF
     rm -rf "$HOME/Projects"
 }
 
+@test "clean_project_caches skips empty pycache directories" {
+    mkdir -p "$HOME/Projects/python-app/pkg/__pycache__"
+    mkdir -p "$HOME/Projects/python-app/empty/__pycache__"
+    touch "$HOME/Projects/python-app/pyproject.toml"
+    touch "$HOME/Projects/python-app/pkg/__pycache__/module.pyc"
+    # empty/__pycache__ has no .pyc files
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+DRY_RUN=true
+clean_project_caches
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Python bytecode cache"* ]]
+    [[ "$output" == *"1 dirs"* ]]
+
+    rm -rf "$HOME/Projects"
+}
+
 @test "clean_project_caches pycache dry-run exports grouped targets and counts skips" {
     mkdir -p "$HOME/Projects/python-app/pkg/__pycache__"
     mkdir -p "$HOME/Projects/python-app/protected/__pycache__"
@@ -376,6 +397,34 @@ EOF
     (( elapsed < 5 ))
 
     rm -rf "$HOME/.config/mole" "$HOME/SlowProjects" "$fake_bin"
+}
+
+@test "scan_project_cache_root prunes conda and site-packages" {
+    mkdir -p "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg1/__pycache__"
+    mkdir -p "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg2/__pycache__"
+    mkdir -p "$HOME/Projects/app/__pycache__"
+    touch "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg1/__pycache__/mod.pyc"
+    touch "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg2/__pycache__/mod.pyc"
+    touch "$HOME/Projects/app/pyproject.toml"
+    touch "$HOME/Projects/app/__pycache__/mod.pyc"
+
+    local output_file
+    output_file=$(mktemp)
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+set -euo pipefail
+source "\$PROJECT_ROOT/lib/core/common.sh"
+source "\$PROJECT_ROOT/lib/clean/caches.sh"
+run_with_timeout() { shift; "\$@"; }
+scan_project_cache_root "$HOME/Projects" "$output_file"
+cat "$output_file"
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"app/__pycache__"* ]]
+    [[ "$output" != *"miniconda3"* ]]
+    [[ "$output" != *"site-packages"* ]]
+
+    rm -rf "$HOME/Projects" "$output_file"
 }
 
 @test "clean_project_caches excludes Library and Trash directories" {
