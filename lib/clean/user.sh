@@ -1501,6 +1501,87 @@ clean_application_support_logs() {
         note_activity
     fi
 }
+# Remove cached device firmware (.ipsw) from iTunes, Finder, and Apple Configurator 2.
+# These are installers for firmware already applied (or superseded) — macOS will
+# re-download them on demand. Typical size: 5-8GB per file. Never touches backups.
+clean_cached_device_firmware() {
+    local -a shallow_dirs=(
+        "$HOME/Library/iTunes/iPhone Software Updates"
+        "$HOME/Library/iTunes/iPad Software Updates"
+        "$HOME/Library/iTunes/iPod Software Updates"
+    )
+
+    # Apple Configurator 2 nests firmware under per-team-id group containers.
+    local -a configurator_dirs=()
+    local gc
+    for gc in "$HOME/Library/Group Containers"/*.group.com.apple.configurator; do
+        [[ -d "$gc" ]] || continue
+        configurator_dirs+=("$gc")
+    done
+
+    local cleaned_count=0
+    local total_size_kb=0
+    local cleaned_any=false
+
+    _process_ipsw_file() {
+        local ipsw="$1"
+        [[ -f "$ipsw" ]] || return 0
+        if is_path_whitelisted "$ipsw"; then
+            return 0
+        fi
+        local size_kb
+        size_kb=$(get_path_size_kb "$ipsw" || echo 0)
+        size_kb="${size_kb:-0}"
+        if [[ "$DRY_RUN" == "true" ]]; then
+            total_size_kb=$((total_size_kb + size_kb))
+            cleaned_count=$((cleaned_count + 1))
+            cleaned_any=true
+            return 0
+        fi
+
+        if safe_remove "$ipsw" true > /dev/null 2>&1; then
+            total_size_kb=$((total_size_kb + size_kb))
+            cleaned_count=$((cleaned_count + 1))
+            cleaned_any=true
+        fi
+    }
+
+    local dir ipsw
+    for dir in "${shallow_dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+        while IFS= read -r -d '' ipsw; do
+            _process_ipsw_file "$ipsw"
+        done < <(command find "$dir" -maxdepth 1 -type f -name "*.ipsw" -print0 2> /dev/null)
+    done
+
+    if [[ ${#configurator_dirs[@]} -gt 0 ]]; then
+        for dir in "${configurator_dirs[@]}"; do
+            [[ -d "$dir" ]] || continue
+            while IFS= read -r -d '' ipsw; do
+                _process_ipsw_file "$ipsw"
+            done < <(command find "$dir" -type f -name "*.ipsw" -print0 2> /dev/null)
+        done
+    fi
+
+    unset -f _process_ipsw_file
+
+    if [[ "$cleaned_any" == "true" ]]; then
+        local size_human
+        size_human=$(bytes_to_human "$((total_size_kb * 1024))")
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Cached device firmware${NC}, ${YELLOW}${cleaned_count} files, $size_human dry${NC}"
+        else
+            local line_color
+            line_color=$(cleanup_result_color_kb "$total_size_kb")
+            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Cached device firmware${NC}, ${line_color}${cleaned_count} files, $size_human${NC}"
+        fi
+        files_cleaned=$((files_cleaned + cleaned_count))
+        total_size_cleaned=$((total_size_cleaned + total_size_kb))
+        total_items=$((total_items + 1))
+        note_activity
+    fi
+}
+
 # iOS device backup info.
 check_ios_device_backups() {
     local backup_dir="$HOME/Library/Application Support/MobileSync/Backup"
