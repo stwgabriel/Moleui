@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPerformScanForJSONIncludesAllEntriesAndLargeFiles(t *testing.T) {
@@ -25,8 +26,11 @@ func TestPerformScanForJSONIncludesAllEntriesAndLargeFiles(t *testing.T) {
 		t.Fatalf("write huge file: %v", err)
 	}
 
-	result := performScanForJSON(root)
+	result := performScanForJSON(root, false)
 
+	if result.Overview {
+		t.Fatalf("expected non-overview JSON result")
+	}
 	if got := len(result.Entries); got != totalFiles {
 		t.Fatalf("expected %d entries, got %d", totalFiles, got)
 	}
@@ -46,5 +50,52 @@ func TestPerformScanForJSONIncludesAllEntriesAndLargeFiles(t *testing.T) {
 	}
 	if !foundHuge {
 		t.Fatalf("expected huge.bin in large_files, got %#v", result.LargeFiles)
+	}
+}
+
+func TestJSONEntriesFromDirEntriesIncludesMetadata(t *testing.T) {
+	oldAccess := time.Now().AddDate(0, 0, -120)
+
+	entries := jsonEntriesFromDirEntries([]dirEntry{
+		{
+			Name:       "old.bin",
+			Path:       "/tmp/old.bin",
+			Size:       42,
+			IsDir:      false,
+			LastAccess: oldAccess,
+		},
+		{
+			Name:  "node_modules",
+			Path:  "/tmp/project/node_modules",
+			Size:  128,
+			IsDir: true,
+		},
+	}, false, nil)
+
+	if entries[0].LastAccess == "" {
+		t.Fatalf("expected last_access to be populated")
+	}
+	if entries[1].Cleanable != true {
+		t.Fatalf("expected node_modules entry to be marked cleanable")
+	}
+}
+
+func TestJSONEntriesFromDirEntriesMarksOverviewInsights(t *testing.T) {
+	entry := dirEntry{
+		Name:  "Old Downloads (90d+)",
+		Path:  "/tmp/test-home/Downloads",
+		Size:  256,
+		IsDir: true,
+	}
+
+	entries := jsonEntriesFromDirEntries([]dirEntry{entry}, true, map[string]bool{
+		entry.Path: true,
+	})
+
+	if len(entries) != 1 {
+		t.Fatalf("expected one entry, got %d", len(entries))
+	}
+	if !entries[0].Insight {
+		t.Fatalf("expected entry to be marked as insight")
 	}
 }
