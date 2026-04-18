@@ -7,6 +7,10 @@
 ehthumbs.db
 Thumbs.db
 
+# Desktop
+node_modules
+.mole-runtime
+
 # Editor files
 *~
 *.swp
