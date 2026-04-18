@@ -273,6 +273,56 @@ EOF
     [[ "$output" != *"/241.2"* ]]
 }
 
+@test "clean_dev_ai_agents keeps newest version and removes older ones by mtime" {
+    local claude_root="$HOME/.local/share/claude/versions"
+    local cursor_root="$HOME/.local/share/cursor-agent/versions"
+    mkdir -p "$claude_root" "$cursor_root"
+    touch -t 202604170829 "$claude_root/2.1.112"
+    touch -t 202604180902 "$claude_root/2.1.113"
+    touch -t 202604181002 "$claude_root/2.1.114"
+    mkdir -p "$cursor_root/2026.04.08-old" "$cursor_root/2026.04.15-new"
+    touch -t 202604080000 "$cursor_root/2026.04.08-old"
+    touch -t 202604150000 "$cursor_root/2026.04.15-new"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+note_activity() { :; }
+safe_clean() { echo "$1|$2"; }
+clean_dev_ai_agents
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"/2.1.112|Claude Code old version"* ]]
+    [[ "$output" == *"/2.1.113|Claude Code old version"* ]]
+    [[ "$output" != *"/2.1.114|"* ]]
+    [[ "$output" == *"/2026.04.08-old|Cursor Agent old version"* ]]
+    [[ "$output" != *"/2026.04.15-new|"* ]]
+}
+
+@test "clean_dev_ai_agents respects MOLE_AI_AGENTS_KEEP and skips missing roots" {
+    local claude_root="$HOME/.local/share/claude/versions"
+    mkdir -p "$claude_root"
+    touch -t 202604170000 "$claude_root/2.1.100"
+    touch -t 202604180000 "$claude_root/2.1.101"
+    touch -t 202604190000 "$claude_root/2.1.102"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+note_activity() { :; }
+safe_clean() { echo "$1"; }
+MOLE_AI_AGENTS_KEEP=2 clean_dev_ai_agents
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"/2.1.100"* ]]
+    [[ "$output" != *"/2.1.101"* ]]
+    [[ "$output" != *"/2.1.102"* ]]
+}
+
 @test "clean_dev_jetbrains_logs only targets JetBrains logs" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -311,6 +361,7 @@ clean_project_caches() { :; }
 clean_dev_mobile() { :; }
 clean_dev_jvm() { :; }
 clean_dev_jetbrains_toolbox() { :; }
+clean_dev_ai_agents() { :; }
 clean_dev_other_langs() { :; }
 clean_dev_cicd() { :; }
 clean_dev_database() { :; }

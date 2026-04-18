@@ -130,14 +130,18 @@ EOF
         return 1
     fi
 
-    for path in "${paths[@]}"; do
-        # Convert $HOME to ~ for portability
-        path="${path/#$HOME/~}"
-        if ! printf '%s\n' "$path" >> "$tmp_file"; then
-            rm -f "$tmp_file" 2> /dev/null || true
-            return 1
-        fi
-    done
+    # Guard empty-array expansion under `set -u` on bash 3.2 (first-run case
+    # from `mo purge --paths` passes only the header with no paths).
+    if [[ ${#paths[@]} -gt 0 ]]; then
+        for path in "${paths[@]}"; do
+            # Convert $HOME to ~ for portability
+            path="${path/#$HOME/~}"
+            if ! printf '%s\n' "$path" >> "$tmp_file"; then
+                rm -f "$tmp_file" 2> /dev/null || true
+                return 1
+            fi
+        done
+    fi
 
     if ! mv "$tmp_file" "$PURGE_CONFIG_FILE" 2> /dev/null; then
         rm -f "$tmp_file" 2> /dev/null || true

@@ -1055,6 +1055,64 @@ clean_dev_jetbrains_logs() {
     safe_clean ~/Library/Logs/JetBrains/* "JetBrains IDE logs"
 }
 
+# AI coding agents (Claude Code, Cursor Agent, etc.) auto-update but never
+# remove previous versions, so ~/.local/share/<agent>/versions accumulates
+# hundreds of MB per release. Keep the most recently modified N entries
+# (newest mtime == currently used) and remove the rest. Entries may be
+# binaries (Claude Code) or directories (Cursor Agent), so we enumerate
+# both with -type f and -type d.
+clean_dev_ai_agents() {
+    local keep_previous="${MOLE_AI_AGENTS_KEEP:-1}"
+    [[ "$keep_previous" =~ ^[0-9]+$ ]] || keep_previous=1
+
+    local -a agent_specs=(
+        "$HOME/.local/share/claude/versions|Claude Code old version"
+        "$HOME/.local/share/cursor-agent/versions|Cursor Agent old version"
+    )
+
+    local spec
+    for spec in "${agent_specs[@]}"; do
+        local versions_root="${spec%%|*}"
+        local label="${spec#*|}"
+        [[ -d "$versions_root" ]] || continue
+
+        local -a entries=()
+        while IFS= read -r -d '' entry; do
+            local name
+            name=$(basename "$entry")
+            [[ "$name" == .* ]] && continue
+            [[ ! "$name" =~ ^[0-9] ]] && continue
+            entries+=("$entry")
+        done < <(command find "$versions_root" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2> /dev/null)
+
+        [[ ${#entries[@]} -le "$keep_previous" ]] && continue
+
+        local -a sorted=()
+        while IFS= read -r line; do
+            sorted+=("${line#* }")
+        done < <(
+            local entry
+            for entry in "${entries[@]}"; do
+                local mtime
+                mtime=$(stat -f%m "$entry" 2> /dev/null || echo "0")
+                printf '%s %s\n' "$mtime" "$entry"
+            done | sort -rn
+        )
+
+        local idx=0
+        local target
+        for target in "${sorted[@]}"; do
+            if [[ $idx -lt $keep_previous ]]; then
+                idx=$((idx + 1))
+                continue
+            fi
+            safe_clean "$target" "$label"
+            note_activity
+            idx=$((idx + 1))
+        done
+    done
+}
+
 # Other language tool caches.
 clean_dev_other_langs() {
     safe_clean ~/.bundle/cache/* "Ruby Bundler cache"
@@ -1217,6 +1275,7 @@ clean_developer_tools() {
     clean_dev_jvm
     clean_dev_jetbrains_toolbox
     clean_dev_jetbrains_logs
+    clean_dev_ai_agents
     clean_dev_other_langs
     clean_dev_cicd
     clean_dev_database
