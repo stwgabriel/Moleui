@@ -32,6 +32,15 @@ tests/tmp-*
 *.cache
 .gocache/
 .gomod/
+.turbo/
+
+# Bun / Turbo / workspace outputs
+node_modules/
+dist/
+**/dist/
+coverage/
+*.tsbuildinfo
+apps/**/.mole-runtime/
 
 # Backup files
 *.bak
