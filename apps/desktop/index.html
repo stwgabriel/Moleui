@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Mole Desktop</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="titlebar" aria-label="Window controls">
+        <div class="titlebar-drag-region">
+          <div class="titlebar-brand">
+            <span class="titlebar-mark" aria-hidden="true">M</span>
+            <div class="titlebar-copy">
+              <p class="titlebar-eyebrow">Desktop POC</p>
+              <p class="titlebar-title">Mole Desktop</p>
+            </div>
+          </div>
+
+          <p class="titlebar-chip">System status dashboard</p>
+        </div>
+
+        <div class="titlebar-controls">
+          <button
+            class="titlebar-control"
+            id="window-minimize"
+            type="button"
+            aria-label="Minimize window"
+            title="Minimize"
+          >
+            <span aria-hidden="true">-</span>
+          </button>
+          <button
+            class="titlebar-control"
+            id="window-maximize"
+            type="button"
+            aria-label="Maximize window"
+            title="Maximize"
+          >
+            <span id="window-maximize-icon" aria-hidden="true">+</span>
+          </button>
+          <button
+            class="titlebar-control titlebar-control-close"
+            id="window-close"
+            type="button"
+            aria-label="Close window"
+            title="Close"
+          >
+            <span aria-hidden="true">x</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="shell">
+      <section class="panel hero">
+        <div>
+          <h1>Mole Desktop</h1>
+          <p class="lead">
+            This proof of concept bundles Mole inside a desktop app and runs
+            <code>mole status --json</code> under the hood.
+          </p>
+          <p id="live-status" class="live-status">Live refresh is starting...</p>
+          <button id="run-status" type="button">Run status command</button>
+        </div>
+
+        <pre class="hero-mole" aria-hidden="true">
+__/\_/\\
+/ o o \\
+\ =-=  /
+ (__m_m)
+        </pre>
+      </section>
+
+      <section class="panel">
+        <h2>Runtime</h2>
+        <pre id="runtime-info">Loading runtime info...</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Command Result</h2>
+        <div id="command-output" class="status-message">
+          Press the button to execute Mole.
+        </div>
+        <section id="status-dashboard" class="status-dashboard" hidden>
+          <div class="status-header">
+            <div class="status-title-row">
+              <h3>Status</h3>
+              <p class="status-health">
+                <span class="status-health-label">Health</span>
+                <span id="health-score" class="status-health-score">-</span>
+              </p>
+            </div>
+            <p id="health-message" class="status-subtitle">-</p>
+            <p id="host-name" class="status-host">-</p>
+            <p id="platform-name" class="status-subtitle">-</p>
+          </div>
+
+          <div class="terminal-grid">
+            <section class="terminal-card">
+              <div class="terminal-card-header"><span class="terminal-icon">◉</span> CPU</div>
+              <div id="cpu-card" class="terminal-card-body"></div>
+            </section>
+
+            <section class="terminal-card">
+              <div class="terminal-card-header"><span class="terminal-icon">◫</span> Memory</div>
+              <div id="memory-card" class="terminal-card-body"></div>
+            </section>
+
+            <section class="terminal-card">
+              <div class="terminal-card-header"><span class="terminal-icon">▥</span> Disk</div>
+              <div id="disk-card" class="terminal-card-body"></div>
+            </section>
+
+            <section class="terminal-card">
+              <div class="terminal-card-header"><span class="terminal-icon">◪</span> Power</div>
+              <div id="power-card" class="terminal-card-body"></div>
+            </section>
+
+            <section class="terminal-card">
+              <div class="terminal-card-header"><span class="terminal-icon">❊</span> Processes</div>
+              <div id="process-list" class="terminal-card-body"></div>
+            </section>
+
+            <section class="terminal-card">
+              <div class="terminal-card-header"><span class="terminal-icon">⇅</span> Network</div>
+              <div id="network-card" class="terminal-card-body"></div>
+            </section>
+          </div>
+
+          <details class="raw-output">
+            <summary>Raw Command Output</summary>
+            <pre id="command-raw-output"></pre>
+          </details>
+        </section>
+      </section>
+      </main>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+  </html>

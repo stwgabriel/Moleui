@@ -1,0 +1,25 @@
+{
+  "name": "mole",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "bun@1.3.7",
+  "scripts": {
+    "build": "bun run build:workspaces && bun run build:go",
+    "build:workspaces": "turbo run build",
+    "build:go": "go build ./...",
+    "dev": "turbo run dev --parallel",
+    "desktop:dev": "bun run --cwd apps/desktop dev",
+    "desktop:build": "bun run --cwd apps/desktop dist",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "workspaces": [
+    "apps/*",
+    "apps/*/*",
+    "packages/*",
+    "docs"
+  ],
+  "devDependencies": {
+    "turbo": "^2.5.0"
+  }
+}

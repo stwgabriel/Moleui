@@ -1,0 +1,44 @@
+{
+  "name": "@repo/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Minimal Mole desktop proof of concept",
+  "main": "main.js",
+  "scripts": {
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "dev": "node scripts/prepare-runtime.mjs && electron .",
+    "dist": "node scripts/prepare-runtime.mjs && electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^35.5.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "dev.tw93.mole.desktop",
+    "productName": "Mole Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "main.js",
+      "package.json",
+      "preload.js",
+      "renderer.js",
+      "styles.css"
+    ],
+    "extraResources": [
+      {
+        "from": ".mole-runtime",
+        "to": "mole-runtime"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg"
+      ]
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
+  }
+}

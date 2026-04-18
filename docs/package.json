@@ -1,0 +1,10 @@
+{
+  "name": "@repo/docs",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun run build.ts",
+    "dev": "bun run build.ts"
+  }
+}

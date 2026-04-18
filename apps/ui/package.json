@@ -1,0 +1,11 @@
+{
+  "name": "@repo/ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist && bun build cli/src/index.ts --outdir dist/cli",
+    "dev": "bun run src/index.ts",
+    "dev:cli": "bun run cli/src/index.ts"
+  }
+}
