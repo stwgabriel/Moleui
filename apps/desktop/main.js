@@ -25,7 +25,7 @@ function ensureRuntime() {
   return executable;
 }
 
-function runMole(args) {
+function runMole(args, options = {}) {
   return new Promise((resolve) => {
     let executable;
 
@@ -51,11 +51,23 @@ function runMole(args) {
     let stderr = "";
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      
+      // Stream output if callback provided
+      if (options.onStdout) {
+        options.onStdout(text);
+      }
     });
 
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      
+      // Stream error output if callback provided
+      if (options.onStderr) {
+        options.onStderr(text);
+      }
     });
 
     child.on("error", (error) => {
@@ -84,8 +96,13 @@ function createWindow() {
   const window = new BrowserWindow({
     width: 960,
     height: 720,
-    frame: false,
+    minWidth: 1280,
+    minHeight: 820,
     titleBarStyle: "hidden",
+    trafficLightPosition: {
+      x: 18,
+      y: 20,
+    },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -94,58 +111,63 @@ function createWindow() {
   });
 
   window.loadFile(path.join(__dirname, "index.html"));
-
-  const sendWindowState = () => {
-    window.webContents.send("window:state-changed", {
-      isMaximized: window.isMaximized(),
-    });
-  };
-
-  window.on("maximize", sendWindowState);
-  window.on("unmaximize", sendWindowState);
-  window.on("enter-full-screen", sendWindowState);
-  window.on("leave-full-screen", sendWindowState);
-  window.webContents.once("did-finish-load", sendWindowState);
+  
+  return window;
 }
 
+let mainWindow;
+
 ipcMain.handle("mole:status", async () => runMole(["status", "--json"]));
+
+ipcMain.handle("mole:uninstall:list", async (event) => {
+  return runMole(["uninstall", "--list"], {
+    onStdout: (text) => {
+      // Stream stdout to renderer
+      event.sender.send("mole:uninstall:list:stdout", text);
+    },
+    onStderr: (text) => {
+      // Stream stderr to renderer
+      event.sender.send("mole:uninstall:list:stderr", text);
+    }
+  });
+});
+
+ipcMain.handle("mole:uninstall:dry-run", async (event, appNames) => {
+  const args = ["uninstall", "--dry-run", ...appNames];
+  return runMole(args, {
+    onStdout: (text) => {
+      event.sender.send("mole:uninstall:dry-run:stdout", text);
+    },
+    onStderr: (text) => {
+      event.sender.send("mole:uninstall:dry-run:stderr", text);
+    }
+  });
+});
+
+ipcMain.handle("mole:uninstall:execute", async (event, appNames) => {
+  const args = ["uninstall", ...appNames];
+  return runMole(args, {
+    onStdout: (text) => {
+      event.sender.send("mole:uninstall:execute:stdout", text);
+    },
+    onStderr: (text) => {
+      event.sender.send("mole:uninstall:execute:stderr", text);
+    }
+  });
+});
+
 ipcMain.handle("mole:runtime", async () => ({
   packaged: app.isPackaged,
   runtimeDir: runtimeDir(),
   executable: moleExecutable(),
 }));
-ipcMain.handle("window:minimize", (event) => {
-  BrowserWindow.fromWebContents(event.sender)?.minimize();
-});
-ipcMain.handle("window:maximize", (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-
-  if (!window) {
-    return { isMaximized: false };
-  }
-
-  if (window.isMaximized()) {
-    window.unmaximize();
-  } else {
-    window.maximize();
-  }
-
-  return { isMaximized: window.isMaximized() };
-});
-ipcMain.handle("window:close", (event) => {
-  BrowserWindow.fromWebContents(event.sender)?.close();
-});
-ipcMain.handle("window:state", (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  return { isMaximized: window?.isMaximized() ?? false };
-});
 
 app.whenReady().then(() => {
-  createWindow();
+  mainWindow = createWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      mainWindow = createWindow();
     }
   });
 });
