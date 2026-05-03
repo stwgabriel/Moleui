@@ -42,12 +42,23 @@ await rm(runtimeDir, { recursive: true, force: true });
 await mkdir(path.join(runtimeDir, "bin"), { recursive: true });
 await mkdir(path.join(runtimeDir, "lib"), { recursive: true });
 
+// Copy main mole script
 await copyRuntimeFile("mole");
-await copyRuntimeFile("bin/status.sh");
-await copyRuntimeFile("lib/core");
 
+// Copy bin scripts
+await copyRuntimeFile("bin/status.sh");
+await copyRuntimeFile("bin/uninstall.sh");
+
+// Copy lib directories
+await copyRuntimeFile("lib/core");
+await copyRuntimeFile("lib/ui");
+await copyRuntimeFile("lib/uninstall");
+
+// Build Go binaries
 await run("go", ["build", "-o", path.join(runtimeDir, "bin", "status-go"), "./cmd/status"], repoRoot);
 
+// Set executable permissions
 await chmod(path.join(runtimeDir, "mole"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "status.sh"), 0o755);
+await chmod(path.join(runtimeDir, "bin", "uninstall.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "status-go"), 0o755);

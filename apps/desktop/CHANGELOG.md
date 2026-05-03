@@ -1,0 +1,53 @@
+# Desktop App Changelog
+
+## [Unreleased]
+
+### Added
+- **Uninstall Feature**: Complete integration with CLI uninstall workflow
+  - Interactive app selection with checkboxes
+  - Dry-run preview showing all files to be removed
+  - Multi-stage workflow (Idle → Loading → Selection → Confirmation → Executing → Results)
+  - Glassmorphic UI following Liquid Glass design system
+  - Dark mode support
+  - Accessibility features (WCAG 2.1 AA compliant)
+  - XSS protection and secure IPC communication
+
+### Changed
+- **Runtime Preparation**: Updated `prepare-runtime.mjs` to include all necessary files for uninstall feature
+  - Added `bin/uninstall.sh`
+  - Added `lib/ui/` directory
+  - Added `lib/uninstall/` directory
+
+### Fixed
+- Fixed "No such file or directory" error when running uninstall commands
+  - The runtime directory now includes all required scripts and libraries
+
+## Files Modified
+- `apps/desktop/main.js` - Added IPC handlers for uninstall operations
+- `apps/desktop/preload.js` - Exposed uninstall API to renderer
+- `apps/desktop/renderer.js` - Integrated uninstall page rendering
+- `apps/desktop/index.html` - Added uninstall-page.js script
+- `apps/desktop/styles.css` - Added comprehensive styling (~500 lines)
+- `apps/desktop/scripts/prepare-runtime.mjs` - Added uninstall dependencies
+
+## Files Created
+- `apps/desktop/uninstall-page.js` - Complete uninstall workflow module (~650 lines)
+- `apps/desktop/UNINSTALL_TESTING.md` - Testing guide
+- `apps/desktop/QUICKSTART.md` - Quick start guide
+- `apps/desktop/CHANGELOG.md` - This file
+- `docs/uninstall-desktop-integration.md` - Technical documentation
+- `docs/uninstall-ui-stages.md` - Visual guide
+- `docs/gui-uninstall-implementation.md` - Implementation summary
+
+## Known Issues
+- No real-time progress during execution (shows spinner only)
+- No app icons (uses generic package icon)
+- No search/filter functionality
+- No column sorting
+
+## Next Steps
+- Add real-time progress streaming
+- Display actual app icons
+- Implement search and filter
+- Add sortable table columns
+- Add keyboard shortcuts (Cmd+A, Escape)
