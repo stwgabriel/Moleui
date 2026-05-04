@@ -2,7 +2,7 @@
   "name": "@repo/desktop",
   "private": true,
   "version": "0.1.0",
-  "description": "Minimal Mole desktop proof of concept",
+  "description": "Minimal Moleui desktop proof of concept",
   "main": "main.js",
   "scripts": {
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
@@ -14,8 +14,8 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "dev.tw93.mole.desktop",
-    "productName": "Mole Desktop",
+    "appId": "dev.tw93.moleui.desktop",
+    "productName": "Moleui Desktop",
     "directories": {
       "output": "dist"
     },

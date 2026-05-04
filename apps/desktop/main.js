@@ -18,7 +18,7 @@ function ensureRuntime() {
 
   if (!fs.existsSync(executable)) {
     throw new Error(
-      `Mole runtime is missing at ${executable}. Run \`bun run desktop:build\` or \`bun run desktop:dev\` first.`,
+      `Moleui runtime is missing at ${executable}. Run \`bun run desktop:build\` or \`bun run desktop:dev\` first.`,
     );
   }
 
@@ -152,6 +152,50 @@ ipcMain.handle("mole:uninstall:execute", async (event, appNames) => {
     },
     onStderr: (text) => {
       event.sender.send("mole:uninstall:execute:stderr", text);
+    }
+  });
+});
+
+// Clean command handlers
+ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
+  const args = ["clean"];
+  if (options.dryRun) args.push("--dry-run");
+  
+  return runMole(args, {
+    onStdout: (text) => {
+      event.sender.send("mole:clean:stdout", text);
+    },
+    onStderr: (text) => {
+      event.sender.send("mole:clean:stderr", text);
+    }
+  });
+});
+
+// Optimize command handlers
+ipcMain.handle("mole:optimize:execute", async (event, options = {}) => {
+  const args = ["optimize"];
+  if (options.dryRun) args.push("--dry-run");
+  
+  return runMole(args, {
+    onStdout: (text) => {
+      event.sender.send("mole:optimize:stdout", text);
+    },
+    onStderr: (text) => {
+      event.sender.send("mole:optimize:stderr", text);
+    }
+  });
+});
+
+// Analyze command handlers
+ipcMain.handle("mole:analyze:execute", async (event, path = "/") => {
+  const args = ["analyze", path, "--json"];
+  
+  return runMole(args, {
+    onStdout: (text) => {
+      event.sender.send("mole:analyze:stdout", text);
+    },
+    onStderr: (text) => {
+      event.sender.send("mole:analyze:stderr", text);
     }
   });
 });
