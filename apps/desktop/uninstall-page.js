@@ -105,7 +105,7 @@ class UninstallPage {
   }
 
   /**
-   * Stream dry-run output
+   * Stream dry-run output - Parse CLI output and display as UI cards
    */
   streamDryRunOutput(text) {
     const filesListContainer = this.container.querySelector('#files-to-remove-list');
@@ -122,46 +122,160 @@ class UninstallPage {
       const trimmedLine = line.trim();
       if (!trimmedLine) return;
       
-      // Parse file paths
-      if (trimmedLine.includes('Would remove:') || trimmedLine.includes('Removing:')) {
-        const filePath = trimmedLine.replace(/Would remove:\s*/, '').replace(/Removing:\s*/, '');
-        
-        const fileItem = document.createElement('div');
-        fileItem.className = 'file-to-remove-item';
-        
-        // Determine file type icon
-        let icon = 'file';
-        if (filePath.includes('.app')) icon = 'package';
-        else if (filePath.includes('Library/Caches')) icon = 'database';
-        else if (filePath.includes('Library/Preferences')) icon = 'settings';
-        else if (filePath.includes('Library/Logs')) icon = 'file-text';
-        
-        fileItem.innerHTML = `
-          <div class="file-icon">
-            <i data-lucide="${icon}"></i>
-          </div>
-          <div class="file-path">${this.escapeHtml(filePath)}</div>
+      // Parse "Files to be removed:" header
+      if (trimmedLine.includes('Files to be removed:')) {
+        const header = document.createElement('div');
+        header.className = 'files-header';
+        header.innerHTML = `
+          <i data-lucide="list"></i>
+          <span>Files to be removed</span>
         `;
-        
-        filesListContainer.appendChild(fileItem);
+        filesListContainer.appendChild(header);
         if (window.lucide) lucide.createIcons();
-        
-        // Auto-scroll
-        filesListContainer.scrollTop = filesListContainer.scrollHeight;
+        return;
       }
       
-      // Parse summary
-      else if (trimmedLine.includes('Total:')) {
+      // Parse app header lines: "✓ AppName [Brew], 123 MB"
+      const appHeaderMatch = trimmedLine.match(/^[✓✔☑]\s+(.+?)\s*(?:\[Brew\])?\s*,\s*(.+)$/);
+      if (appHeaderMatch) {
+        const appName = appHeaderMatch[1].trim();
+        const size = appHeaderMatch[2].trim();
+        
+        const appCard = document.createElement('div');
+        appCard.className = 'app-card';
+        appCard.dataset.appName = appName;
+        
+        appCard.innerHTML = `
+          <div class="app-card-header">
+            <div class="app-card-icon">
+              <i data-lucide="package"></i>
+            </div>
+            <div class="app-card-info">
+              <div class="app-card-name">${this.escapeHtml(appName)}</div>
+              <div class="app-card-size">${this.escapeHtml(size)}</div>
+            </div>
+            <div class="app-card-status">
+              <i data-lucide="clock"></i>
+            </div>
+          </div>
+          <div class="app-card-files"></div>
+        `;
+        
+        filesListContainer.appendChild(appCard);
+        if (window.lucide) lucide.createIcons();
+        filesListContainer.scrollTop = filesListContainer.scrollHeight;
+        return;
+      }
+      
+      // Parse file paths: "  ✓ /path/to/file"
+      const fileMatch = trimmedLine.match(/^[✓✔☑]\s+(.+)$/);
+      if (fileMatch) {
+        const filePath = fileMatch[1].trim();
+        
+        // Find the current app card
+        const appCards = filesListContainer.querySelectorAll('.app-card');
+        const currentCard = appCards[appCards.length - 1];
+        
+        if (currentCard) {
+          const filesContainer = currentCard.querySelector('.app-card-files');
+          
+          // Check for duplicates
+          const existingFiles = Array.from(filesContainer.querySelectorAll('.file-item-path'));
+          if (existingFiles.some(item => item.textContent === filePath)) {
+            return;
+          }
+          
+          const fileItem = document.createElement('div');
+          fileItem.className = 'file-item';
+          
+          // Determine file type
+          let icon = 'file';
+          let fileType = 'file';
+          if (filePath.includes('.app')) {
+            icon = 'package';
+            fileType = 'app';
+          } else if (filePath.includes('Library/Caches') || filePath.includes('/Caches/')) {
+            icon = 'database';
+            fileType = 'cache';
+          } else if (filePath.includes('Library/Preferences') || filePath.includes('.plist')) {
+            icon = 'settings';
+            fileType = 'preference';
+          } else if (filePath.includes('Library/Logs') || filePath.includes('/Logs/')) {
+            icon = 'file-text';
+            fileType = 'log';
+          } else if (filePath.includes('Library/Application Support')) {
+            icon = 'folder';
+            fileType = 'support';
+          }
+          
+          fileItem.innerHTML = `
+            <div class="file-item-icon ${fileType}">
+              <i data-lucide="${icon}"></i>
+            </div>
+            <div class="file-item-path">${this.escapeHtml(filePath.replace(/^\/Users\/[^\/]+/, '~'))}</div>
+          `;
+          
+          filesContainer.appendChild(fileItem);
+          if (window.lucide) lucide.createIcons();
+        }
+        return;
+      }
+      
+      // Parse system files: "  ⚠ System: /path/to/file"
+      const systemMatch = trimmedLine.match(/^[⚠!]\s+System:\s+(.+)$/);
+      if (systemMatch) {
+        const filePath = systemMatch[1].trim();
+        
+        const appCards = filesListContainer.querySelectorAll('.app-card');
+        const currentCard = appCards[appCards.length - 1];
+        
+        if (currentCard) {
+          const filesContainer = currentCard.querySelector('.app-card-files');
+          
+          const fileItem = document.createElement('div');
+          fileItem.className = 'file-item system';
+          
+          fileItem.innerHTML = `
+            <div class="file-item-icon system">
+              <i data-lucide="shield-alert"></i>
+            </div>
+            <div class="file-item-path">${this.escapeHtml(filePath)}</div>
+            <span class="system-badge">System</span>
+          `;
+          
+          filesContainer.appendChild(fileItem);
+          if (window.lucide) lucide.createIcons();
+        }
+        return;
+      }
+      
+      // Parse summary: "Would remove X apps, Y MB"
+      if (trimmedLine.includes('Would remove') || trimmedLine.includes('DRY RUN')) {
         if (loadingIndicator) {
           loadingIndicator.style.display = 'none';
         }
         
+        // Mark all app cards as complete
+        const appCards = filesListContainer.querySelectorAll('.app-card');
+        appCards.forEach(card => {
+          const statusIcon = card.querySelector('.app-card-status i');
+          if (statusIcon) {
+            statusIcon.setAttribute('data-lucide', 'check-circle');
+            card.classList.add('complete');
+          }
+        });
+        
         if (summaryContainer) {
           summaryContainer.style.display = 'flex';
           summaryContainer.innerHTML = `
-            <div class="summary-stat">
-              <i data-lucide="check-circle"></i>
-              <span>${this.escapeHtml(trimmedLine)}</span>
+            <div class="summary-card">
+              <div class="summary-icon">
+                <i data-lucide="info"></i>
+              </div>
+              <div class="summary-content">
+                <div class="summary-title">Dry Run Complete</div>
+                <div class="summary-text">${this.escapeHtml(trimmedLine)}</div>
+              </div>
             </div>
           `;
           if (window.lucide) lucide.createIcons();
@@ -171,7 +285,7 @@ class UninstallPage {
   }
 
   /**
-   * Stream execute output
+   * Stream execute output - Parse CLI output and display as UI cards
    */
   streamExecuteOutput(text) {
     const operationContainer = this.container.querySelector('#current-operation');
@@ -187,56 +301,181 @@ class UninstallPage {
       const trimmedLine = line.trim();
       if (!trimmedLine) return;
       
-      // Update current operation
-      if (trimmedLine.includes('Removing')) {
+      // Parse progress indicator: "[1/3] Uninstalling AppName..."
+      const progressMatch = trimmedLine.match(/^\[(\d+)\/(\d+)\]\s+Uninstalling\s+(.+?)(?:\[Brew\])?\.\.\./);
+      if (progressMatch) {
+        const current = progressMatch[1];
+        const total = progressMatch[2];
+        const appName = progressMatch[3].trim();
+        
         operationContainer.innerHTML = `
-          <div class="operation-status active">
-            <i data-lucide="loader"></i>
-            <span>${this.escapeHtml(trimmedLine)}</span>
+          <div class="operation-card">
+            <div class="operation-progress">
+              <div class="operation-progress-bar">
+                <div class="operation-progress-fill" style="width: ${(current / total) * 100}%"></div>
+              </div>
+              <div class="operation-progress-text">${current} of ${total}</div>
+            </div>
+            <div class="operation-status active">
+              <div class="operation-spinner">
+                <i data-lucide="loader"></i>
+              </div>
+              <span>Uninstalling ${this.escapeHtml(appName)}...</span>
+            </div>
           </div>
         `;
         if (window.lucide) lucide.createIcons();
+        return;
       }
       
-      // Show removed files
-      else if (trimmedLine.includes('✓ Removed') || trimmedLine.includes('Removed:')) {
-        const filePath = trimmedLine.replace(/✓\s*Removed:?\s*/, '').replace(/Removed:?\s*/, '');
+      // Parse success: "✓ [1/3] AppName" or "✓ AppName"
+      const successMatch = trimmedLine.match(/^[✓✔☑]\s+(?:\[(\d+)\/(\d+)\]\s+)?(.+)$/);
+      if (successMatch) {
+        const current = successMatch[1];
+        const total = successMatch[2];
+        const appName = successMatch[3].trim();
         
-        const fileItem = document.createElement('div');
-        fileItem.className = 'removed-file-item';
+        // Check if already added
+        const existingCards = Array.from(removedListContainer.querySelectorAll('.removed-app-card'));
+        if (existingCards.some(card => card.dataset.appName === appName)) {
+          return;
+        }
         
-        // Determine file type icon
-        let icon = 'file';
-        if (filePath.includes('.app')) icon = 'package';
-        else if (filePath.includes('Library/Caches')) icon = 'database';
-        else if (filePath.includes('Library/Preferences')) icon = 'settings';
-        else if (filePath.includes('Library/Logs')) icon = 'file-text';
+        const appCard = document.createElement('div');
+        appCard.className = 'removed-app-card';
+        appCard.dataset.appName = appName;
         
-        fileItem.innerHTML = `
-          <div class="file-icon success">
-            <i data-lucide="${icon}"></i>
+        appCard.innerHTML = `
+          <div class="removed-app-header">
+            <div class="removed-app-icon">
+              <i data-lucide="package"></i>
+            </div>
+            <div class="removed-app-info">
+              <div class="removed-app-name">${this.escapeHtml(appName)}</div>
+              ${current && total ? `<div class="removed-app-progress">${current} of ${total}</div>` : ''}
+            </div>
+            <div class="removed-app-status">
+              <i data-lucide="check-circle"></i>
+            </div>
           </div>
-          <div class="file-path">${this.escapeHtml(filePath)}</div>
-          <div class="success-indicator">
-            <i data-lucide="check"></i>
-          </div>
+          <div class="removed-app-files"></div>
         `;
         
-        removedListContainer.appendChild(fileItem);
+        removedListContainer.appendChild(appCard);
         if (window.lucide) lucide.createIcons();
-        
-        // Auto-scroll
         removedListContainer.scrollTop = removedListContainer.scrollHeight;
+        
+        // Update operation status
+        if (current && total) {
+          operationContainer.innerHTML = `
+            <div class="operation-card">
+              <div class="operation-progress">
+                <div class="operation-progress-bar">
+                  <div class="operation-progress-fill" style="width: ${(current / total) * 100}%"></div>
+                </div>
+                <div class="operation-progress-text">${current} of ${total}</div>
+              </div>
+              <div class="operation-status success">
+                <div class="operation-icon">
+                  <i data-lucide="check"></i>
+                </div>
+                <span>Removed ${this.escapeHtml(appName)}</span>
+              </div>
+            </div>
+          `;
+          if (window.lucide) lucide.createIcons();
+        }
+        return;
       }
       
-      // Show completion
-      else if (trimmedLine.includes('✓') && (trimmedLine.includes('complete') || trimmedLine.includes('Freed'))) {
+      // Parse file removal (indented lines under an app)
+      const fileRemovalMatch = trimmedLine.match(/^[✓✔☑]\s+(.+)$/);
+      if (fileRemovalMatch && !trimmedLine.match(/^\[/)) {
+        const filePath = fileRemovalMatch[1].trim();
+        
+        // Find the current app card
+        const appCards = removedListContainer.querySelectorAll('.removed-app-card');
+        const currentCard = appCards[appCards.length - 1];
+        
+        if (currentCard) {
+          const filesContainer = currentCard.querySelector('.removed-app-files');
+          
+          // Check for duplicates
+          const existingFiles = Array.from(filesContainer.querySelectorAll('.removed-file-path'));
+          if (existingFiles.some(item => item.textContent === filePath)) {
+            return;
+          }
+          
+          const fileItem = document.createElement('div');
+          fileItem.className = 'removed-file-item';
+          
+          // Determine file type
+          let icon = 'file';
+          let fileType = 'file';
+          if (filePath.includes('.app')) {
+            icon = 'package';
+            fileType = 'app';
+          } else if (filePath.includes('Library/Caches')) {
+            icon = 'database';
+            fileType = 'cache';
+          } else if (filePath.includes('Library/Preferences')) {
+            icon = 'settings';
+            fileType = 'preference';
+          } else if (filePath.includes('Library/Logs')) {
+            icon = 'file-text';
+            fileType = 'log';
+          }
+          
+          fileItem.innerHTML = `
+            <div class="removed-file-icon ${fileType}">
+              <i data-lucide="${icon}"></i>
+            </div>
+            <div class="removed-file-path">${this.escapeHtml(filePath.replace(/^\/Users\/[^\/]+/, '~'))}</div>
+            <div class="removed-file-check">
+              <i data-lucide="check"></i>
+            </div>
+          `;
+          
+          filesContainer.appendChild(fileItem);
+          if (window.lucide) lucide.createIcons();
+        }
+        return;
+      }
+      
+      // Parse completion summary: "Removed X apps, freed Y MB"
+      const completionMatch = trimmedLine.match(/Removed\s+(\d+)\s+apps?,\s+freed\s+(.+)/i);
+      if (completionMatch) {
+        const count = completionMatch[1];
+        const size = completionMatch[2];
+        
         operationContainer.innerHTML = `
-          <div class="operation-status success">
-            <i data-lucide="check-circle"></i>
-            <span>${this.escapeHtml(trimmedLine)}</span>
+          <div class="operation-card complete">
+            <div class="operation-status success">
+              <div class="operation-icon">
+                <i data-lucide="check-circle"></i>
+              </div>
+              <div class="operation-summary">
+                <div class="operation-summary-title">Uninstall Complete</div>
+                <div class="operation-summary-text">Removed ${count} app${count > 1 ? 's' : ''}, freed ${this.escapeHtml(size)}</div>
+              </div>
+            </div>
           </div>
         `;
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+      
+      // Parse warnings or errors
+      if (trimmedLine.includes('Warning:') || trimmedLine.includes('Error:')) {
+        const warningCard = document.createElement('div');
+        warningCard.className = 'warning-card';
+        warningCard.innerHTML = `
+          <div class="warning-icon">
+            <i data-lucide="alert-triangle"></i>
+          </div>
+          <div class="warning-text">${this.escapeHtml(trimmedLine)}</div>
+        `;
+        removedListContainer.appendChild(warningCard);
         if (window.lucide) lucide.createIcons();
       }
     });
@@ -642,17 +881,17 @@ class UninstallPage {
         </div>
         <div class="dry-run-results">
           <div class="dry-run-header">
-            <h3>Files to be removed:</h3>
+            <h3>Analyzing files...</h3>
             <div id="dry-run-loading" class="loading-indicator">
               <div class="small-spinner"></div>
-              <span>Analyzing...</span>
+              <span>Scanning...</span>
             </div>
           </div>
           <div class="files-to-remove-list" id="files-to-remove-list">
-            <!-- Files will be added here as they're analyzed -->
+            <!-- App cards with files will be added here as they're analyzed -->
           </div>
           <div class="dry-run-summary" id="dry-run-summary" style="display: none;">
-            <!-- Summary will be shown here -->
+            <!-- Summary card will be shown here -->
           </div>
         </div>
         <div class="confirmation-actions">
@@ -676,11 +915,8 @@ class UninstallPage {
     return `
       <div class="uninstall-stage uninstall-executing">
         <div class="executing-header">
-          <div class="loading-spinner">
-            <div class="spinner"></div>
-          </div>
-          <h2>Uninstalling Applications...</h2>
-          <p>Please wait while we remove the selected applications</p>
+          <h2>Uninstalling Applications</h2>
+          <p>Removing selected applications and their files...</p>
           <div class="executing-warning">
             <i data-lucide="info"></i>
             <span>Do not close this window</span>
@@ -688,13 +924,17 @@ class UninstallPage {
         </div>
         <div class="execution-progress-container">
           <div class="current-operation" id="current-operation">
-            <div class="operation-status">
-              <i data-lucide="loader"></i>
-              <span>Preparing...</span>
+            <div class="operation-card">
+              <div class="operation-status active">
+                <div class="operation-spinner">
+                  <i data-lucide="loader"></i>
+                </div>
+                <span>Preparing...</span>
+              </div>
             </div>
           </div>
           <div class="removed-files-list" id="removed-files-list">
-            <!-- Removed files will be shown here -->
+            <!-- Removed app cards will be shown here in real-time -->
           </div>
         </div>
       </div>
@@ -792,6 +1032,16 @@ class UninstallPage {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  /**
+   * Destroy and cleanup
+   */
+  destroy() {
+    // Cleanup listeners if needed
+    if (window.moleDesktop && window.moleDesktop.uninstall && window.moleDesktop.uninstall.removeListeners) {
+      window.moleDesktop.uninstall.removeListeners();
+    }
   }
 }
 

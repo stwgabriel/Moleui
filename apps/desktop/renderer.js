@@ -163,9 +163,27 @@ function getPageDirection(fromPageId, toPageId) {
 }
 
 function buildPageHTML(pageData) {
-  // Special handling for uninstall page
-  if (window.location.hash === '#uninstall') {
+  const currentHash = window.location.hash;
+  
+  // Special handling for interactive pages
+  if (currentHash === '#uninstall') {
     return `<div id="uninstall-container" class="uninstall-container"></div>`;
+  }
+  
+  if (currentHash === '#status') {
+    return `<div id="status-container" class="status-container"></div>`;
+  }
+  
+  if (currentHash === '#clean') {
+    return `<div id="clean-container" class="clean-container"></div>`;
+  }
+  
+  if (currentHash === '#optimize') {
+    return `<div id="optimize-container" class="optimize-container"></div>`;
+  }
+  
+  if (currentHash === '#analyze') {
+    return `<div id="analyze-container" class="analyze-container"></div>`;
   }
   
   const itemsHTML = pageData.items.map(item => `
@@ -242,6 +260,9 @@ function renderPage() {
       lucide.createIcons();
     }
     
+    // Initialize page-specific modules
+    initializePageModule(newPageId, wrapper);
+    
     currentPageId = newPageId;
     return;
   }
@@ -276,18 +297,30 @@ function renderPage() {
     oldWrapper.classList.add(slideOutClass);
   });
   
+  // Cleanup old page
+  if (currentPageId === 'status' && window.statusPage) {
+    window.statusPage.destroy();
+  }
+  if (currentPageId === 'uninstall' && window.uninstallPage) {
+    window.uninstallPage.destroy();
+  }
+  if (currentPageId === 'clean' && window.cleanPage) {
+    window.cleanPage.destroy();
+  }
+  if (currentPageId === 'optimize' && window.optimizePage) {
+    window.optimizePage.destroy();
+  }
+  if (currentPageId === 'analyze' && window.analyzePage) {
+    window.analyzePage.destroy();
+  }
+  
   // Reinitialize lucide icons for new content
   if (window.lucide) {
     lucide.createIcons();
   }
   
-  // Initialize uninstall page if on uninstall route
-  if (newPageId === 'uninstall') {
-    const uninstallContainer = newWrapper.querySelector('#uninstall-container');
-    if (uninstallContainer && window.uninstallPage) {
-      window.uninstallPage.init(uninstallContainer);
-    }
-  }
+  // Initialize page modules using helper function
+  initializePageModule(newPageId, newWrapper);
   
   // Clean up after animation
   setTimeout(() => {
@@ -306,6 +339,58 @@ function updateActiveNav(pageId) {
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.dataset.page === pageId);
   });
+}
+
+function initializePageModule(pageId, wrapper) {
+  // Initialize pages based on route
+  try {
+    if (pageId === 'uninstall') {
+      const uninstallContainer = wrapper.querySelector('#uninstall-container');
+      if (uninstallContainer && window.uninstallPage) {
+        window.uninstallPage.init(uninstallContainer);
+      } else if (uninstallContainer && !window.uninstallPage) {
+        console.error('uninstallPage module not loaded');
+      }
+    }
+    
+    if (pageId === 'status') {
+      const statusContainer = wrapper.querySelector('#status-container');
+      if (statusContainer && window.statusPage) {
+        window.statusPage.init(statusContainer);
+      } else if (statusContainer && !window.statusPage) {
+        console.error('statusPage module not loaded');
+      }
+    }
+    
+    if (pageId === 'clean') {
+      const cleanContainer = wrapper.querySelector('#clean-container');
+      if (cleanContainer && window.cleanPage) {
+        window.cleanPage.init(cleanContainer);
+      } else if (cleanContainer && !window.cleanPage) {
+        console.error('cleanPage module not loaded');
+      }
+    }
+    
+    if (pageId === 'optimize') {
+      const optimizeContainer = wrapper.querySelector('#optimize-container');
+      if (optimizeContainer && window.optimizePage) {
+        window.optimizePage.init(optimizeContainer);
+      } else if (optimizeContainer && !window.optimizePage) {
+        console.error('optimizePage module not loaded');
+      }
+    }
+    
+    if (pageId === 'analyze') {
+      const analyzeContainer = wrapper.querySelector('#analyze-container');
+      if (analyzeContainer && window.analyzePage) {
+        window.analyzePage.init(analyzeContainer);
+      } else if (analyzeContainer && !window.analyzePage) {
+        console.error('analyzePage module not loaded');
+      }
+    }
+  } catch (error) {
+    console.error(`Error initializing ${pageId} page:`, error);
+  }
 }
 
 function updateToggleIcons(isCollapsed) {
@@ -346,11 +431,44 @@ sidebarHeaderToggle.addEventListener("click", () => {
   setSidebarCollapsed(!sidebar.classList.contains("is-collapsed"));
 });
 
-// Initialize page
-window.addEventListener("hashchange", renderPage);
-renderPage();
+// Initialize page after all scripts are loaded
+function initializeApp() {
+  // Render immediately - don't wait for all modules
+  // Menu pages (smartcare) don't need modules to render
+  renderPage();
+  window.addEventListener("hashchange", renderPage);
+  
+  // Log module loading status for debugging
+  const checkModulesLoaded = () => {
+    const modules = {
+      statusPage: !!window.statusPage,
+      uninstallPage: !!window.uninstallPage,
+      cleanPage: !!window.cleanPage,
+      optimizePage: !!window.optimizePage,
+      analyzePage: !!window.analyzePage
+    };
+    
+    const allLoaded = Object.values(modules).every(loaded => loaded);
+    
+    if (!allLoaded) {
+      console.warn('Some page modules not loaded:', modules);
+    } else {
+      console.log('All page modules loaded successfully');
+    }
+  };
+  
+  // Check module status after a delay (for debugging)
+  setTimeout(checkModulesLoaded, 100);
+}
 
 // Initialize lucide icons
 if (window.lucide) {
   lucide.createIcons();
+}
+
+// Start initialization when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+  initializeApp();
 }

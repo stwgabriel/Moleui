@@ -450,33 +450,49 @@ batch_uninstall_applications() {
     [[ $app_total -gt 1 ]] && app_text="apps"
 
     echo ""
-    local removal_note="Remove ${app_total} ${app_text}"
-    [[ -n "$size_display" ]] && removal_note+=", ${size_display}"
-    if [[ ${#running_apps[@]} -gt 0 ]]; then
-        removal_note+=" ${YELLOW}[Running]${NC}"
+    
+    # Skip confirmation in dry-run mode or when not interactive (e.g., called from GUI)
+    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN${NC} - Would remove ${app_total} ${app_text}, ${size_display}"
+        echo ""
+        _restore_uninstall_traps
+        return 0
     fi
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+    
+    # Only prompt for confirmation in interactive mode
+    if [[ -t 0 && -t 1 ]]; then
+        local removal_note="Remove ${app_total} ${app_text}"
+        [[ -n "$size_display" ]] && removal_note+=", ${size_display}"
+        if [[ ${#running_apps[@]} -gt 0 ]]; then
+            removal_note+=" ${YELLOW}[Running]${NC}"
+        fi
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
 
-    drain_pending_input # Clean up any pending input before confirmation
-    IFS= read -r -s -n1 key || key=""
-    drain_pending_input # Clean up any escape sequence remnants
-    case "$key" in
-        $'\e' | q | Q)
-            echo ""
-            echo ""
-            _restore_uninstall_traps
-            return 0
-            ;;
-        "" | $'\n' | $'\r' | y | Y)
-            echo "" # Move to next line
-            ;;
-        *)
-            echo ""
-            echo ""
-            _restore_uninstall_traps
-            return 0
-            ;;
-    esac
+        drain_pending_input # Clean up any pending input before confirmation
+        IFS= read -r -s -n1 key || key=""
+        drain_pending_input # Clean up any escape sequence remnants
+        case "$key" in
+            $'\e' | q | Q)
+                echo ""
+                echo ""
+                _restore_uninstall_traps
+                return 0
+                ;;
+            "" | $'\n' | $'\r' | y | Y)
+                echo "" # Move to next line
+                ;;
+            *)
+                echo ""
+                echo ""
+                _restore_uninstall_traps
+                return 0
+                ;;
+        esac
+    else
+        # Non-interactive mode - proceed without confirmation
+        echo -e "${PURPLE}${ICON_ARROW}${NC} Removing ${app_total} ${app_text}, ${size_display}"
+        echo ""
+    fi
 
     # Enable uninstall mode - allows deletion of data-protected apps (VPNs, dev tools, etc.)
     # that user explicitly chose to uninstall. System-critical components remain protected.
