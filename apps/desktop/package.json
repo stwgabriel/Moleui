@@ -1,31 +1,53 @@
 {
   "name": "@repo/desktop",
   "private": true,
-  "version": "0.1.0",
-  "description": "Minimal Moleui desktop proof of concept",
+  "version": "0.2.0",
+  "description": "Moleui desktop application built with React",
   "main": "main.js",
   "scripts": {
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
-    "dev": "node scripts/prepare-runtime.mjs && electron .",
-    "dist": "node scripts/prepare-runtime.mjs && electron-builder --mac dmg"
+    "dev": "node scripts/prepare-runtime.mjs && concurrently \"vite\" \"bunx wait-on http://localhost:5173 && electron .\"",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "dist": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg",
+    "type-check": "tsc --noEmit",
+    "diagnose": "node scripts/diagnose.mjs"
+  },
+  "type": "module",
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "lucide-react": "^0.468.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.5"
   },
   "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
     "electron": "^35.5.1",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "wait-on": "^8.0.1"
   },
   "build": {
     "appId": "dev.tw93.moleui.desktop",
     "productName": "Moleui Desktop",
     "directories": {
-      "output": "dist"
+      "output": "dist-electron"
     },
     "files": [
-      "index.html",
+      "dist/**/*",
       "main.js",
-      "package.json",
       "preload.js",
-      "renderer.js",
-      "styles.css"
+      "package.json"
     ],
     "extraResources": [
       {
