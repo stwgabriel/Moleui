@@ -1,7 +1,11 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
-const { spawn } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
+import { app, BrowserWindow, ipcMain } from "electron";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function runtimeDir() {
   return app.isPackaged
@@ -110,7 +114,17 @@ function createWindow() {
     },
   });
 
-  window.loadFile(path.join(__dirname, "index.html"));
+  // In development, load from Vite dev server
+  // In production, load from built files
+  const isDev = !app.isPackaged;
+  
+  if (isDev) {
+    window.loadURL('http://localhost:5173');
+    // Uncomment to open DevTools automatically
+    // window.webContents.openDevTools();
+  } else {
+    window.loadFile(path.join(__dirname, "dist", "index.html"));
+  }
   
   return window;
 }

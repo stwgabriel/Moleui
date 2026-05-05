@@ -6,72 +6,13 @@
     <title>Moleui Desktop</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css" />
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="./uninstall-page.js" defer></script>
-    <script src="./status-page.js" defer></script>
-    <script src="./clean-page.js" defer></script>
-    <script src="./optimize-page.js" defer></script>
-    <script src="./analyze-page.js" defer></script>
-    <script src="./renderer.js" defer></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
-    <div class="window-drag-region" aria-hidden="true"></div>
-    <div class="app-shell">
-      <div class="shell" id="shell">
-        <aside class="sidebar is-expanded" id="sidebar" aria-label="Sidebar">
-          <div class="sidebar-header">
-            <button class="sidebar-toggle sidebar-header-toggle" id="sidebar-header-toggle" type="button" aria-expanded="true" aria-controls="sidebar-panel" aria-label="Collapse sidebar">
-              <i data-lucide="panel-left-close"></i>
-            </button>
-          </div>
-          
-          <div class="sidebar-panel" id="sidebar-panel">
-            <div class="sidebar-center">
-              <nav class="sidebar-nav" aria-label="Main navigation">
-                <a href="#smartcare" class="nav-item" data-page="smartcare">
-                  <i data-lucide="sparkles" class="nav-icon"></i>
-                  <span class="nav-label">Smart Care</span>
-                </a>
-                <a href="#clean" class="nav-item" data-page="clean">
-                  <i data-lucide="trash-2" class="nav-icon"></i>
-                  <span class="nav-label">Clean</span>
-                </a>
-                <a href="#uninstall" class="nav-item" data-page="uninstall">
-                  <i data-lucide="package-x" class="nav-icon"></i>
-                  <span class="nav-label">Uninstall</span>
-                </a>
-                <a href="#optimize" class="nav-item" data-page="optimize">
-                  <i data-lucide="zap" class="nav-icon"></i>
-                  <span class="nav-label">Optimize</span>
-                </a>
-                <a href="#analyze" class="nav-item" data-page="analyze">
-                  <i data-lucide="pie-chart" class="nav-icon"></i>
-                  <span class="nav-label">Analyze</span>
-                </a>
-                <a href="#status" class="nav-item" data-page="status">
-                  <i data-lucide="activity" class="nav-icon"></i>
-                  <span class="nav-label">Status</span>
-                </a>
-              </nav>
-            </div>
-          </div>
-
-          <footer class="sidebar-footer">
-            <div class="logo-placeholder">The Moleui App</div>
-          </footer>
-        </aside>
-
-        <main class="page" id="page" aria-live="polite" aria-label="Clean page">
-          <button class="sidebar-toggle page-sidebar-toggle" id="sidebar-toggle" type="button" aria-expanded="true" aria-controls="sidebar-panel" aria-label="Collapse sidebar">
-            <i data-lucide="panel-left-close"></i>
-          </button>
-          <div class="page-content" id="page-content">
-            <!-- Page content will be dynamically loaded here -->
-          </div>
-        </main>
-      </div>
-    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
