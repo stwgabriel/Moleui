@@ -92,7 +92,7 @@ export function HomePage({ onNavigate, onSkipToHome }: HomePageProps) {
             Where do you want to start?
           </h1>
           <p className="text-lg text-text-secondary mb-8">
-            Pick a tool and let Mole do the heavy lifting.
+            Pick a tool and let Moleui do the heavy lifting.
           </p>
 
           <div className="space-y-2">

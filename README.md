@@ -1,27 +1,27 @@
 <div align="center">
-  <h1>Mole</h1>
+  <h1>Moleui</h1>
   <p><em>Deep clean and optimize your Mac.</em></p>
   <p><strong>Now available:</strong> CLI + Desktop GUI app built with Electron</p>
 </div>
 
 <p align="center">
-  <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/tag/tw93/mole?label=version&style=flat-square" alt="Version"></a>
+  <a href="https://github.com/stwgabriel/moleui/stargazers"><img src="https://img.shields.io/github/stars/stwgabriel/moleui?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/stwgabriel/moleui/releases"><img src="https://img.shields.io/github/v/tag/stwgabriel/moleui?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
-  <a href="https://github.com/tw93/mole/commits"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole?style=flat-square" alt="Commits"></a>
+  <a href="https://github.com/stwgabriel/moleui/commits"><img src="https://img.shields.io/github/commit-activity/m/stwgabriel/moleui?style=flat-square" alt="Commits"></a>
   <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
   <a href="https://t.me/+GclQS9ZnxyI2ODQ1"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </p>
 
 <p align="center">
-  <img src="https://gw.alipayobjects.com/zos/k/ro/ZzF8e8.png" alt="Mole - 95.50GB freed" width="1000" />
+  <img src="https://gw.alipayobjects.com/zos/k/ro/ZzF8e8.png" alt="Moleui - 95.50GB freed" width="1000" />
 </p>
 
 ## Features
 
 ### CLI & Desktop App
 
-Mole is available as both a **CLI tool** and a **desktop GUI app**:
+Moleui is available as both a **CLI tool** and a **desktop GUI app**:
 
 - **All-in-one toolkit**: Combines CleanMyMac, AppCleaner, DaisyDisk, and iStat Menus in a **single binary** or **desktop app**
 - **Deep cleaning**: Removes caches, logs, browser leftovers, and orphaned app data to **reclaim gigabytes of space**
@@ -31,10 +31,10 @@ Mole is available as both a **CLI tool** and a **desktop GUI app**:
 
 ## Desktop App
 
-Mole now includes a modern desktop GUI built with Electron + React, providing the same powerful features in an intuitive interface.
+Moleui now includes a modern desktop GUI built with Electron + React, providing the same powerful features in an intuitive interface.
 
 <p align="center">
-  <img src="https://gw.alipayobjects.com/zos/k/ro/ZzF8e8.png" alt="Mole Desktop App" width="1000" />
+  <img src="https://gw.alipayobjects.com/zos/k/ro/ZzF8e8.png" alt="Moleui Desktop App" width="1000" />
 </p>
 
 ### Desktop Features
@@ -52,7 +52,7 @@ Mole now includes a modern desktop GUI built with Electron + React, providing th
 brew install moleui
 
 # Or download the DMG from GitHub Releases
-# https://github.com/tw93/mole/releases
+# https://github.com/stwgabriel/moleui/releases
 ```
 
 ### Run Desktop App
@@ -95,10 +95,10 @@ brew install mole
 
 ```bash
 # Optional args: -s latest for main branch code, -s 1.17.0 for specific version
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/stwgabriel/moleui/main/install.sh | bash
 ```
 
-> Note: Mole is built for macOS. An experimental Windows version is available in the [windows branch](https://github.com/tw93/Mole/tree/windows) for early adopters.
+> Note: Moleui is built for macOS. An experimental Windows version is available in the [windows branch](https://github.com/stwgabriel/moleui/tree/windows) for early adopters.
 
 **Run**
 
@@ -114,9 +114,9 @@ mo installer                 # Find and remove installer files
 
 mo touchid                   # Configure Touch ID for sudo
 mo completion                # Set up shell tab completion
-mo update                    # Update Mole
+mo update                    # Update Moleui
 mo update --nightly          # Update to latest unreleased main build, script install only
-mo remove                    # Remove Mole from system
+mo remove                    # Remove Moleui from system
 mo --help                    # Show help
 mo --version                 # Show installed version
 ```
@@ -138,9 +138,9 @@ mo analyze /Volumes          # Analyze external drives only
 
 ## Security & Safety Design
 
-Mole is a local system maintenance tool, and some commands can perform destructive local operations.
+Moleui is a local system maintenance tool, and some commands can perform destructive local operations.
 
-Mole uses safety-first defaults: path validation, protected-directory rules, conservative cleanup boundaries, and explicit confirmation for higher-risk actions. When risk or uncertainty is high, Mole skips, refuses, or requires stronger confirmation rather than broadening deletion scope.
+Moleui uses safety-first defaults: path validation, protected-directory rules, conservative cleanup boundaries, and explicit confirmation for higher-risk actions. When risk or uncertainty is high, Moleui skips, refuses, or requires stronger confirmation rather than broadening deletion scope.
 
 `mo analyze` is safer for ad hoc cleanup because it moves files to Trash through Finder instead of deleting them directly.
 
@@ -149,10 +149,10 @@ Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for
 ## Tips
 
 - **Desktop App**: Prefer a GUI? Download Moleui Desktop for a modern, visual experience with all the same features.
-- Video tutorial: Watch the [Mole tutorial video](https://www.youtube.com/watch?v=UEe9-w4CcQ0), thanks to PAPAYA 電腦教室.
-- Safety and logs: `clean`, `uninstall`, `purge`, `installer`, and `remove` are destructive. Review with `--dry-run` first, and add `--debug` when needed. File operations are logged to `~/Library/Logs/mole/operations.log`. Disable with `MO_NO_OPLOG=1`. Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
+- Video tutorial: Watch the [Moleui tutorial video](https://www.youtube.com/watch?v=UEe9-w4CcQ0), thanks to PAPAYA 電腦教室.
+- Safety and logs: `clean`, `uninstall`, `purge`, `installer`, and `remove` are destructive. Review with `--dry-run` first, and add `--debug` when needed. File operations are logged to `~/Library/Logs/moleui/operations.log`. Disable with `MO_NO_OPLOG=1`. Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
 - App leftovers: use `mo clean` when the app is already uninstalled, and `mo uninstall` when the app is still installed.
-- Navigation: Mole supports arrow keys and Vim bindings `h/j/k/l`.
+- Navigation: Moleui supports arrow keys and Vim bindings `h/j/k/l`.
 
 ## Features in Detail
 
@@ -175,7 +175,7 @@ Space freed: 95.5GB | Free space now: 223.5GB
 ====================================================================
 ```
 
-Note: In `mo clean` -> Developer tools, Mole removes unused CoreSimulator `Volumes/Cryptex` entries and skips `IN_USE` items.
+Note: In `mo clean` -> Developer tools, Moleui removes unused CoreSimulator `Volumes/Cryptex` entries and skips `IN_USE` items.
 
 ### Smart App Uninstaller
 
@@ -196,7 +196,7 @@ Uninstalling: Photoshop 2024
     - Logs, WebKit storage, Cookies
     - Extensions, Plugins, Launch daemons
 
-Note: On macOS 15 and later, Local Network permission entries can outlive app removal. Mole warns when an uninstalled app declares Local Network usage, but it does not auto-reset `/Volumes/Data/Library/Preferences/com.apple.networkextension*.plist` because that reset is global and requires Recovery mode.
+Note: On macOS 15 and later, Local Network permission entries can outlive app removal. Moleui warns when an uninstalled app declares Local Network usage, but it does not auto-reset `/Volumes/Data/Library/Preferences/com.apple.networkextension*.plist` because that reset is global and requires Recovery mode.
 
 ====================================================================
 Space freed: 12.8GB
@@ -226,7 +226,7 @@ Use `mo optimize --whitelist` to exclude specific optimizations.
 
 ### Disk Space Analyzer
 
-> Note: By default, Mole skips external drives under `/Volumes` for faster startup. To inspect them, run `mo analyze /Volumes` or a specific mount path.
+> Note: By default, Moleui skips external drives under `/Volumes` for faster startup. To inspect them, run `mo analyze /Volumes` or a specific mount path.
 
 ```bash
 $ mo analyze
@@ -249,7 +249,7 @@ Real-time dashboard with health score, hardware info, and performance metrics.
 ```bash
 $ mo status
 
-Mole Status  Health ● 92  MacBook Pro · M4 Pro · 32GB · macOS 14.5
+Moleui Status  Health ● 92  MacBook Pro · M4 Pro · 32GB · macOS 14.5
 
 ⚙ CPU                                    ▦ Memory
 Total   ████████████░░░░░░░  45.2%       Used    ███████████░░░░░░░  58.4%
@@ -342,7 +342,7 @@ Select Categories to Clean - 18.5GB (8 selected)
 <details>
 <summary><strong>Custom Scan Paths</strong></summary>
 
-Run `mo purge --paths` to configure scan directories, or edit `~/.config/mole/purge_paths` directly:
+Run `mo purge --paths` to configure scan directories, or edit `~/.config/moleui/purge_paths` directly:
 
 ```shell
 ~/Documents/MyProjects
@@ -350,7 +350,7 @@ Run `mo purge --paths` to configure scan directories, or edit `~/.config/mole/pu
 ~/Work/ClientB
 ```
 
-When custom paths are configured, Mole scans only those directories. Otherwise, it uses defaults like `~/Projects`, `~/GitHub`, and `~/dev`.
+When custom paths are configured, Moleui scans only those directories. Otherwise, it uses defaults like `~/Projects`, `~/GitHub`, and `~/dev`.
 
 </details>
 
@@ -373,13 +373,13 @@ Select Installers to Remove - 3.8GB (5 selected)
 
 ## Quick Launchers
 
-Launch Mole commands from Raycast or Alfred:
+Launch Moleui commands from Raycast or Alfred:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/Mole/main/scripts/setup-quick-launchers.sh | bash
+curl -fsSL https://raw.githubusercontent.com/stwgabriel/moleui/main/scripts/setup-quick-launchers.sh | bash
 ```
 
-Adds 5 commands: `Mole Clean`, `Mole Uninstall`, `Mole Optimize`, `Mole Analyze`, `Mole Status`.
+Adds 5 commands: `Moleui Clean`, `Moleui Uninstall`, `Moleui Optimize`, `Moleui Analyze`, `Moleui Status`.
 
 ### Raycast Setup
 
@@ -390,35 +390,35 @@ After running the script, complete these steps in Raycast:
 3. Click **"Add Script Directory"** (or **"+"**)
 4. Add path: `~/Library/Application Support/Raycast/script-commands`
 5. Search in Raycast for: **"Reload Script Directories"** and run it
-6. Done! Search for `Mole Clean` or `clean`, `Mole Optimize`, or `Mole Status` to use the commands
+6. Done! Search for `Moleui Clean` or `clean`, `Moleui Optimize`, or `Moleui Status` to use the commands
 
 > **Note**: The script creates the commands, but Raycast still requires a one-time manual script directory setup.
 
 ### Terminal Detection
 
-Mole auto-detects your terminal app. iTerm2 has known compatibility issues. We highly recommend [Kaku](https://github.com/tw93/Kaku). Other good options are Alacritty, kitty, WezTerm, Ghostty, and Warp. To override, set `MO_LAUNCHER_APP=<name>`.
+Moleui auto-detects your terminal app. iTerm2 has known compatibility issues. We highly recommend [Kaku](https://github.com/tw93/Kaku). Other good options are Alacritty, kitty, WezTerm, Ghostty, and Warp. To override, set `MO_LAUNCHER_APP=<name>`.
 
 ## Community Love
 
-Thanks to everyone who helped build Mole. Go follow them. ❤️
+Thanks to everyone who helped build Moleui. Go follow them. ❤️
 
-<a href="https://github.com/tw93/Mole/graphs/contributors">
+<a href="https://github.com/stwgabriel/moleui/graphs/contributors">
   <img src="./CONTRIBUTORS.svg?v=2" width="1000" />
 </a>
 
 <br/><br/>
-Real feedback from users who shared Mole on X.
+Real feedback from users who shared Moleui on X.
 
-<img src="https://gw.alipayobjects.com/zos/k/dl/lovemole.jpeg" alt="Community feedback on Mole" width="1000" />
+<img src="https://gw.alipayobjects.com/zos/k/dl/lovemole.jpeg" alt="Community feedback on Moleui" width="1000" />
 
 ## Support
 
-- If Mole helped you, [share it](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Mac.) with friends or give it a star.
+- If Moleui helped you, [share it](https://twitter.com/intent/tweet?url=https://github.com/stwgabriel/moleui&text=Moleui%20-%20Deep%20clean%20and%20optimize%20your%20Mac.) with friends or give it a star.
 - Got ideas or bugs? Open an issue or PR, feel free to contribute your best AI model.
-- I have two cats, TangYuan and Coke. If you think Mole delights your life, you can feed them <a href="https://miaoyan.app/cats.html?name=Mole" target="_blank">canned food 🥩</a>.
+- I have two cats, TangYuan and Coke. If you think Moleui delights your life, you can feed them <a href="https://miaoyan.app/cats.html?name=Mole" target="_blank">canned food 🥩</a>.
 
 <a href="https://miaoyan.app/cats.html?name=Mole"><img src="https://cdn.jsdelivr.net/gh/tw93/MiaoYan@main/assets/sponsors.svg" width="1000" loading="lazy" /></a>
 
 ## License
 
-MIT License. Feel free to use Mole and contribute.
+MIT License. Feel free to use Moleui and contribute.

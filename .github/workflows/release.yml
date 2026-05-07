@@ -127,10 +127,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          curl -fsSL -o /tmp/SHA256SUMS "https://github.com/tw93/Mole/releases/download/${TAG}/SHA256SUMS"
+          curl -fsSL -o /tmp/SHA256SUMS "https://github.com/stwgabriel/moleui/releases/download/${TAG}/SHA256SUMS"
           ARM_SHA=$(awk '$2 == "binaries-darwin-arm64.tar.gz" { print $1 }' /tmp/SHA256SUMS)
           AMD_SHA=$(awk '$2 == "binaries-darwin-amd64.tar.gz" { print $1 }' /tmp/SHA256SUMS)
-          SOURCE_SHA=$(curl -fsSL "https://github.com/tw93/Mole/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{print $1}')
+          SOURCE_SHA=$(curl -fsSL "https://github.com/stwgabriel/moleui/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{print $1}')
 
           if [[ -z "$ARM_SHA" || -z "$AMD_SHA" || -z "$SOURCE_SHA" ]]; then
             echo "Failed to resolve release checksums"
