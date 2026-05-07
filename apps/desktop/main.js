@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Store active processes for cancellation
+const activeProcesses = new Map();
+
 function runtimeDir() {
   return app.isPackaged
     ? path.join(process.resourcesPath, "mole-runtime")
@@ -51,8 +54,14 @@ function runMole(args, options = {}) {
       env: { ...process.env },
     });
 
+    // Store process for cancellation if processId provided
+    if (options.processId) {
+      activeProcesses.set(options.processId, child);
+    }
+
     let stdout = "";
     let stderr = "";
+    let killed = false;
 
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString();
@@ -75,23 +84,38 @@ function runMole(args, options = {}) {
     });
 
     child.on("error", (error) => {
+      if (options.processId) {
+        activeProcesses.delete(options.processId);
+      }
       resolve({
         ok: false,
         command: `mole ${args.join(" ")}`,
         exitCode: null,
         stdout,
         stderr: `${stderr}${error.message}`,
+        killed,
       });
     });
 
     child.on("close", (exitCode) => {
+      if (options.processId) {
+        activeProcesses.delete(options.processId);
+      }
       resolve({
-        ok: exitCode === 0,
+        ok: exitCode === 0 && !killed,
         command: `mole ${args.join(" ")}`,
         exitCode,
         stdout,
-        stderr,
+        stderr: killed ? `${stderr}\nProcess was cancelled by user` : stderr,
+        killed,
       });
+    });
+
+    // Handle kill signal
+    child.on("exit", (code, signal) => {
+      if (signal === "SIGTERM" || signal === "SIGKILL") {
+        killed = true;
+      }
     });
   });
 }
@@ -147,7 +171,7 @@ ipcMain.handle("mole:uninstall:list", async (event) => {
 });
 
 ipcMain.handle("mole:uninstall:dry-run", async (event, appNames) => {
-  const args = ["uninstall", "--dry-run", ...appNames];
+  const args = ["uninstall", "--dry-run", "--yes", ...appNames];
   return runMole(args, {
     onStdout: (text) => {
       event.sender.send("mole:uninstall:dry-run:stdout", text);
@@ -159,7 +183,7 @@ ipcMain.handle("mole:uninstall:dry-run", async (event, appNames) => {
 });
 
 ipcMain.handle("mole:uninstall:execute", async (event, appNames) => {
-  const args = ["uninstall", ...appNames];
+  const args = ["uninstall", "--yes", ...appNames];
   return runMole(args, {
     onStdout: (text) => {
       event.sender.send("mole:uninstall:execute:stdout", text);
@@ -176,6 +200,7 @@ ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
   if (options.dryRun) args.push("--dry-run");
   
   return runMole(args, {
+    processId: "clean",
     onStdout: (text) => {
       event.sender.send("mole:clean:stdout", text);
     },
@@ -185,12 +210,22 @@ ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
   });
 });
 
+ipcMain.handle("mole:clean:kill", async () => {
+  const process = activeProcesses.get("clean");
+  if (process && !process.killed) {
+    process.kill("SIGTERM");
+    return { ok: true, message: "Clean process terminated" };
+  }
+  return { ok: false, message: "No active clean process" };
+});
+
 // Optimize command handlers
 ipcMain.handle("mole:optimize:execute", async (event, options = {}) => {
   const args = ["optimize"];
   if (options.dryRun) args.push("--dry-run");
   
   return runMole(args, {
+    processId: "optimize",
     onStdout: (text) => {
       event.sender.send("mole:optimize:stdout", text);
     },
@@ -200,11 +235,21 @@ ipcMain.handle("mole:optimize:execute", async (event, options = {}) => {
   });
 });
 
+ipcMain.handle("mole:optimize:kill", async () => {
+  const process = activeProcesses.get("optimize");
+  if (process && !process.killed) {
+    process.kill("SIGTERM");
+    return { ok: true, message: "Optimize process terminated" };
+  }
+  return { ok: false, message: "No active optimize process" };
+});
+
 // Analyze command handlers
 ipcMain.handle("mole:analyze:execute", async (event, path = "/") => {
   const args = ["analyze", path, "--json"];
   
   return runMole(args, {
+    processId: "analyze",
     onStdout: (text) => {
       event.sender.send("mole:analyze:stdout", text);
     },
@@ -212,6 +257,15 @@ ipcMain.handle("mole:analyze:execute", async (event, path = "/") => {
       event.sender.send("mole:analyze:stderr", text);
     }
   });
+});
+
+ipcMain.handle("mole:analyze:kill", async () => {
+  const process = activeProcesses.get("analyze");
+  if (process && !process.killed) {
+    process.kill("SIGTERM");
+    return { ok: true, message: "Analyze process terminated" };
+  }
+  return { ok: false, message: "No active analyze process" };
 });
 
 ipcMain.handle("mole:runtime", async () => ({

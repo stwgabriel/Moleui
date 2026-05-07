@@ -6,7 +6,7 @@
   "main": "main.js",
   "scripts": {
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
-    "dev": "node scripts/prepare-runtime.mjs && concurrently \"vite\" \"bunx wait-on http://localhost:5173 && electron .\"",
+    "dev": "node scripts/prepare-runtime.mjs && concurrently \"vite\" \"sleep 2 && electron .\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "dist": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg",
@@ -15,13 +15,17 @@
   },
   "type": "module",
   "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.468.0",
-    "clsx": "^2.1.1",
+    "recharts": "^3.8.1",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.5"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
@@ -30,11 +34,14 @@
     "concurrently": "^9.1.2",
     "electron": "^35.5.1",
     "electron-builder": "^26.0.12",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17",
+    "@tailwindcss/vite": "^4.2.4",
+    "tailwindcss": "^4.2.4",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "vite-plugin-electron-renderer": "^0.14.6",
+    "vitest": "^4.1.5",
     "wait-on": "^8.0.1"
   },
   "build": {

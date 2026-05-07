@@ -1,6 +1,7 @@
 // Electron IPC types
 export interface MoleResult {
   ok: boolean;
+  killed?: boolean;
   command: string;
   exitCode: number | null;
   stdout: string;
@@ -23,18 +24,21 @@ export interface MoleDesktopAPI {
   };
   clean: {
     execute: (options: { dryRun: boolean }) => Promise<MoleResult>;
+    kill: () => Promise<MoleResult>;
     onStdout: (callback: (data: string) => void) => void;
     onStderr: (callback: (data: string) => void) => void;
     removeListeners: () => void;
   };
   optimize: {
     execute: (options: { dryRun: boolean }) => Promise<MoleResult>;
+    kill: () => Promise<MoleResult>;
     onStdout: (callback: (data: string) => void) => void;
     onStderr: (callback: (data: string) => void) => void;
     removeListeners: () => void;
   };
   analyze: {
     execute: (path: string) => Promise<MoleResult>;
+    kill: () => Promise<{ ok: boolean; message: string }>;
     onStdout: (callback: (data: string) => void) => void;
     onStderr: (callback: (data: string) => void) => void;
     removeListeners: () => void;
@@ -56,19 +60,43 @@ export interface Application {
   uninstall_name: string;
 }
 
+export interface HardwareInfo {
+  model?: string;
+  cpu_model?: string;
+  total_ram?: string;
+  disk_size?: string;
+  os_version?: string;
+  refresh_rate?: string;
+}
+
 export interface SystemMetrics {
+  host?: string;
+  uptime?: string;
+  thermal?: {
+    cpu_temp?: number;
+    gpu_temp?: number;
+    battery_temp?: number;
+    fan_speed?: number;
+    fan_count?: number;
+    system_power?: number;
+    adapter_power?: number;
+    battery_power?: number;
+  };
   cpu: {
     usage: number;
     core_count: number;
     load1: number;
     load5: number;
     load15: number;
+    temperature?: number;
   };
   memory: {
     used: number;
     total: number;
     used_percent: number;
     pressure?: string;
+    swap_used?: number;
+    swap_total?: number;
   };
   disks: Array<{
     mount: string;
@@ -80,6 +108,7 @@ export interface SystemMetrics {
     name: string;
     rx_rate_mbs: number;
     tx_rate_mbs: number;
+    ip?: string;
   }>;
   disk_io: {
     read_rate: number;
@@ -94,6 +123,8 @@ export interface SystemMetrics {
   gpu: Array<{
     name: string;
     usage: number;
+    memory_used?: number;
+    memory_total?: number;
   }>;
   top_processes?: Array<{
     name: string;
@@ -101,6 +132,7 @@ export interface SystemMetrics {
     cpu: number;
     memory: number;
   }>;
+  hardware?: HardwareInfo;
   health_score: number;
 }
 
@@ -112,7 +144,7 @@ export interface CleanCategory {
   fileCount: number;
 }
 
-export type PageId = 'smartcare' | 'clean' | 'uninstall' | 'optimize' | 'analyze' | 'status';
+export type PageId = 'home' | 'mymac' | 'clean' | 'uninstall' | 'optimize' | 'analyze' | 'status';
 
 export interface PageConfig {
   title: string;

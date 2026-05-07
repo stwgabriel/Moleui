@@ -1,6 +1,7 @@
 <div align="center">
   <h1>Mole</h1>
   <p><em>Deep clean and optimize your Mac.</em></p>
+  <p><strong>Now available:</strong> CLI + Desktop GUI app built with Electron</p>
 </div>
 
 <p align="center">
@@ -18,11 +19,69 @@
 
 ## Features
 
-- **All-in-one toolkit**: Combines CleanMyMac, AppCleaner, DaisyDisk, and iStat Menus in a **single binary**
+### CLI & Desktop App
+
+Mole is available as both a **CLI tool** and a **desktop GUI app**:
+
+- **All-in-one toolkit**: Combines CleanMyMac, AppCleaner, DaisyDisk, and iStat Menus in a **single binary** or **desktop app**
 - **Deep cleaning**: Removes caches, logs, browser leftovers, and orphaned app data to **reclaim gigabytes of space**
 - **Smart uninstaller**: Removes apps plus launch agents, preferences, and **hidden remnants**
 - **Disk insights**: Visualizes usage, finds large files, **rebuilds caches**, and refreshes system services
 - **Live monitoring**: Shows real-time CPU, GPU, memory, disk, and network stats
+
+## Desktop App
+
+Mole now includes a modern desktop GUI built with Electron + React, providing the same powerful features in an intuitive interface.
+
+<p align="center">
+  <img src="https://gw.alipayobjects.com/zos/k/ro/ZzF8e8.png" alt="Mole Desktop App" width="1000" />
+</p>
+
+### Desktop Features
+
+- **Clean**: Remove caches, logs, and junk files with one click
+- **Uninstall**: Completely remove apps and all their traces
+- **Optimize**: Tune system settings and run maintenance tasks
+- **Analyze**: Visualize disk usage and find large files instantly
+- **Status**: Live CPU, memory, disk, and network monitoring
+
+### Install Desktop App
+
+```bash
+# Homebrew (recommended)
+brew install moleui
+
+# Or download the DMG from GitHub Releases
+# https://github.com/tw93/mole/releases
+```
+
+### Run Desktop App
+
+```bash
+# From terminal
+moleui
+
+# Or open from Applications folder
+open /Applications/Moleui.app
+```
+
+### Development
+
+```bash
+# Prerequisites: Node.js, Bun, Electron
+cd apps/desktop
+
+# Install dependencies
+bun install
+
+# Run in development mode
+bun run desktop:dev
+
+# Build for production
+bun run desktop:build
+```
+
+---
 
 ## Quick Start
 
@@ -89,6 +148,7 @@ Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for
 
 ## Tips
 
+- **Desktop App**: Prefer a GUI? Download Moleui Desktop for a modern, visual experience with all the same features.
 - Video tutorial: Watch the [Mole tutorial video](https://www.youtube.com/watch?v=UEe9-w4CcQ0), thanks to PAPAYA 電腦教室.
 - Safety and logs: `clean`, `uninstall`, `purge`, `installer`, and `remove` are destructive. Review with `--dry-run` first, and add `--debug` when needed. File operations are logged to `~/Library/Logs/mole/operations.log`. Disable with `MO_NO_OPLOG=1`. Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
 - App leftovers: use `mo clean` when the app is already uninstalled, and `mo uninstall` when the app is still installed.

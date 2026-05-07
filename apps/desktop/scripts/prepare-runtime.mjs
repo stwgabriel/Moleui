@@ -46,19 +46,31 @@ await mkdir(path.join(runtimeDir, "lib"), { recursive: true });
 await copyRuntimeFile("mole");
 
 // Copy bin scripts
+await copyRuntimeFile("bin/clean.sh");
 await copyRuntimeFile("bin/status.sh");
 await copyRuntimeFile("bin/uninstall.sh");
+await copyRuntimeFile("bin/optimize.sh");
+await copyRuntimeFile("bin/analyze.sh");
 
 // Copy lib directories
 await copyRuntimeFile("lib/core");
+await copyRuntimeFile("lib/clean");
 await copyRuntimeFile("lib/ui");
 await copyRuntimeFile("lib/uninstall");
+await copyRuntimeFile("lib/manage");
+await copyRuntimeFile("lib/optimize");
+await copyRuntimeFile("lib/check");
 
 // Build Go binaries
 await run("go", ["build", "-o", path.join(runtimeDir, "bin", "status-go"), "./cmd/status"], repoRoot);
+await run("go", ["build", "-o", path.join(runtimeDir, "bin", "analyze-go"), "./cmd/analyze"], repoRoot);
 
 // Set executable permissions
 await chmod(path.join(runtimeDir, "mole"), 0o755);
+await chmod(path.join(runtimeDir, "bin", "clean.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "status.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "uninstall.sh"), 0o755);
+await chmod(path.join(runtimeDir, "bin", "optimize.sh"), 0o755);
+await chmod(path.join(runtimeDir, "bin", "analyze.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "status-go"), 0o755);
+await chmod(path.join(runtimeDir, "bin", "analyze-go"), 0o755);
