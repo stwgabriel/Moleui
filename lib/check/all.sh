@@ -497,7 +497,7 @@ check_mole_update() {
             # Run in background to allow Ctrl+C to interrupt
             local temp_version
             temp_version=$(mktemp_file "mole_version_check")
-            curl -fsSL --connect-timeout 3 --max-time 5 https://api.github.com/repos/tw93/mole/releases/latest 2> /dev/null | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/' > "$temp_version" &
+            curl -fsSL --connect-timeout 3 --max-time 5 https://api.github.com/repos/stwgabriel/moleui/releases/latest 2> /dev/null | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/' > "$temp_version" &
             local curl_pid=$!
 
             # Wait for curl to complete (allows Ctrl+C to interrupt)

@@ -22,14 +22,14 @@ is_touchid_configured() {
 
 get_latest_version() {
     curl -fsSL --connect-timeout 2 --max-time 3 -H "Cache-Control: no-cache" \
-        "https://raw.githubusercontent.com/tw93/mole/main/mole" 2> /dev/null |
+        "https://raw.githubusercontent.com/stwgabriel/moleui/main/mole" 2> /dev/null |
         grep '^VERSION=' | head -1 | sed 's/VERSION="\(.*\)"/\1/'
 }
 
 get_latest_version_from_github() {
     local version
     version=$(curl -fsSL --connect-timeout 2 --max-time 3 \
-        "https://api.github.com/repos/tw93/mole/releases/latest" 2> /dev/null |
+        "https://api.github.com/repos/stwgabriel/moleui/releases/latest" 2> /dev/null |
         grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
     version="${version#v}"
     version="${version#V}"
@@ -187,7 +187,7 @@ get_install_commit() {
 get_latest_commit_from_github() {
     local sha
     sha=$(curl -fsSL --connect-timeout 2 --max-time 3 \
-        "https://api.github.com/repos/tw93/mole/commits/main" 2> /dev/null |
+        "https://api.github.com/repos/stwgabriel/moleui/commits/main" 2> /dev/null |
         grep '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]\{40\}"' | head -1 | sed -E 's/.*"sha"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
     echo "$sha"
 }
@@ -257,7 +257,7 @@ show_brand_banner() {
 ${GREEN} __  __       _      ${NC}
 ${GREEN}|  \/  | ___ | | ___ ${NC}
 ${GREEN}| |\/| |/ _ \| |/ _ \\${NC}
-${GREEN}| |  | | (_) | |  __/${NC}  ${BLUE}https://github.com/tw93/mole${NC}
+${GREEN}| |  | | (_) | |  __/${NC}  ${BLUE}https://github.com/stwgabriel/moleui${NC}
 ${GREEN}|_|  |_|\___/|_|\___|${NC}  ${GREEN}${MOLE_TAGLINE}${NC}
 
 EOF
@@ -409,7 +409,7 @@ update_mole() {
         echo "${download_label%...}"
     fi
 
-    local installer_url="https://raw.githubusercontent.com/tw93/mole/main/install.sh"
+    local installer_url="https://raw.githubusercontent.com/stwgabriel/moleui/main/install.sh"
     local tmp_installer
     tmp_installer="$(mktemp_file)" || {
         log_error "Update failed"

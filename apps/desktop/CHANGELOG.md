@@ -1,6 +1,10 @@
 # Desktop App Changelog
 
-## [Unreleased]
+## [0.3.0] - 2026-05-06
+
+### Changed
+- **Rebrand**: Renamed all user-facing "Mole" references to "Moleui" across the desktop app, README, and UI copy for consistent product identity
+- **Version**: Bumped desktop app to `0.3.0` and root workspace to `1.35.0` (aligning with CLI tag `V1.35.0`)
 
 ### Added
 - **Uninstall Feature**: Complete integration with CLI uninstall workflow
