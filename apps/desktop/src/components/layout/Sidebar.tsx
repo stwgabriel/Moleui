@@ -55,12 +55,12 @@ export function Sidebar({ currentPage, onPageChange, onCollapseChange, isExpande
       {/* Navigation - Centered Vertically */}
       <nav className="flex-1 flex flex-col justify-center space-y-2" aria-label="Main navigation">
         <NavItem
-          page="smartcare"
-          icon="Sparkles"
-          label="Smart Care"
-          isActive={currentPage === 'smartcare'}
+          page="mymac"
+          icon="Computer"
+          label="My Mac"
+          isActive={currentPage === 'mymac'}
           isExpanded={isExpanded}
-          onClick={() => onPageChange('smartcare')}
+          onClick={() => onPageChange('mymac')}
         />
         <NavItem
           page="clean"
@@ -93,14 +93,6 @@ export function Sidebar({ currentPage, onPageChange, onCollapseChange, isExpande
           isActive={currentPage === 'analyze'}
           isExpanded={isExpanded}
           onClick={() => onPageChange('analyze')}
-        />
-        <NavItem
-          page="status"
-          icon="Activity"
-          label="Status"
-          isActive={currentPage === 'status'}
-          isExpanded={isExpanded}
-          onClick={() => onPageChange('status')}
         />
       </nav>
 

@@ -1322,6 +1322,7 @@ main() {
     # Parse flags and collect app name arguments
     local -a app_name_args=()
     local list_mode=0
+    local auto_confirm=0
     for arg in "$@"; do
         case "$arg" in
             "--help" | "-h")
@@ -1339,6 +1340,9 @@ main() {
                 ;;
             "--list")
                 list_mode=1
+                ;;
+            "--yes" | "-y")
+                auto_confirm=1
                 ;;
             "--whitelist")
                 echo "Unknown uninstall option: $arg"
@@ -1412,12 +1416,16 @@ main() {
         done
 
         printf '\n'
-        printf "Proceed with uninstallation? [y/N] "
-        local confirm
-        read -r confirm
-        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-            echo "Aborted."
-            return 0
+        if [[ $auto_confirm -eq 0 ]]; then
+            printf "Proceed with uninstallation? [y/N] "
+            local confirm
+            read -r confirm
+            if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+                echo "Aborted."
+                return 0
+            fi
+        else
+            echo "Auto-confirming uninstallation (--yes flag provided)"
         fi
 
         batch_uninstall_applications

@@ -11,7 +11,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
     const baseStyles = 'rounded-xl transition-all duration-normal ease-smooth';
 
     const variants = {
-      default: 'bg-surface shadow-md border border-white/30',
+      default: 'bg-surface border-white/30',
       elevated: 'glass-elevated',
       glass: 'glass-surface',
     };

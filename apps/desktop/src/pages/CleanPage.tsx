@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Search, Sparkles, Trash2, Check, ArrowLeft } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, Sparkles, Trash2, Check, ArrowLeft, X, Clock, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -8,6 +8,22 @@ import { formatBytes, stripAnsi, parseSizeToBytes } from '@/utils/format';
 import type { PageConfig, CleanCategory } from '@/types';
 
 type Stage = 'idle' | 'scanning' | 'results' | 'cleaning' | 'complete';
+
+interface LogEntry {
+  text: string;
+  timestamp: number;
+  type: 'info' | 'success' | 'error';
+}
+
+interface TimelineStage {
+  id: string;
+  name: string;
+  status: 'pending' | 'active' | 'complete' | 'error';
+  items: string[];
+  size?: number;
+  startTime?: number;
+  endTime?: number;
+}
 
 const config: PageConfig = {
   title: 'Clean',
@@ -43,7 +59,16 @@ export function CleanPage() {
   const [categories, setCategories] = useState<CleanCategory[]>([]);
   const [totalSize, setTotalSize] = useState(0);
   const [cleanedSize, setCleanedSize] = useState(0);
-  const [currentOperation, setCurrentOperation] = useState('');
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [timeline, setTimeline] = useState<TimelineStage[]>([]);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new logs arrive
+  useEffect(() => {
+    if (logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs]);
 
   useEffect(() => {
     return () => {
@@ -54,21 +79,128 @@ export function CleanPage() {
     };
   }, []);
 
+  const stopScan = async () => {
+    addLog('Stopping scan...', 'info');
+    const result = await window.moleDesktop.clean.kill();
+    if (result.ok) {
+      addLog('Scan stopped by user', 'error');
+    }
+  };
+
+  const stopCleaning = async () => {
+    addLog('Stopping cleanup...', 'info');
+    const result = await window.moleDesktop.clean.kill();
+    if (result.ok) {
+      addLog('Cleanup stopped by user', 'error');
+    }
+  };
+
+  const addLog = (text: string, type: LogEntry['type'] = 'info') => {
+    const cleanText = stripAnsi(text).trim();
+    if (cleanText) {
+      const logEntry = { text: cleanText, timestamp: Date.now(), type };
+      setLogs((prev) => [...prev, logEntry]);
+      
+      // Log to browser console with timestamp
+      const timestamp = new Date().toLocaleTimeString();
+      const prefix = `[Mole Clean ${timestamp}]`;
+      
+      if (type === 'error') {
+        console.error(prefix, cleanText);
+      } else if (type === 'success') {
+        console.log(`%c${prefix} ${cleanText}`, 'color: #10b981; font-weight: bold');
+      } else {
+        console.log(prefix, cleanText);
+      }
+    }
+  };
+
+  const parseTimelineFromLog = (text: string) => {
+    const cleanText = stripAnsi(text).trim();
+    
+    // Detect section headers (→ or ▸)
+    const sectionMatch = cleanText.match(/[→▸]\s+(.+?)$/);
+    if (sectionMatch) {
+      const sectionName = sectionMatch[1].trim();
+      
+      setTimeline((prev) => {
+        // Mark previous stage as complete
+        const updated = prev.map((stage) =>
+          stage.status === 'active' ? { ...stage, status: 'complete' as const, endTime: Date.now() } : stage
+        );
+        
+        // Add new stage or update existing
+        const existingIndex = updated.findIndex((s) => s.name === sectionName);
+        if (existingIndex >= 0) {
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            status: 'active',
+            startTime: Date.now(),
+          };
+          return updated;
+        }
+        
+        return [
+          ...updated,
+          {
+            id: `stage-${Date.now()}`,
+            name: sectionName,
+            status: 'active',
+            items: [],
+            startTime: Date.now(),
+          },
+        ];
+      });
+      return;
+    }
+
+    // Detect completed items (✓ or ✔)
+    if (cleanText.includes('✓') || cleanText.includes('✔')) {
+      const sizeMatch = cleanText.match(/(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)/i);
+      let itemSize = 0;
+      
+      if (sizeMatch) {
+        const value = parseFloat(sizeMatch[1]);
+        const unit = sizeMatch[2];
+        itemSize = parseSizeToBytes(value, unit);
+      }
+
+      setTimeline((prev) => {
+        const activeIndex = prev.findIndex((s) => s.status === 'active');
+        if (activeIndex >= 0) {
+          const updated = [...prev];
+          updated[activeIndex] = {
+            ...updated[activeIndex],
+            items: [...updated[activeIndex].items, cleanText],
+            size: (updated[activeIndex].size || 0) + itemSize,
+          };
+          return updated;
+        }
+        return prev;
+      });
+    }
+  };
+
   const startScan = async () => {
     setStage('scanning');
     setCategories([]);
     setTotalSize(0);
+    setLogs([]);
+    setTimeline([]);
 
     const outputBuffer: string[] = [];
 
+    addLog('Starting system scan...', 'info');
+
     window.moleDesktop.clean.onStdout((text) => {
       outputBuffer.push(text);
-      const cleanText = stripAnsi(text);
-      setCurrentOperation(cleanText.trim());
+      addLog(text, 'info');
+      parseTimelineFromLog(text);
     });
 
     window.moleDesktop.clean.onStderr((text) => {
       console.error('Clean stderr:', text);
+      addLog(text, 'error');
     });
 
     try {
@@ -77,14 +209,20 @@ export function CleanPage() {
       if (result.ok) {
         const parsedCategories = parseFinalResults(outputBuffer.join(''));
         setCategories(parsedCategories);
-        setTotalSize(parsedCategories.reduce((sum, cat) => sum + cat.size, 0));
+        const total = parsedCategories.reduce((sum, cat) => sum + cat.size, 0);
+        setTotalSize(total);
+        addLog(`Scan complete! Found ${formatBytes(total)} of cleanable data`, 'success');
         setStage('results');
-      } else {
+      } else if (result.killed) {
+        addLog('Scan was cancelled', 'error');
         setStage('idle');
-        setCurrentOperation(`Scan failed: ${result.stderr}`);
+      } else {
+        addLog(`Scan failed: ${result.stderr}`, 'error');
+        setStage('idle');
       }
     } catch (error) {
       console.error('Clean scan error:', error);
+      addLog(`Error: ${error}`, 'error');
       setStage('idle');
     } finally {
       window.moleDesktop.clean.removeListeners();
@@ -94,10 +232,14 @@ export function CleanPage() {
   const startCleaning = async () => {
     setStage('cleaning');
     setCleanedSize(0);
+    setLogs([]);
+    setTimeline([]);
+
+    addLog('Starting cleanup operation...', 'info');
 
     window.moleDesktop.clean.onStdout((text) => {
-      const cleanText = stripAnsi(text);
-      setCurrentOperation(cleanText.trim());
+      addLog(text, 'info');
+      parseTimelineFromLog(text);
 
       const sizeMatch = text.match(/(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)/i);
       if (sizeMatch) {
@@ -108,17 +250,28 @@ export function CleanPage() {
       }
     });
 
+    window.moleDesktop.clean.onStderr((text) => {
+      console.error('Clean stderr:', text);
+      addLog(text, 'error');
+    });
+
     try {
       const result = await window.moleDesktop.clean.execute({ dryRun: false });
 
       if (result.ok) {
         setCleanedSize(totalSize);
+        addLog(`Cleanup complete! Freed ${formatBytes(totalSize)}`, 'success');
         setStage('complete');
+      } else if (result.killed) {
+        addLog('Cleanup was cancelled', 'error');
+        setStage('results');
       } else {
+        addLog('Cleanup failed', 'error');
         setStage('results');
       }
     } catch (error) {
       console.error('Clean error:', error);
+      addLog(`Error: ${error}`, 'error');
       setStage('results');
     } finally {
       window.moleDesktop.clean.removeListeners();
@@ -189,7 +342,8 @@ export function CleanPage() {
     setCategories([]);
     setTotalSize(0);
     setCleanedSize(0);
-    setCurrentOperation('');
+    setLogs([]);
+    setTimeline([]);
   };
 
   if (stage === 'idle') {
@@ -198,9 +352,9 @@ export function CleanPage() {
 
   if (stage === 'scanning') {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center space-y-6">
-          <div className="flex justify-center">
+      <div className="h-full flex flex-col p-8">
+        <div className="mb-6 text-center">
+          <div className="flex justify-center mb-4">
             <div className="relative">
               <Spinner size="lg" />
               <Search className="absolute inset-0 m-auto w-6 h-6 text-accent-primary" />
@@ -208,10 +362,131 @@ export function CleanPage() {
           </div>
           <h2 className="text-2xl font-semibold text-text-primary">Scanning System...</h2>
           <p className="text-text-secondary">Analyzing selected categories for cleanable files</p>
-          <div className="w-64 h-2 bg-surface rounded-full overflow-hidden mx-auto">
-            <div className="h-full bg-accent-primary rounded-full animate-pulse" style={{ width: '60%' }} />
-          </div>
         </div>
+
+        <div className="flex-1 flex gap-4 overflow-hidden mb-6">
+          {/* Timeline View */}
+          <Card variant="glass" className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+            <h3 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Scan Progress
+            </h3>
+            <div className="space-y-4">
+              {timeline.map((stage, index) => (
+                <div key={stage.id} className="relative">
+                  {/* Timeline connector */}
+                  {index < timeline.length - 1 && (
+                    <div className="absolute left-4 top-10 bottom-0 w-0.5 bg-gradient-to-b from-accent-primary/30 to-transparent" />
+                  )}
+                  
+                  <div className="flex gap-3">
+                    {/* Status icon */}
+                    <div className="relative z-10">
+                      {stage.status === 'active' && (
+                        <div className="w-8 h-8 rounded-full bg-accent-primary/20 flex items-center justify-center">
+                          <Loader2 className="w-4 h-4 text-accent-primary animate-spin" />
+                        </div>
+                      )}
+                      {stage.status === 'complete' && (
+                        <div className="w-8 h-8 rounded-full bg-accent-success/20 flex items-center justify-center">
+                          <CheckCircle2 className="w-4 h-4 text-accent-success" />
+                        </div>
+                      )}
+                      {stage.status === 'error' && (
+                        <div className="w-8 h-8 rounded-full bg-accent-danger/20 flex items-center justify-center">
+                          <AlertCircle className="w-4 h-4 text-accent-danger" />
+                        </div>
+                      )}
+                      {stage.status === 'pending' && (
+                        <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center">
+                          <Clock className="w-4 h-4 text-text-tertiary" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Stage content */}
+                    <div className="flex-1 pb-4">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="font-semibold text-text-primary">{stage.name}</h4>
+                        {stage.size && stage.size > 0 && (
+                          <span className="text-xs font-mono text-accent-primary">
+                            {formatBytes(stage.size)}
+                          </span>
+                        )}
+                      </div>
+                      
+                      {stage.items.length > 0 && (
+                        <div className="space-y-1 mt-2">
+                          {stage.items.slice(-3).map((item, i) => (
+                            <div key={i} className="text-xs text-text-secondary font-mono">
+                              {item}
+                            </div>
+                          ))}
+                          {stage.items.length > 3 && (
+                            <div className="text-xs text-text-tertiary italic">
+                              +{stage.items.length - 3} more items
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {stage.status === 'active' && stage.items.length === 0 && (
+                        <div className="text-xs text-text-tertiary italic">Scanning...</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              {timeline.length === 0 && (
+                <div className="text-center text-text-tertiary py-8">
+                  <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Initializing scan...</p>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Console Log Display */}
+          <Card variant="glass" className="flex-1 p-4 overflow-hidden flex flex-col">
+            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/10">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                <div className="w-3 h-3 rounded-full bg-green-500/80" />
+              </div>
+              <span className="text-xs font-mono text-text-tertiary ml-2">mole clean --dry-run</span>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs space-y-1">
+              {logs.map((log, index) => (
+                <div
+                  key={index}
+                  className={`${
+                    log.type === 'error'
+                      ? 'text-red-400'
+                      : log.type === 'success'
+                        ? 'text-green-400'
+                        : 'text-text-secondary'
+                  }`}
+                >
+                  <span className="text-text-tertiary opacity-50 mr-2">
+                    {new Date(log.timestamp).toLocaleTimeString()}
+                  </span>
+                  {log.text}
+                </div>
+              ))}
+              {logs.length === 0 && (
+                <div className="text-text-tertiary opacity-50">Initializing scan...</div>
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </Card>
+        </div>
+
+        {/* Stop Button */}
+        <Button variant="secondary" icon={X} onClick={stopScan}>
+          Stop Scan
+        </Button>
       </div>
     );
   }
@@ -290,26 +565,154 @@ export function CleanPage() {
     const progress = totalSize > 0 ? (cleanedSize / totalSize) * 100 : 0;
 
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center space-y-6 max-w-md">
-          <div className="flex justify-center">
+      <div className="h-full flex flex-col p-8">
+        <div className="mb-6 text-center">
+          <div className="flex justify-center mb-4">
             <div className="relative">
               <Spinner size="lg" />
               <Trash2 className="absolute inset-0 m-auto w-6 h-6 text-accent-primary" />
             </div>
           </div>
           <h2 className="text-2xl font-semibold text-text-primary">Cleaning...</h2>
-          <p className="text-text-secondary">{currentOperation}</p>
-          <div className="w-full h-2 bg-surface rounded-full overflow-hidden">
-            <div
-              className="h-full bg-accent-primary rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
+          <div className="mt-4 max-w-md mx-auto">
+            <div className="w-full h-2 bg-surface rounded-full overflow-hidden mb-2">
+              <div
+                className="h-full bg-accent-primary rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-sm text-text-tertiary">
+              {formatBytes(cleanedSize)} of {formatBytes(totalSize)} ({Math.round(progress)}%)
+            </p>
           </div>
-          <p className="text-sm text-text-tertiary">
-            {formatBytes(cleanedSize)} of {formatBytes(totalSize)}
-          </p>
         </div>
+
+        <div className="flex-1 flex gap-4 overflow-hidden mb-6">
+          {/* Timeline View */}
+          <Card variant="glass" className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+            <h3 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
+              <Trash2 className="w-4 h-4" />
+              Cleanup Progress
+            </h3>
+            <div className="space-y-4">
+              {timeline.map((stage, index) => (
+                <div key={stage.id} className="relative">
+                  {/* Timeline connector */}
+                  {index < timeline.length - 1 && (
+                    <div className="absolute left-4 top-10 bottom-0 w-0.5 bg-gradient-to-b from-accent-primary/30 to-transparent" />
+                  )}
+                  
+                  <div className="flex gap-3">
+                    {/* Status icon */}
+                    <div className="relative z-10">
+                      {stage.status === 'active' && (
+                        <div className="w-8 h-8 rounded-full bg-accent-primary/20 flex items-center justify-center">
+                          <Loader2 className="w-4 h-4 text-accent-primary animate-spin" />
+                        </div>
+                      )}
+                      {stage.status === 'complete' && (
+                        <div className="w-8 h-8 rounded-full bg-accent-success/20 flex items-center justify-center">
+                          <CheckCircle2 className="w-4 h-4 text-accent-success" />
+                        </div>
+                      )}
+                      {stage.status === 'error' && (
+                        <div className="w-8 h-8 rounded-full bg-accent-danger/20 flex items-center justify-center">
+                          <AlertCircle className="w-4 h-4 text-accent-danger" />
+                        </div>
+                      )}
+                      {stage.status === 'pending' && (
+                        <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center">
+                          <Clock className="w-4 h-4 text-text-tertiary" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Stage content */}
+                    <div className="flex-1 pb-4">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="font-semibold text-text-primary">{stage.name}</h4>
+                        {stage.size && stage.size > 0 && (
+                          <span className="text-xs font-mono text-accent-success">
+                            {formatBytes(stage.size)}
+                          </span>
+                        )}
+                      </div>
+                      
+                      {stage.items.length > 0 && (
+                        <div className="space-y-1 mt-2">
+                          {stage.items.slice(-3).map((item, i) => (
+                            <div key={i} className="text-xs text-text-secondary font-mono">
+                              {item}
+                            </div>
+                          ))}
+                          {stage.items.length > 3 && (
+                            <div className="text-xs text-text-tertiary italic">
+                              +{stage.items.length - 3} more items
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {stage.status === 'active' && stage.items.length === 0 && (
+                        <div className="text-xs text-text-tertiary italic">Cleaning...</div>
+                      )}
+                      
+                      {stage.startTime && stage.endTime && (
+                        <div className="text-xs text-text-tertiary mt-1">
+                          Completed in {((stage.endTime - stage.startTime) / 1000).toFixed(1)}s
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              {timeline.length === 0 && (
+                <div className="text-center text-text-tertiary py-8">
+                  <Trash2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Initializing cleanup...</p>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Console Log Display */}
+          <Card variant="glass" className="flex-1 p-4 overflow-hidden flex flex-col">
+            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/10">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                <div className="w-3 h-3 rounded-full bg-green-500/80" />
+              </div>
+              <span className="text-xs font-mono text-text-tertiary ml-2">mole clean</span>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs space-y-1">
+              {logs.map((log, index) => (
+                <div
+                  key={index}
+                  className={`${
+                    log.type === 'error'
+                      ? 'text-red-400'
+                      : log.type === 'success'
+                        ? 'text-green-400'
+                        : 'text-text-secondary'
+                  }`}
+                >
+                  <span className="text-text-tertiary opacity-50 mr-2">
+                    {new Date(log.timestamp).toLocaleTimeString()}
+                  </span>
+                  {log.text}
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
+          </Card>
+        </div>
+
+        {/* Stop Button */}
+        <Button variant="secondary" icon={X} onClick={stopCleaning}>
+          Stop Cleaning
+        </Button>
       </div>
     );
   }

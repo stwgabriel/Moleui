@@ -1,51 +1,33 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  color-scheme: light;
-  
-  /* Backgrounds */
-  --bg-primary: #f0f4f8;
-  --bg-secondary: #e1e8ed;
-  --bg-glass: rgba(255, 255, 255, 0.7);
-  
-  /* Surfaces */
-  --surface: rgba(255, 255, 255, 0.85);
-  --surface-elevated: rgba(255, 255, 255, 0.95);
-  --surface-hover: rgba(255, 255, 255, 0.6);
-  
-  /* Text */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-tertiary: #94a3b8;
-  
-  /* Accent Colors */
-  --accent-primary: #3b82f6;
-  --accent-primary-hover: #2563eb;
-  --accent-secondary: #8b5cf6;
-  --accent-success: #10b981;
-  --accent-warning: #f59e0b;
-  --accent-danger: #ef4444;
-  
-  /* Semantic Colors */
-  --clean-color: #06b6d4;
-  --optimize-color: #8b5cf6;
-  --analyze-color: #ec4899;
-  --status-color: #10b981;
-  
-  /* Spacing */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
-  
-  /* Border Radius */
+/* ============================================================
+   THEME — Tailwind v4 CSS-based configuration
+   Colors use inline values; dark mode overrides via @variant
+   ============================================================ */
+
+@theme {
+  /* --- Light mode base colors (overridden in dark via CSS vars) --- */
+  --color-bg-primary: #f0f4f8;
+  --color-bg-secondary: #e1e8ed;
+  --color-bg-glass: rgba(255, 255, 255, 0.7);
+  --color-surface: rgba(255, 255, 255, 0.85);
+  --color-surface-elevated: rgba(255, 255, 255, 0.95);
+  --color-surface-hover: rgba(255, 255, 255, 0.6);
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+  --color-accent-primary: #3b82f6;
+  --color-accent-primary-hover: #2563eb;
+  --color-accent-secondary: #8b5cf6;
+  --color-accent-success: #10b981;
+  --color-accent-warning: #f59e0b;
+  --color-accent-danger: #ef4444;
+  --color-clean: #06b6d4;
+  --color-optimize: #8b5cf6;
+  --color-analyze: #ec4899;
+  --color-status: #10b981;
+
+  /* --- Border Radius --- */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -53,60 +35,58 @@
   --radius-2xl: 24px;
   --radius-3xl: 28px;
   --radius-full: 9999px;
-  
-  /* Shadows */
+
+  /* --- Shadows --- */
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
   --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.16), 0 8px 24px rgba(0, 0, 0, 0.12);
   --shadow-2xl: 0 32px 80px rgba(0, 0, 0, 0.20), 0 12px 32px rgba(0, 0, 0, 0.16);
   --shadow-accent: 0 8px 24px rgba(59, 130, 246, 0.25), 0 4px 8px rgba(59, 130, 246, 0.15);
-  
-  /* Animation */
+
+  /* --- Easing --- */
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
   --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  
+
+  /* --- Durations --- */
   --duration-instant: 100ms;
   --duration-fast: 150ms;
   --duration-normal: 250ms;
   --duration-slow: 400ms;
   --duration-slower: 600ms;
-  
-  /* Typography */
-  --font-primary: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+  /* --- Font families --- */
+  --font-family-primary: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-family-mono: 'SF Mono', 'Monaco', 'Cascadia Code', 'Consolas', monospace;
+
+  /* --- Backdrop blur --- */
+  --blur-glass: 20px;
 }
+
+/* ============================================================
+   DARK MODE — override theme color tokens
+   ============================================================ */
 
 @media (prefers-color-scheme: dark) {
   :root {
-    color-scheme: dark;
-    
-    /* Backgrounds */
-    --bg-primary: #0f172a;
-    --bg-secondary: #1e293b;
-    --bg-glass: rgba(30, 41, 59, 0.7);
-    
-    /* Surfaces */
-    --surface: rgba(30, 41, 59, 0.8);
-    --surface-elevated: rgba(51, 65, 85, 0.9);
-    --surface-hover: rgba(51, 65, 85, 0.6);
-    
-    /* Text */
-    --text-primary: #f8fafc;
-    --text-secondary: #cbd5e1;
-    --text-tertiary: #64748b;
-    
-    /* Accent Colors (adjusted for dark mode) */
-    --accent-primary: #60a5fa;
-    --accent-primary-hover: #3b82f6;
-    --accent-secondary: #a78bfa;
-    --accent-success: #34d399;
-    --accent-warning: #fbbf24;
-    --accent-danger: #f87171;
-    
-    /* Shadows (darker for dark mode) */
+    --color-bg-primary: #0f172a;
+    --color-bg-secondary: #1e293b;
+    --color-bg-glass: rgba(30, 41, 59, 0.7);
+    --color-surface: rgba(30, 41, 59, 0.8);
+    --color-surface-elevated: rgba(51, 65, 85, 0.9);
+    --color-surface-hover: rgba(51, 65, 85, 0.6);
+    --color-text-primary: #f8fafc;
+    --color-text-secondary: #cbd5e1;
+    --color-text-tertiary: #64748b;
+    --color-accent-primary: #60a5fa;
+    --color-accent-primary-hover: #3b82f6;
+    --color-accent-secondary: #a78bfa;
+    --color-accent-success: #34d399;
+    --color-accent-warning: #fbbf24;
+    --color-accent-danger: #f87171;
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.5);
     --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.6);
@@ -116,7 +96,36 @@
   }
 }
 
-/* Accessibility: Reduced Motion */
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   ACCESSIBILITY
+   ============================================================ */
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -127,273 +136,219 @@
   }
 }
 
-@layer base {
-  * {
-    @apply box-border;
-  }
+/* ============================================================
+   GLASSMORPHISM COMPONENTS
+   ============================================================ */
 
-  html,
-  body {
-    @apply m-0 min-h-full overflow-hidden;
-  }
+.glass-surface {
+  background: var(--color-surface);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
 
-  body {
-    @apply min-h-screen bg-bg-primary text-text-primary font-primary antialiased;
+.glass-elevated {
+  background: var(--color-surface-elevated);
+  backdrop-filter: blur(24px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* ============================================================
+   WINDOW DRAG REGION (Electron)
+   ============================================================ */
+
+.window-drag-region {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1rem;
+  z-index: 20;
+  -webkit-app-region: drag;
+}
+
+/* ============================================================
+   SPINNER ANIMATIONS
+   ============================================================ */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  border-width: 4px;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--color-accent-primary) 30%, transparent);
+  border-top-color: var(--color-accent-primary);
+  border-radius: 9999px;
+  animation: spin 1s linear infinite;
+}
+
+.small-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-width: 2px;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--color-accent-primary) 30%, transparent);
+  border-top-color: var(--color-accent-primary);
+  border-radius: 9999px;
+  animation: spin 1s linear infinite;
+}
+
+/* ============================================================
+   ICON ANIMATIONS
+   ============================================================ */
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.05); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Bounce Gentle - Clean */
+@keyframes bounce-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+.animate-bounce-gentle {
+  animation: bounce-gentle 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Spin Slow - Analyze */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+/* Pulse Glow - Optimize */
+@keyframes pulse-glow-icon {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.12));
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.08);
+    filter: drop-shadow(0 12px 32px rgba(139, 92, 246, 0.4));
   }
 }
 
-@layer components {
-  /* Glassmorphism effect */
-  .glass-surface {
-    @apply bg-surface backdrop-blur-glass;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 
-      0 8px 32px rgba(0, 0, 0, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  }
+.animate-pulse-glow {
+  animation: pulse-glow-icon 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
 
-  .glass-elevated {
-    @apply bg-surface-elevated backdrop-blur-glass;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    box-shadow: 
-      0 20px 60px rgba(0, 0, 0, 0.12),
-      0 8px 24px rgba(0, 0, 0, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  }
+/* Pulse Wave - Status */
+@keyframes pulse-wave {
+  0%, 50%, 100% { opacity: 1; transform: scale(1); }
+  25%, 75% { opacity: 0.85; transform: scale(1.03); }
+}
 
-  /* Window drag region */
-  .window-drag-region {
-    @apply fixed top-0 left-0 right-0 h-4 z-20;
-    -webkit-app-region: drag;
-  }
+.animate-pulse-wave {
+  animation: pulse-wave 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
 
-  /* Spinner animation */
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
+/* Shake - Uninstall */
+@keyframes shake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px) rotate(-2deg); }
+  20%, 40%, 60%, 80% { transform: translateX(4px) rotate(2deg); }
+}
 
-  .spinner {
-    @apply w-8 h-8 border-4 border-accent-primary/30 border-t-accent-primary rounded-full;
-    animation: spin 1s linear infinite;
-  }
+.animate-shake {
+  animation: shake 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
 
-  .small-spinner {
-    @apply w-4 h-4 border-2 border-accent-primary/30 border-t-accent-primary rounded-full;
-    animation: spin 1s linear infinite;
+/* Sparkle - Smart Care */
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.12));
   }
-
-  /* Pulse animation for live indicators */
-  @keyframes pulse-glow {
-    0%, 100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.8;
-      transform: scale(1.05);
-    }
+  25% {
+    opacity: 0.8;
+    transform: scale(1.05) rotate(5deg);
+    filter: drop-shadow(0 12px 32px rgba(245, 158, 11, 0.4));
   }
-
-  .pulse-glow {
-    animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  50% {
+    opacity: 1;
+    transform: scale(1.1) rotate(0deg);
+    filter: drop-shadow(0 16px 40px rgba(245, 158, 11, 0.5));
   }
-
-  /* Custom icon animations for start screens */
-  
-  /* Bounce Gentle - Clean (Trash2) */
-  @keyframes bounce-gentle {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-12px);
-    }
-  }
-
-  .animate-bounce-gentle {
-    animation: bounce-gentle 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  }
-
-  /* Spin Slow - Analyze (PieChart) */
-  @keyframes spin-slow {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .animate-spin-slow {
-    animation: spin-slow 8s linear infinite;
-  }
-
-  /* Pulse Glow - Optimize (Zap) */
-  @keyframes pulse-glow-icon {
-    0%, 100% {
-      opacity: 1;
-      transform: scale(1);
-      filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.12));
-    }
-    50% {
-      opacity: 0.7;
-      transform: scale(1.08);
-      filter: drop-shadow(0 12px 32px rgba(139, 92, 246, 0.4));
-    }
-  }
-
-  .animate-pulse-glow {
-    animation: pulse-glow-icon 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  }
-
-  /* Pulse Wave - Status (Activity) */
-  @keyframes pulse-wave {
-    0%, 100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    25% {
-      opacity: 0.85;
-      transform: scale(1.03);
-    }
-    50% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    75% {
-      opacity: 0.85;
-      transform: scale(1.03);
-    }
-  }
-
-  .animate-pulse-wave {
-    animation: pulse-wave 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  }
-
-  /* Shake - Uninstall (PackageX) */
-  @keyframes shake {
-    0%, 100% {
-      transform: translateX(0) rotate(0deg);
-    }
-    10%, 30%, 50%, 70%, 90% {
-      transform: translateX(-4px) rotate(-2deg);
-    }
-    20%, 40%, 60%, 80% {
-      transform: translateX(4px) rotate(2deg);
-    }
-  }
-
-  .animate-shake {
-    animation: shake 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  }
-
-  /* Sparkle - Smart Care (Sparkles) */
-  @keyframes sparkle {
-    0%, 100% {
-      opacity: 1;
-      transform: scale(1) rotate(0deg);
-      filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.12));
-    }
-    25% {
-      opacity: 0.8;
-      transform: scale(1.05) rotate(5deg);
-      filter: drop-shadow(0 12px 32px rgba(245, 158, 11, 0.4));
-    }
-    50% {
-      opacity: 1;
-      transform: scale(1.1) rotate(0deg);
-      filter: drop-shadow(0 16px 40px rgba(245, 158, 11, 0.5));
-    }
-    75% {
-      opacity: 0.8;
-      transform: scale(1.05) rotate(-5deg);
-      filter: drop-shadow(0 12px 32px rgba(245, 158, 11, 0.4));
-    }
-  }
-
-  .animate-sparkle {
-    animation: sparkle 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  }
-
-  /* Slide transitions */
-  @keyframes slide-in-up {
-    from {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  @keyframes slide-out-up {
-    from {
-      transform: translateY(0);
-      opacity: 1;
-    }
-    to {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-
-  @keyframes slide-in-down {
-    from {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  @keyframes slide-out-down {
-    from {
-      transform: translateY(0);
-      opacity: 1;
-    }
-    to {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-
-  .slide-in-up {
-    animation: slide-in-up 400ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .slide-out-up {
-    animation: slide-out-up 400ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .slide-in-down {
-    animation: slide-in-down 400ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .slide-out-down {
-    animation: slide-out-down 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  75% {
+    opacity: 0.8;
+    transform: scale(1.05) rotate(-5deg);
+    filter: drop-shadow(0 12px 32px rgba(245, 158, 11, 0.4));
   }
 }
 
-@layer utilities {
-  /* Custom scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    @apply w-2;
-  }
+.animate-sparkle {
+  animation: sparkle 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
 
-  .custom-scrollbar::-webkit-scrollbar-track {
-    @apply bg-transparent;
-  }
+/* ============================================================
+   SLIDE TRANSITIONS
+   ============================================================ */
 
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-slate-400/30 rounded-full;
-  }
+@keyframes slide-in-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
 
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-400/50;
-  }
+@keyframes slide-out-up {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(-100%); opacity: 0; }
+}
+
+@keyframes slide-in-down {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-out-down {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(100%); opacity: 0; }
+}
+
+.slide-in-up { animation: slide-in-up 400ms cubic-bezier(0.4, 0, 0.2, 1); }
+.slide-out-up { animation: slide-out-up 400ms cubic-bezier(0.4, 0, 0.2, 1); }
+.slide-in-down { animation: slide-in-down 400ms cubic-bezier(0.4, 0, 0.2, 1); }
+.slide-out-down { animation: slide-out-down 400ms cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ============================================================
+   CUSTOM SCROLLBAR
+   ============================================================ */
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
 }
