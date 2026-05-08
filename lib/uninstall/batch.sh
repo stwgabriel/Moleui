@@ -521,7 +521,7 @@ batch_uninstall_applications() {
     [[ $app_total -gt 1 ]] && app_text="apps"
 
     echo ""
-    
+
     # Skip confirmation in dry-run mode or when not interactive (e.g., called from GUI)
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN${NC} - Would remove ${app_total} ${app_text}, ${size_display}"
@@ -529,7 +529,7 @@ batch_uninstall_applications() {
         _restore_uninstall_traps
         return 0
     fi
-    
+
     # Only prompt for confirmation in interactive mode
     if [[ -t 0 && -t 1 ]]; then
         local removal_note="Remove ${app_total} ${app_text}"
