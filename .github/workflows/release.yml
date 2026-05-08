@@ -83,7 +83,7 @@ jobs:
           node-version: '22'
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@735343b667d3e6f658f44e0aa1aab55a4c3a025e # v2
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
