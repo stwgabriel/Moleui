@@ -264,7 +264,7 @@ jobs:
           fi
 
           ./scripts/update_homebrew_tap_cask.sh \
-            --cask /tmp/homebrew-tap/Casks/moleui.rb \
+            --cask /tmp/homebrew-tap/Casks/moleui-desktop.rb \
             --tag "${TAG}" \
             --version "${DESKTOP_VERSION}" \
             --arm-sha "${DESKTOP_ARM_SHA}" \
@@ -274,12 +274,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet -- Casks/moleui.rb; then
+          if git diff --quiet -- Casks/moleui-desktop.rb; then
             echo "No Homebrew cask changes to push"
             exit 0
           fi
 
-          git add Casks/moleui.rb
+          git add Casks/moleui-desktop.rb
           git commit -m "moleui desktop ${DESKTOP_VERSION}" -m "Automated release via GitHub Actions"
           git push origin HEAD:main
 

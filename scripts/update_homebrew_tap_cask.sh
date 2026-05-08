@@ -67,7 +67,7 @@ fi
 
 # Generate the cask file
 cat > "$cask_path" << CASK
-cask "moleui" do
+cask "moleui-desktop" do
   version "${version}"
 
   on_arm do
