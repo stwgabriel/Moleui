@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.36.1] - 2026-05-08
+
+### Fixed
+- Fixed release workflow Bun setup so the tag-triggered desktop build can run and publish Homebrew assets.
+
 ## [1.36.0] - 2026-05-08
 
 ### Added

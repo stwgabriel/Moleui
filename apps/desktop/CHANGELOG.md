@@ -1,5 +1,10 @@
 # Desktop App Changelog
 
+## [0.4.1] - 2026-05-08
+
+### Fixed
+- Fixed release workflow setup for desktop artifact builds and Homebrew cask deployment.
+
 ## [0.4.0] - 2026-05-08
 
 ### Added
