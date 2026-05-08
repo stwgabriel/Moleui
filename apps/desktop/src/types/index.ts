@@ -9,9 +9,12 @@ export interface MoleResult {
 }
 
 export interface MoleDesktopAPI {
+  openExternal: (url: string) => Promise<{ ok: boolean; message?: string }>;
   runStatus: () => Promise<MoleResult>;
   uninstall: {
     list: () => Promise<MoleResult>;
+    killList: () => Promise<{ ok: boolean; message: string }>;
+    getAppIcon: (appPath: string) => Promise<{ ok: boolean; icon: string; message?: string }>;
     dryRun: (appNames: string[]) => Promise<MoleResult>;
     execute: (appNames: string[]) => Promise<MoleResult>;
     onListStdout: (callback: (data: string) => void) => void;

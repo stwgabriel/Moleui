@@ -7,6 +7,9 @@
 ehthumbs.db
 Thumbs.db
 
+#AI
+/agents
+
 # Desktop
 node_modules
 .mole-runtime

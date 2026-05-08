@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Zap, Check, X, Clock, CheckCircle2, Loader2, AlertCircle, Gauge, Eye, Play } from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { stripAnsi } from '@/utils/format';
+import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig } from '@/types';
 
 type Stage = 'idle' | 'previewing' | 'preview-results' | 'optimizing' | 'complete' | 'error';
@@ -54,11 +55,11 @@ const config: PageConfig = {
 };
 
 export function OptimizePage() {
-  const [stage, setStage] = useState<Stage>('idle');
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [previewLogs, setPreviewLogs] = useState<LogEntry[]>([]);
-  const [timeline, setTimeline] = useState<TimelineStage[]>([]);
-  const [previewTimeline, setPreviewTimeline] = useState<TimelineStage[]>([]);
+  const [stage, setStage] = usePersistentState<Stage>('mole-optimize-stage', 'idle');
+  const [logs, setLogs] = usePersistentState<LogEntry[]>('mole-optimize-logs', []);
+  const [previewLogs, setPreviewLogs] = usePersistentState<LogEntry[]>('mole-optimize-preview-logs', []);
+  const [timeline, setTimeline] = usePersistentState<TimelineStage[]>('mole-optimize-timeline', []);
+  const [previewTimeline, setPreviewTimeline] = usePersistentState<TimelineStage[]>('mole-optimize-preview-timeline', []);
   const logEndRef = useRef<HTMLDivElement>(null);
   const previewLogEndRef = useRef<HTMLDivElement>(null);
 

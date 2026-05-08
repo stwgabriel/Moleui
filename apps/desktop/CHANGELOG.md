@@ -1,5 +1,22 @@
 # Desktop App Changelog
 
+## [0.4.0] - 2026-05-08
+
+### Added
+- Added a splash screen and bundled desktop brand assets.
+- Added persistent page state for clean, optimize, and uninstall workflows.
+- Added app icon loading, scan cancellation, search, sort, and richer app selection controls to uninstall.
+- Added the user menu with GitHub, donation, and settings entry points.
+
+### Changed
+- Refined the desktop UI layout, colors, and page interactions across My Mac, Clean, Analyze, Optimize, Status, and Uninstall.
+- Archived legacy desktop renderer files and documentation now replaced by the React app flow.
+- Updated the packaged macOS app name and artifact names for npm and Homebrew cask distribution.
+
+### Fixed
+- Fixed desktop IPC/type coverage for external links and uninstall icon/list controls.
+- Fixed release asset naming so Homebrew and npm can resolve the generated desktop downloads.
+
 ## [0.3.0] - 2026-05-06
 
 ### Changed

@@ -53,6 +53,7 @@ function onStreamWithLog(channel, callback) {
 contextBridge.exposeInMainWorld("moleDesktop", {
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
   runStatus: () => invokeWithLog("mole:status", "status --json"),
+  openExternal: (url) => ipcRenderer.invoke("mole:open-external", url),
 
   // Clean command
   clean: {
@@ -105,6 +106,8 @@ contextBridge.exposeInMainWorld("moleDesktop", {
   // Uninstall command
   uninstall: {
     list: () => invokeWithLog("mole:uninstall:list", "uninstall --list"),
+    killList: () => invokeWithLog("mole:uninstall:list:kill", "uninstall:list:kill"),
+    getAppIcon: (appPath) => ipcRenderer.invoke("mole:uninstall:app-icon", appPath),
     dryRun: (appNames) => invokeWithLog("mole:uninstall:dry-run", "uninstall --dry-run", appNames),
     execute: (appNames) => invokeWithLog("mole:uninstall:execute", "uninstall --yes", appNames),
 

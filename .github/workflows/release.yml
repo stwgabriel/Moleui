@@ -54,24 +54,95 @@ jobs:
           path: bin/*-darwin-*
           retention-days: 1
 
+  build-desktop:
+    name: Build Desktop
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+            dist_script: dist:arm64
+            artifact_name: desktop-arm64
+          - os: macos-latest
+            arch: x64
+            dist_script: dist:amd64
+            artifact_name: desktop-amd64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4
+        with:
+          node-version: '22'
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44e0aa1aab55a4c3a025e # v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Extract versions
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#V}
+          DESKTOP_VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "desktop_version=$DESKTOP_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build Desktop App
+        run: |
+          cd apps/desktop
+          bun run ${{ matrix.dist_script }}
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            apps/desktop/dist-electron/*.dmg
+            apps/desktop/dist-electron/*.zip
+            apps/desktop/dist-electron/*.blockmap
+          retention-days: 1
+
   release:
     name: Publish Release
-    needs: build
+    needs: [build, build-desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       attestations: write
       id-token: write
     steps:
-      - name: Download all artifacts
+      - name: Download CLI artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: bin
           pattern: binaries-*
           merge-multiple: true
 
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: desktop
+          pattern: desktop-*
+          merge-multiple: true
+
       - name: Display structure of downloaded files
-        run: ls -R bin/
+        run: |
+          echo "=== CLI artifacts ==="
+          ls -R bin/
+          echo "=== Desktop artifacts ==="
+          ls -R desktop/
 
       - name: Generate release checksums
         run: |
@@ -81,6 +152,15 @@ jobs:
             echo "No release assets found"
             exit 1
           fi
+
+          # Also include desktop artifacts in checksums
+          for f in ../desktop/*.dmg ../desktop/*.zip; do
+            if [[ -f "$f" ]]; then
+              cp "$f" .
+              release_files+=("$(basename "$f")")
+            fi
+          done
+
           sha256sum "${release_files[@]}" > SHA256SUMS
           cat SHA256SUMS
 
@@ -91,6 +171,8 @@ jobs:
             bin/analyze-darwin-*
             bin/status-darwin-*
             bin/binaries-darwin-*.tar.gz
+            bin/*.dmg
+            bin/*.zip
             bin/SHA256SUMS
 
       - name: Create Release
@@ -137,7 +219,7 @@ jobs:
             exit 1
           fi
 
-          git clone "https://x-access-token:${PAT_TOKEN}@github.com/tw93/homebrew-tap.git" /tmp/homebrew-tap
+          git clone "https://x-access-token:${PAT_TOKEN}@github.com/stwgabriel/homebrew-tap.git" /tmp/homebrew-tap
           ./scripts/update_homebrew_tap_formula.sh \
             --formula /tmp/homebrew-tap/Formula/mole.rb \
             --tag "${TAG}" \
@@ -156,6 +238,49 @@ jobs:
 
           git add Formula/mole.rb
           git commit -m "mole ${VERSION}" -m "Automated release via GitHub Actions"
+          git push origin HEAD:main
+
+      - name: Update Homebrew Cask (Personal Tap)
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          TAG: ${{ steps.tag_version.outputs.tag }}
+          VERSION: ${{ steps.tag_version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          curl -fsSL -o /tmp/SHA256SUMS "https://github.com/stwgabriel/moleui/releases/download/${TAG}/SHA256SUMS"
+          DESKTOP_VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          DESKTOP_ARM_SHA=$(awk -v file="Moleui.Desktop-${DESKTOP_VERSION}-arm64.zip" '$2 == file { print $1 }' /tmp/SHA256SUMS)
+          DESKTOP_AMD_SHA=$(awk -v file="Moleui.Desktop-${DESKTOP_VERSION}-x64.zip" '$2 == file { print $1 }' /tmp/SHA256SUMS)
+
+          if [[ -z "$DESKTOP_ARM_SHA" || -z "$DESKTOP_AMD_SHA" ]]; then
+            echo "Desktop checksums not found in SHA256SUMS, skipping cask update"
+            exit 0
+          fi
+
+          # Clone tap if not already cloned
+          if [[ ! -d /tmp/homebrew-tap ]]; then
+            git clone "https://x-access-token:${PAT_TOKEN}@github.com/stwgabriel/homebrew-tap.git" /tmp/homebrew-tap
+          fi
+
+          ./scripts/update_homebrew_tap_cask.sh \
+            --cask /tmp/homebrew-tap/Casks/moleui.rb \
+            --tag "${TAG}" \
+            --version "${DESKTOP_VERSION}" \
+            --arm-sha "${DESKTOP_ARM_SHA}" \
+            --amd-sha "${DESKTOP_AMD_SHA}"
+
+          cd /tmp/homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- Casks/moleui.rb; then
+            echo "No Homebrew cask changes to push"
+            exit 0
+          fi
+
+          git add Casks/moleui.rb
+          git commit -m "moleui desktop ${DESKTOP_VERSION}" -m "Automated release via GitHub Actions"
           git push origin HEAD:main
 
       - name: Update Homebrew formula (Official Core)
@@ -178,5 +303,47 @@ jobs:
           echo "✓ Homebrew formulae updated successfully"
           echo "  Version: ${{ steps.tag_version.outputs.version }}"
           echo "  Tag: ${{ steps.tag_version.outputs.tag }}"
-          echo "  Personal tap: tw93/homebrew-tap"
+          echo "  Personal tap: stwgabriel/homebrew-tap"
+          echo "  Personal cask: stwgabriel/homebrew-tap (moleui desktop)"
           echo "  Official core: Homebrew/homebrew-core (PR created)"
+
+  publish-npm:
+    name: Publish to npm
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#V}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Prepare npm package
+        run: |
+          cd packages/npm
+          node -e "
+            const pkg = JSON.parse(require('fs').readFileSync('package.json', 'utf8'));
+            pkg.version = '${{ steps.version.outputs.version }}';
+            pkg.moleuiDesktopVersion = require('../../apps/desktop/package.json').version;
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Publish to npm
+        run: |
+          cd packages/npm
+          npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

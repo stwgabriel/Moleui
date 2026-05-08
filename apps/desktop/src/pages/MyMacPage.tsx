@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Settings, RefreshCw, ArrowRight } from 'lucide-react';
+import { ArrowRight, Github, Heart, PanelLeftOpen, Search, Settings, Sparkles, Trash2, UserCircle, X, Zap } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip, YAxis, PieChart, Pie, Cell } from 'recharts';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { formatBytes } from '@/utils/format';
-import { cn } from '@/utils/cn';
 import type { PageId, SystemMetrics } from '@/types';
 import { getMyMacMetrics, setMyMacMetrics } from '@/utils/storage';
 
 const MAX_HISTORY = 30;
+const GITHUB_REPO_URL = 'https://github.com/stwgabriel/moleui';
+const GITHUB_FUNDING_URL = 'https://github.com/sponsors/stwgabriel';
 
 interface HistoryPoint {
   t: number;
@@ -20,6 +21,8 @@ interface HistoryPoint {
 
 interface MyMacPageProps {
   onNavigate: (page: PageId) => void;
+  isSidebarExpanded: boolean;
+  onExpandSidebar: () => void;
 }
 
 function getHealthColor(score: number): string {
@@ -35,35 +38,19 @@ function getHeatColor(percent: number): string {
   return '#ef4444';
 }
 
-function GlowProgress({ value, size = 'md' }: { value: number; size?: 'sm' | 'md' | 'lg' }) {
-  const percentage = Math.min(Math.max(value, 0), 100);
-  const heightClass = size === 'sm' ? 'h-1.5' : size === 'lg' ? 'h-3' : 'h-2';
-  const color = getHeatColor(percentage);
-  
-  return (
-    <div className={cn('w-full bg-gray-200 rounded-full overflow-hidden', heightClass)}>
-      <div
-        className="h-full rounded-full transition-all duration-500 ease-smooth"
-        style={{ 
-          width: `${percentage}%`,
-          backgroundColor: color,
-          boxShadow: `0 0 8px ${color}40, 0 0 16px ${color}20`
-        }}
-      />
-    </div>
-  );
-}
 
-export function MyMacPage({ onNavigate }: MyMacPageProps) {
+export function MyMacPage({ onNavigate, isSidebarExpanded, onExpandSidebar }: MyMacPageProps) {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh] = useState(true);
+  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const mountedRef = useRef(true);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
 
   const fetchMetrics = useCallback(async (isInitial = false) => {
-    if (!isInitial) setIsRefreshing(true);
+    void isInitial;
     
     try {
       setError(null);
@@ -100,12 +87,29 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
         setError(err instanceof Error ? err.message : 'Unknown error');
         console.error('Failed to fetch metrics:', err);
       }
-    } finally {
-      if (mountedRef.current) {
-        setIsRefreshing(false);
-      }
     }
   }, []);
+
+  useEffect(() => {
+    if (!isSettingsMenuOpen) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!settingsMenuRef.current?.contains(event.target as Node)) {
+        setIsSettingsMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isSettingsMenuOpen]);
+
+  const openExternal = async (url: string) => {
+    setIsSettingsMenuOpen(false);
+    const result = await window.moleDesktop?.openExternal(url);
+    if (!result?.ok) {
+      console.error(result?.message || 'Failed to open external link');
+    }
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -125,7 +129,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
     
     loadCachedData();
     
-    let interval: NodeJS.Timeout | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
     if (autoRefresh) {
       interval = setInterval(() => fetchMetrics(false), 2000);
     }
@@ -138,37 +142,82 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
   return (
     <div className="h-full">
-      <div className="max-w-7xl mx-auto p-6 h-full flex flex-col">
+      <div className="w-full p-6 h-full flex flex-col">
         <div className="flex items-center justify-between mb-4 shrink-0">
           <div className="flex items-center gap-4">
-            <button
-              className="p-2 rounded-xl glass-surface hover:bg-surface-hover transition-all duration-200 hover:scale-105 active:scale-95"
-              aria-label="Settings"
-              title="Settings (Coming soon)"
-              onClick={() => console.log('Settings clicked')}
-            >
-              <Settings className="w-5 h-5 text-text-secondary" />
-            </button>
+            {!isSidebarExpanded && (
+              <button
+                onClick={onExpandSidebar}
+                className="p-2 rounded-xl glass-surface hover:bg-surface-hover transition-all duration-200 hover:scale-105 active:scale-95"
+                aria-label="Expand sidebar"
+              >
+                <PanelLeftOpen className="w-5 h-5 text-text-secondary" />
+              </button>
+            )}
             <div>
               <h1 className="text-3xl font-bold text-text-primary">My Mac</h1>
               <p className="text-text-secondary mt-0.5">System dashboard and quick access</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {isRefreshing && (
-              <RefreshCw className="w-4 h-4 text-text-tertiary animate-spin" />
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className={cn(autoRefresh && 'text-accent-primary')}
-              title="Auto-refresh every 2 seconds"
+          <div className="relative" ref={settingsMenuRef}>
+            <button
+              className="flex items-center gap-2 rounded-full glass-surface px-3 py-2 hover:bg-surface-hover transition-all duration-200 hover:scale-105 active:scale-95"
+              aria-label="Open user menu"
+              aria-expanded={isSettingsMenuOpen}
+              onClick={() => setIsSettingsMenuOpen(open => !open)}
             >
-              {autoRefresh ? 'Live' : 'Paused'}
-            </Button>
+              <UserCircle className="w-5 h-5 text-text-primary" />
+              <span className="text-sm font-medium text-text-secondary">Menu</span>
+            </button>
+
+            {isSettingsMenuOpen && (
+              <div className="absolute right-0 top-full z-30 mt-2 w-52 overflow-hidden rounded-2xl border border-white/10 bg-white/95 p-2 shadow-2xl backdrop-blur-xl">
+                <button
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100"
+                  onClick={() => {
+                    setIsSettingsMenuOpen(false);
+                    setIsSettingsModalOpen(true);
+                  }}
+                >
+                  <Settings className="w-4 h-4 text-gray-500" />
+                  Settings
+                </button>
+                <button
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100"
+                  onClick={() => openExternal(GITHUB_REPO_URL)}
+                >
+                  <Github className="w-4 h-4 text-gray-500" />
+                  GitHub
+                </button>
+                <button
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100"
+                  onClick={() => openExternal(GITHUB_FUNDING_URL)}
+                >
+                  <Heart className="w-4 h-4 text-gray-500" />
+                  Donate
+                </button>
+              </div>
+            )}
           </div>
         </div>
+
+        {isSettingsModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-6 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">Settings</h2>
+                <button
+                  className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                  aria-label="Close settings"
+                  onClick={() => setIsSettingsModalOpen(false)}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="mt-8 min-h-32 rounded-2xl border border-dashed border-gray-200" />
+            </div>
+          </div>
+        )}
 
         {error && !metrics ? (
           <Card className="p-8 text-center">
@@ -228,11 +277,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', boxShadow: '0 4px 16px rgba(6,182,212,0.35)' }}
               onClick={() => onNavigate('clean')}
             >
-              <div>
+              <Sparkles className="pointer-events-none absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 text-white/15 transition-all duration-500 ease-spring group-hover:scale-125 group-hover:rotate-12 group-hover:text-white/25 group-hover:animate-pulse" />
+              <div className="relative z-10">
                 <div className="text-xl font-bold text-white">Clean</div>
                 <div className="text-xs text-cyan-100 mt-0.5">Free up space</div>
               </div>
-              <div className="flex items-center justify-end">
+              <div className="relative z-10 flex items-center justify-end">
                 <ArrowRight className="w-4 h-4 text-white/70 transition-transform duration-200 group-hover:translate-x-1" />
               </div>
               {/* shine */}
@@ -245,11 +295,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', boxShadow: '0 4px 16px rgba(239,68,68,0.35)' }}
               onClick={() => onNavigate('uninstall')}
             >
-              <div>
+              <Trash2 className="pointer-events-none absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 text-white/15 transition-all duration-500 ease-spring group-hover:scale-125 group-hover:-rotate-12 group-hover:text-white/25 group-hover:animate-pulse" />
+              <div className="relative z-10">
                 <div className="text-xl font-bold text-white">Uninstall</div>
                 <div className="text-xs text-red-100 mt-0.5">Remove apps</div>
               </div>
-              <div className="flex items-center justify-end">
+              <div className="relative z-10 flex items-center justify-end">
                 <ArrowRight className="w-4 h-4 text-white/70 transition-transform duration-200 group-hover:translate-x-1" />
               </div>
               <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%)' }} />
@@ -349,11 +400,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', boxShadow: '0 4px 16px rgba(139,92,246,0.35)' }}
               onClick={() => onNavigate('optimize')}
             >
-              <div>
+              <Zap className="pointer-events-none absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 text-white/15 transition-all duration-500 ease-spring group-hover:scale-125 group-hover:rotate-12 group-hover:text-white/25 group-hover:animate-pulse" />
+              <div className="relative z-10">
                 <div className="text-xl font-bold text-white">Optimize</div>
                 <div className="text-xs text-violet-100 mt-0.5">Boost performance</div>
               </div>
-              <div className="flex items-center justify-end">
+              <div className="relative z-10 flex items-center justify-end">
                 <ArrowRight className="w-4 h-4 text-white/70 transition-transform duration-200 group-hover:translate-x-1" />
               </div>
               <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%)' }} />
@@ -365,11 +417,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               style={{ background: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)', boxShadow: '0 4px 16px rgba(236,72,153,0.35)' }}
               onClick={() => onNavigate('analyze')}
             >
-              <div>
+              <Search className="pointer-events-none absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 text-white/15 transition-all duration-500 ease-spring group-hover:scale-125 group-hover:-rotate-12 group-hover:text-white/25 group-hover:animate-pulse" />
+              <div className="relative z-10">
                 <div className="text-xl font-bold text-white">Analyze</div>
                 <div className="text-xs text-pink-100 mt-0.5">Disk insights</div>
               </div>
-              <div className="flex items-center justify-end">
+              <div className="relative z-10 flex items-center justify-end">
                 <ArrowRight className="w-4 h-4 text-white/70 transition-transform duration-200 group-hover:translate-x-1" />
               </div>
               <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%)' }} />

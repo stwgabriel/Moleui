@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { 
   CheckCircle, AlertTriangle, Loader, ArrowRight, X, Trash2,
   Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown
@@ -6,6 +6,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StartScreen } from '@/components/common/StartScreen';
+import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig } from '@/types';
 
 type Stage = 'idle' | 'loading' | 'selection' | 'confirmation' | 'executing' | 'results' | 'error';
@@ -17,6 +18,7 @@ interface App {
   uninstall_name: string;
   path: string;
   size: string;
+  icon?: string;
 }
 
 interface CommandResult {
@@ -27,26 +29,71 @@ interface CommandResult {
   stderr: string;
 }
 
+function AppIcon({ app }: { app: App }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [app.icon]);
+
+  if (app.icon && !failed) {
+    return (
+      <img
+        src={app.icon}
+        alt=""
+        className="w-10 h-10 rounded-xl object-contain flex-shrink-0"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="w-10 h-10 rounded-xl bg-accent-primary/10 flex items-center justify-center flex-shrink-0">
+      <Package className="w-5 h-5 text-accent-primary" />
+    </div>
+  );
+}
+
 export function UninstallPage() {
-  const [stage, setStage] = useState<Stage>('idle');
-  const [apps, setApps] = useState<App[]>([]);
-  const [selectedApps, setSelectedApps] = useState<Set<number>>(new Set());
-  const [scanStatus, setScanStatus] = useState('');
-  const [dryRunOutput, setDryRunOutput] = useState<string[]>([]);
-  const [executeOutput, setExecuteOutput] = useState<string[]>([]);
-  const [error, setError] = useState<{ title: string; message: string } | null>(null);
-  const [result, setResult] = useState<CommandResult | null>(null);
-  const [showAllApps, setShowAllApps] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'name' | 'size'>('size');
+  const [stage, setStage] = usePersistentState<Stage>('mole-uninstall-stage', 'idle');
+  const [apps, setApps] = usePersistentState<App[]>('mole-uninstall-apps', []);
+  const [selectedAppIndexes, setSelectedAppIndexes] = usePersistentState<number[]>('mole-uninstall-selected-apps', []);
+  const [scanStatus, setScanStatus] = usePersistentState('mole-uninstall-scan-status', '');
+  const [dryRunOutput, setDryRunOutput] = usePersistentState<string[]>('mole-uninstall-dry-run-output', []);
+  const [executeOutput, setExecuteOutput] = usePersistentState<string[]>('mole-uninstall-execute-output', []);
+  const [error, setError] = usePersistentState<{ title: string; message: string } | null>('mole-uninstall-error', null);
+  const [result, setResult] = usePersistentState<CommandResult | null>('mole-uninstall-result', null);
+  const [showAllApps, setShowAllApps] = usePersistentState('mole-uninstall-show-all-apps', false);
+  const [analysisProgress, setAnalysisProgress] = usePersistentState('mole-uninstall-analysis-progress', 0);
+  const [searchQuery, setSearchQuery] = usePersistentState('mole-uninstall-search-query', '');
+  const [sortBy, setSortBy] = usePersistentState<'name' | 'size'>('mole-uninstall-sort-by', 'size');
+  const selectedApps = new Set(selectedAppIndexes);
   
   const dryRunListRef = useRef<HTMLDivElement>(null);
   const executeListRef = useRef<HTMLDivElement>(null);
+  const scanCancelledRef = useRef(false);
+  const iconLoadRunRef = useRef(0);
+
+  useEffect(() => {
+    if (stage === 'loading') {
+      setStage('idle');
+      setScanStatus('');
+    }
+  }, []);
 
   // Setup stream listeners
   useEffect(() => {
     if (!window.moleDesktop) return;
+
+    // List scan listeners
+    const handleListStdout = () => {
+      setScanStatus('Preparing application icons...');
+    };
+
+    const handleListStderr = (data: string) => {
+      const cleanLine = stripAnsi(data).trim();
+      if (cleanLine) setScanStatus(cleanLine);
+    };
 
     // Dry-run listeners
     const handleDryRunStdout = (data: string) => {
@@ -76,6 +123,8 @@ export function UninstallPage() {
       setExecuteOutput(prev => [...prev, data]);
     };
 
+    window.moleDesktop.uninstall.onListStdout(handleListStdout);
+    window.moleDesktop.uninstall.onListStderr(handleListStderr);
     window.moleDesktop.uninstall.onDryRunStdout(handleDryRunStdout);
     window.moleDesktop.uninstall.onDryRunStderr(handleDryRunStderr);
     window.moleDesktop.uninstall.onExecuteStdout(handleExecuteStdout);
@@ -86,13 +135,28 @@ export function UninstallPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (stage !== 'selection' || apps.length === 0 || !apps.some(app => app.path && !app.icon)) return;
+
+    iconLoadRunRef.current += 1;
+    loadAppIcons(apps, iconLoadRunRef.current);
+  }, [stage]);
+
   const startScan = async () => {
+    scanCancelledRef.current = false;
+    iconLoadRunRef.current += 1;
     setStage('loading');
     setScanStatus('Scanning applications...');
 
     try {
       const moleDesktop = (window as any).moleDesktop;
       const result = await moleDesktop.uninstall.list();
+
+      if (scanCancelledRef.current || result.killed) {
+        setStage('idle');
+        setScanStatus('');
+        return;
+      }
 
       if (!result.ok) {
         setError({
@@ -117,9 +181,6 @@ export function UninstallPage() {
           return;
         }
 
-        setScanStatus(`✓ Found ${parsedApps.length} applications`);
-        await new Promise(resolve => setTimeout(resolve, 800));
-
         setApps(parsedApps);
         setStage('selection');
       } catch (e: any) {
@@ -138,24 +199,63 @@ export function UninstallPage() {
     }
   };
 
+  const cancelScan = async () => {
+    scanCancelledRef.current = true;
+    iconLoadRunRef.current += 1;
+    setScanStatus('Cancelling scan...');
+    setStage('idle');
+    setScanStatus('');
+    try {
+      await (window as any).moleDesktop.uninstall.killList();
+    } catch (error) {
+      console.error('[UninstallPage] Failed to cancel scan:', error);
+    }
+  };
+
+  const loadAppIcons = async (appsToLoad: App[], runId: number) => {
+    const batchSize = 8;
+    for (let index = 0; index < appsToLoad.length; index += batchSize) {
+      if (iconLoadRunRef.current !== runId) return;
+
+      const batch = appsToLoad.slice(index, index + batchSize);
+      const icons = await Promise.all(batch.map(async app => {
+        if (app.icon) return { path: app.path, icon: app.icon };
+
+        try {
+          const result = await window.moleDesktop.uninstall.getAppIcon(app.path);
+          return result.ok && result.icon ? { path: app.path, icon: result.icon } : null;
+        } catch {
+          return null;
+        }
+      }));
+
+      if (iconLoadRunRef.current !== runId) return;
+
+      setApps(currentApps => currentApps.map(app => {
+        const match = icons.find(icon => icon?.path === app.path);
+        return match ? { ...app, icon: match.icon } : app;
+      }));
+    }
+  };
+
   const toggleApp = (index: number) => {
-    setSelectedApps(prev => {
+    setSelectedAppIndexes(prev => {
       const newSet = new Set(prev);
       if (newSet.has(index)) {
         newSet.delete(index);
       } else {
         newSet.add(index);
       }
-      return newSet;
+      return Array.from(newSet);
     });
   };
 
   const selectAll = () => {
-    setSelectedApps(new Set(apps.map((_, i) => i)));
+    setSelectedAppIndexes(apps.map((_, i) => i));
   };
 
   const deselectAll = () => {
-    setSelectedApps(new Set());
+    setSelectedAppIndexes([]);
   };
 
   const proceedToConfirmation = async () => {
@@ -233,9 +333,10 @@ export function UninstallPage() {
   };
 
   const reset = () => {
+    iconLoadRunRef.current += 1;
     setStage('idle');
     setApps([]);
-    setSelectedApps(new Set());
+    setSelectedAppIndexes([]);
     setScanStatus('');
     setDryRunOutput([]);
     setExecuteOutput([]);
@@ -441,7 +542,7 @@ export function UninstallPage() {
   if (stage === 'loading') {
     return (
       <div className="h-full flex flex-col items-center justify-center p-8">
-        <div className="text-center space-y-6">
+        <div className="w-full max-w-3xl text-center space-y-6">
           <div className="inline-flex p-6 rounded-full bg-accent-primary/10">
             <Loader className="w-12 h-12 text-accent-primary animate-spin" />
           </div>
@@ -459,6 +560,9 @@ export function UninstallPage() {
               <span className="text-sm text-text-secondary">{scanStatus}</span>
             </Card>
           )}
+          <Button variant="secondary" icon={X} onClick={cancelScan}>
+            Cancel
+          </Button>
         </div>
       </div>
     );
@@ -481,6 +585,13 @@ export function UninstallPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              <Button
+                variant="secondary"
+                icon={X}
+                onClick={reset}
+              >
+                Cancel
+              </Button>
               <Button
                 variant="secondary"
                 onClick={() => selectedApps.size === apps.length ? deselectAll() : selectAll()}
@@ -572,6 +683,7 @@ export function UninstallPage() {
                         className="w-5 h-5"
                         onClick={(e) => e.stopPropagation()}
                       />
+                      <AppIcon app={app} />
                       <div className="flex-1">
                         <div className="font-semibold text-text-primary">{app.name}</div>
                         <div className="text-sm text-text-tertiary">{app.path}</div>

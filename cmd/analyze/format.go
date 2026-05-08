@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tw93/mole/internal/units"
+	"github.com/stwgabriel/moleui/internal/units"
 )
 
 func displayPath(path string) string {

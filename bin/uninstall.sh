@@ -625,6 +625,7 @@ scan_applications() {
 
     # Pass 1: collect app paths and bundle IDs (no mdls).
     local -a app_data_tuples=()
+    local app_data_tuple_count=0
     local -a app_dirs=()
     local app_dir
     while IFS= read -r app_dir; do
@@ -697,10 +698,11 @@ scan_applications() {
         local uncached_app_path uncached_app_name uncached_app_mtime uncached_bundle_id uncached_display_name
         while IFS='|' read -r uncached_app_path uncached_app_name uncached_app_mtime uncached_bundle_id uncached_display_name; do
             app_data_tuples+=("${uncached_app_path}|${uncached_app_name}|${uncached_app_mtime}|${uncached_bundle_id}|${uncached_display_name}")
+            ((app_data_tuple_count++))
         done < "$uncached_rows_file"
     fi
 
-    if [[ ${#app_data_tuples[@]} -eq 0 && ! -s "$scan_raw_file" ]]; then
+    if [[ $app_data_tuple_count -eq 0 && ! -s "$scan_raw_file" ]]; then
         rm -f "$temp_file" "$scan_raw_file" "$merged_file" "$refresh_file" "$cache_snapshot_file" "$discovered_file" "$cached_rows_file" "$uncached_rows_file" "$scan_status_file" "${temp_file}.sorted" "$spinner_shown_file" 2> /dev/null || true
         [[ $cache_source_is_temp == true ]] && rm -f "$cache_source" 2> /dev/null || true
         restore_scan_int_trap
@@ -710,7 +712,7 @@ scan_applications() {
     fi
     # Pass 2: resolve display names in parallel.
     local app_count=0
-    local total_apps=${#app_data_tuples[@]}
+    local total_apps=$app_data_tuple_count
     local max_parallel
     max_parallel=$(get_optimal_parallel_jobs "io")
     if [[ $max_parallel -lt 8 ]]; then
@@ -769,7 +771,7 @@ scan_applications() {
     ) &
     spinner_pid=$!
 
-    for app_data_tuple in "${app_data_tuples[@]}"; do
+    for app_data_tuple in "${app_data_tuples[@]+"${app_data_tuples[@]}"}"; do
         ((app_count++))
         process_app_metadata "$app_data_tuple" "$scan_raw_file" &
         pids+=($!)
@@ -781,7 +783,7 @@ scan_applications() {
         fi
     done
 
-    for pid in "${pids[@]}"; do
+    for pid in "${pids[@]+"${pids[@]}"}"; do
         wait "$pid" 2> /dev/null
     done
 

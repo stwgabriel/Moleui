@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Search, Sparkles, Trash2, Check, ArrowLeft, X, Clock, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatBytes, stripAnsi, parseSizeToBytes } from '@/utils/format';
+import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig, CleanCategory } from '@/types';
 
 type Stage = 'idle' | 'scanning' | 'results' | 'cleaning' | 'complete';
@@ -55,20 +56,12 @@ const config: PageConfig = {
 };
 
 export function CleanPage() {
-  const [stage, setStage] = useState<Stage>('idle');
-  const [categories, setCategories] = useState<CleanCategory[]>([]);
-  const [totalSize, setTotalSize] = useState(0);
-  const [cleanedSize, setCleanedSize] = useState(0);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [timeline, setTimeline] = useState<TimelineStage[]>([]);
-  const logEndRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to bottom when new logs arrive
-  useEffect(() => {
-    if (logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [logs]);
+  const [stage, setStage] = usePersistentState<Stage>('mole-clean-stage', 'idle');
+  const [categories, setCategories] = usePersistentState<CleanCategory[]>('mole-clean-categories', []);
+  const [totalSize, setTotalSize] = usePersistentState('mole-clean-total-size', 0);
+  const [cleanedSize, setCleanedSize] = usePersistentState('mole-clean-cleaned-size', 0);
+  const [, setLogs] = usePersistentState<LogEntry[]>('mole-clean-logs', []);
+  const [timeline, setTimeline] = usePersistentState<TimelineStage[]>('mole-clean-timeline', []);
 
   useEffect(() => {
     return () => {
@@ -364,9 +357,9 @@ export function CleanPage() {
           <p className="text-text-secondary">Analyzing selected categories for cleanable files</p>
         </div>
 
-        <div className="flex-1 flex gap-4 overflow-hidden mb-6">
+        <div className="flex-1 overflow-hidden mb-6">
           {/* Timeline View */}
-          <Card variant="glass" className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+          <Card variant="glass" className="h-full p-6 overflow-y-auto custom-scrollbar">
             <h3 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
               <Clock className="w-4 h-4" />
               Scan Progress
@@ -409,7 +402,7 @@ export function CleanPage() {
                       <div className="flex items-center justify-between mb-1">
                         <h4 className="font-semibold text-text-primary">{stage.name}</h4>
                         {stage.size && stage.size > 0 && (
-                          <span className="text-xs font-mono text-accent-primary">
+                          <span className="text-xs text-accent-primary">
                             {formatBytes(stage.size)}
                           </span>
                         )}
@@ -418,7 +411,7 @@ export function CleanPage() {
                       {stage.items.length > 0 && (
                         <div className="space-y-1 mt-2">
                           {stage.items.slice(-3).map((item, i) => (
-                            <div key={i} className="text-xs text-text-secondary font-mono">
+                            <div key={i} className="text-xs text-text-secondary">
                               {item}
                             </div>
                           ))}
@@ -447,40 +440,6 @@ export function CleanPage() {
             </div>
           </Card>
 
-          {/* Console Log Display */}
-          <Card variant="glass" className="flex-1 p-4 overflow-hidden flex flex-col">
-            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/10">
-              <div className="flex gap-1.5">
-                <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                <div className="w-3 h-3 rounded-full bg-green-500/80" />
-              </div>
-              <span className="text-xs font-mono text-text-tertiary ml-2">mole clean --dry-run</span>
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs space-y-1">
-              {logs.map((log, index) => (
-                <div
-                  key={index}
-                  className={`${
-                    log.type === 'error'
-                      ? 'text-red-400'
-                      : log.type === 'success'
-                        ? 'text-green-400'
-                        : 'text-text-secondary'
-                  }`}
-                >
-                  <span className="text-text-tertiary opacity-50 mr-2">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>
-                  {log.text}
-                </div>
-              ))}
-              {logs.length === 0 && (
-                <div className="text-text-tertiary opacity-50">Initializing scan...</div>
-              )}
-              <div ref={logEndRef} />
-            </div>
-          </Card>
         </div>
 
         {/* Stop Button */}
@@ -525,7 +484,7 @@ export function CleanPage() {
           </Card>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 mb-6">
+        <div className="flex-1 overflow-y-auto overflow-x-visible custom-scrollbar space-y-3 mb-6">
           {categories.map((category, index) => (
             <Card key={index} variant="glass" hover className="p-4">
               <div className="flex items-center gap-4">
@@ -587,9 +546,9 @@ export function CleanPage() {
           </div>
         </div>
 
-        <div className="flex-1 flex gap-4 overflow-hidden mb-6">
+        <div className="flex-1 overflow-hidden mb-6">
           {/* Timeline View */}
-          <Card variant="glass" className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+          <Card variant="glass" className="h-full p-6 overflow-y-auto custom-scrollbar">
             <h3 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
               <Trash2 className="w-4 h-4" />
               Cleanup Progress
@@ -632,7 +591,7 @@ export function CleanPage() {
                       <div className="flex items-center justify-between mb-1">
                         <h4 className="font-semibold text-text-primary">{stage.name}</h4>
                         {stage.size && stage.size > 0 && (
-                          <span className="text-xs font-mono text-accent-success">
+                          <span className="text-xs text-accent-success">
                             {formatBytes(stage.size)}
                           </span>
                         )}
@@ -641,7 +600,7 @@ export function CleanPage() {
                       {stage.items.length > 0 && (
                         <div className="space-y-1 mt-2">
                           {stage.items.slice(-3).map((item, i) => (
-                            <div key={i} className="text-xs text-text-secondary font-mono">
+                            <div key={i} className="text-xs text-text-secondary">
                               {item}
                             </div>
                           ))}
@@ -676,37 +635,6 @@ export function CleanPage() {
             </div>
           </Card>
 
-          {/* Console Log Display */}
-          <Card variant="glass" className="flex-1 p-4 overflow-hidden flex flex-col">
-            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/10">
-              <div className="flex gap-1.5">
-                <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                <div className="w-3 h-3 rounded-full bg-green-500/80" />
-              </div>
-              <span className="text-xs font-mono text-text-tertiary ml-2">mole clean</span>
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs space-y-1">
-              {logs.map((log, index) => (
-                <div
-                  key={index}
-                  className={`${
-                    log.type === 'error'
-                      ? 'text-red-400'
-                      : log.type === 'success'
-                        ? 'text-green-400'
-                        : 'text-text-secondary'
-                  }`}
-                >
-                  <span className="text-text-tertiary opacity-50 mr-2">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>
-                  {log.text}
-                </div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          </Card>
         </div>
 
         {/* Stop Button */}

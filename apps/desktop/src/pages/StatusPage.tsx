@@ -6,8 +6,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Button } from '@/components/ui/Button';
 import { formatBytes } from '@/utils/format';
 import type { PageConfig, SystemMetrics } from '@/types';
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid } from 'recharts';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { AreaChart, Area, XAxis, YAxis, PieChart, Pie, Cell } from 'recharts';
 
 interface MetricHistory {
   timestamp: number;
@@ -196,7 +196,7 @@ const data = JSON.parse(result.stdout) as SystemMetrics;
                         <YAxis hide domain={[0, 100]} />
                         <ChartTooltip 
                           content={<ChartTooltipContent 
-                            formatter={(value: number) => [`${value.toFixed(1)}%`, '']}
+                            formatter={(value) => [`${Number(value).toFixed(1)}%`, '']}
                             labelFormatter={() => ''}
                           />}
                         />
@@ -302,7 +302,6 @@ const data = JSON.parse(result.stdout) as SystemMetrics;
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {metrics.disks.map((disk, index) => {
                     const usedPercent = disk.used_percent;
-                    const freePercent = 100 - usedPercent;
                     const chartData = [
                       { name: 'Used', value: disk.used, fill: 'hsl(var(--chart-1))' },
                       { name: 'Free', value: disk.total - disk.used, fill: 'hsl(var(--chart-3))' },
@@ -365,7 +364,7 @@ const data = JSON.parse(result.stdout) as SystemMetrics;
                             <YAxis hide domain={[0, 'auto']} />
                             <ChartTooltip 
                               content={<ChartTooltipContent 
-                                formatter={(value: number) => [`${value.toFixed(2)} MB/s`, '']}
+                            formatter={(value) => [`${Number(value).toFixed(2)} MB/s`, '']}
                                 labelFormatter={() => ''}
                               />}
                             />

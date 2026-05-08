@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   HardDrive, FolderOpen, File, BarChart3, Layers, Search,
   RefreshCw, X, ChevronRight, Home, Download,
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatBytes, stripAnsi } from '@/utils/format';
+import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig } from '@/types';
 
 type Stage = 'idle' | 'scanning' | 'results' | 'error';
@@ -70,16 +71,16 @@ const config: PageConfig = {
 };
 
 export function AnalyzePage() {
-  const [stage, setStage] = useState<Stage>('idle');
-  const [scanPath, setScanPath] = useState('/');
-  const [result, setResult] = useState<AnalyzeResult | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [currentFile, setCurrentFile] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'breakdown' | 'files'>('breakdown');
-  const [pathInput, setPathInput] = useState('/');
+  const [stage, setStage] = usePersistentState<Stage>('mole-analyze-stage', 'idle');
+  const [scanPath, setScanPath] = usePersistentState('mole-analyze-scan-path', '/');
+  const [result, setResult] = usePersistentState<AnalyzeResult | null>('mole-analyze-result', null);
+  const [progress, setProgress] = usePersistentState('mole-analyze-progress', 0);
+  const [currentFile, setCurrentFile] = usePersistentState('mole-analyze-current-file', '');
+  const [error, setError] = usePersistentState<string | null>('mole-analyze-error', null);
+  const [activeTab, setActiveTab] = usePersistentState<'breakdown' | 'files'>('mole-analyze-active-tab', 'breakdown');
+  const [pathInput, setPathInput] = usePersistentState('mole-analyze-path-input', '/');
   // 'start' = StartScreen, 'pick' = path picker, rest handled by stage
-  const [view, setView] = useState<'start' | 'pick'>('start');
+  const [view, setView] = usePersistentState<'start' | 'pick'>('mole-analyze-view', 'start');
 
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 

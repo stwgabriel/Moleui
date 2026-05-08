@@ -1,11 +1,15 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, nativeImage, nativeTheme, shell } from "electron";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const isDev = !app.isPackaged;
+const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-light.png");
+
+app.setName("Moleui Desktop");
 
 // Store active processes for cancellation
 const activeProcesses = new Map();
@@ -52,6 +56,7 @@ function runMole(args, options = {}) {
     const child = spawn(executable, args, {
       cwd: runtimeDir(),
       env: { ...process.env },
+      detached: process.platform !== "win32",
     });
 
     // Store process for cancellation if processId provided
@@ -62,6 +67,34 @@ function runMole(args, options = {}) {
     let stdout = "";
     let stderr = "";
     let killed = false;
+    let settled = false;
+
+    const killChild = () => {
+      if (child.killed) return;
+      try {
+        if (process.platform !== "win32" && child.pid) {
+          process.kill(-child.pid, "SIGTERM");
+        } else {
+          child.kill("SIGTERM");
+        }
+      } catch {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // Process may already be gone.
+        }
+      }
+    };
+
+    const timeout = options.timeoutMs
+      ? setTimeout(() => {
+          killed = true;
+          stderr += `\nProcess timed out after ${options.timeoutMs}ms`;
+          killChild();
+        }, options.timeoutMs)
+      : null;
+
+    child.__killMoleProcess = killChild;
 
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString();
@@ -84,6 +117,9 @@ function runMole(args, options = {}) {
     });
 
     child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
       if (options.processId) {
         activeProcesses.delete(options.processId);
       }
@@ -98,6 +134,9 @@ function runMole(args, options = {}) {
     });
 
     child.on("close", (exitCode) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
       if (options.processId) {
         activeProcesses.delete(options.processId);
       }
@@ -120,6 +159,40 @@ function runMole(args, options = {}) {
   });
 }
 
+let splashWindow;
+
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 400,
+    height: 300,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    icon: appIconPath,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const logoFile = nativeTheme.shouldUseDarkColors ? "molui-dark.png" : "molui-light.png";
+  const logoPath = isDev
+    ? path.join(__dirname, "public", "assets", "base", logoFile)
+    : path.join(__dirname, "dist", "assets", "base", logoFile);
+  const splashPath = isDev ? "splash.html" : path.join(__dirname, "dist", "splash.html");
+
+  splashWindow.loadFile(splashPath, {
+    query: {
+      logo: pathToFileURL(logoPath).href,
+    },
+  });
+
+  return splashWindow;
+}
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 960,
@@ -131,6 +204,7 @@ function createWindow() {
       x: 18,
       y: 20,
     },
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -138,17 +212,19 @@ function createWindow() {
     },
   });
 
-  // In development, load from Vite dev server
-  // In production, load from built files
-  const isDev = !app.isPackaged;
-  
   if (isDev) {
     window.loadURL('http://localhost:5173');
-    // Uncomment to open DevTools automatically
-    // window.webContents.openDevTools();
   } else {
     window.loadFile(path.join(__dirname, "dist", "index.html"));
   }
+
+  window.once("ready-to-show", () => {
+    if (splashWindow) {
+      splashWindow.close();
+      splashWindow = null;
+    }
+    window.show();
+  });
   
   return window;
 }
@@ -159,6 +235,8 @@ ipcMain.handle("mole:status", async () => runMole(["status", "--json"]));
 
 ipcMain.handle("mole:uninstall:list", async (event) => {
   return runMole(["uninstall", "--list"], {
+    processId: "uninstall:list",
+    timeoutMs: 60000,
     onStdout: (text) => {
       // Stream stdout to renderer
       event.sender.send("mole:uninstall:list:stdout", text);
@@ -168,6 +246,40 @@ ipcMain.handle("mole:uninstall:list", async (event) => {
       event.sender.send("mole:uninstall:list:stderr", text);
     }
   });
+});
+
+ipcMain.handle("mole:uninstall:list:kill", async () => {
+  const process = activeProcesses.get("uninstall:list");
+  if (process && !process.killed) {
+    if (process.__killMoleProcess) {
+      process.__killMoleProcess();
+    } else {
+      process.kill("SIGTERM");
+    }
+    return { ok: true, message: "Uninstall scan terminated" };
+  }
+  return { ok: false, message: "No active uninstall scan" };
+});
+
+ipcMain.handle("mole:uninstall:app-icon", async (_event, appPath) => {
+  if (!appPath || typeof appPath !== "string") {
+    return { ok: false, icon: "", message: "Invalid app path" };
+  }
+
+  try {
+    const fileIcon = await Promise.race([
+      app.getFileIcon(appPath, { size: "normal" }),
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error("Icon lookup timed out")), 1500);
+      }),
+    ]);
+    if (fileIcon.isEmpty()) {
+      return { ok: false, icon: "", message: "No icon found" };
+    }
+    return { ok: true, icon: fileIcon.toDataURL() };
+  } catch (error) {
+    return { ok: false, icon: "", message: error.message };
+  }
 });
 
 ipcMain.handle("mole:uninstall:dry-run", async (event, appNames) => {
@@ -274,11 +386,35 @@ ipcMain.handle("mole:runtime", async () => ({
   executable: moleExecutable(),
 }));
 
+ipcMain.handle("mole:open-external", async (_event, url) => {
+  const allowedUrls = new Set([
+    "https://github.com/stwgabriel/moleui",
+    "https://github.com/sponsors/stwgabriel",
+  ]);
+
+  if (!allowedUrls.has(url)) {
+    return { ok: false, message: "URL is not allowed" };
+  }
+
+  await shell.openExternal(url);
+  return { ok: true };
+});
+
 app.whenReady().then(() => {
+  if (process.platform === "darwin") {
+    const appIcon = nativeImage.createFromPath(appIconPath);
+
+    if (!appIcon.isEmpty()) {
+      app.dock.setIcon(appIcon);
+    }
+  }
+
+  createSplashWindow();
   mainWindow = createWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
+      createSplashWindow();
       mainWindow = createWindow();
     }
   });

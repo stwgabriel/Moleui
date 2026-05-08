@@ -1,15 +1,17 @@
 {
   "name": "@repo/desktop",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Moleui desktop application built with React",
   "main": "main.js",
   "scripts": {
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
     "dev": "node scripts/prepare-runtime.mjs && concurrently \"vite\" \"sleep 2 && electron .\"",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && cp splash.html dist/ && cp -r public/assets dist/",
     "preview": "vite preview",
-    "dist": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg",
+    "dist": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip",
+    "dist:arm64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --arm64",
+    "dist:amd64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --x64",
     "type-check": "tsc --noEmit",
     "diagnose": "node scripts/diagnose.mjs"
   },
@@ -45,8 +47,9 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "dev.tw93.moleui.desktop",
+    "appId": "stwgabriel.moleui",
     "productName": "Moleui Desktop",
+    "icon": "public/assets/base/molui-light.png",
     "directories": {
       "output": "dist-electron"
     },
@@ -54,6 +57,8 @@
       "dist/**/*",
       "main.js",
       "preload.js",
+      "splash.html",
+      "public/assets/base/**/*",
       "package.json"
     ],
     "extraResources": [
@@ -65,9 +70,10 @@
     "mac": {
       "category": "public.app-category.utilities",
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ]
     },
-    "artifactName": "${productName}-${version}-${arch}.${ext}"
+    "artifactName": "Moleui.Desktop-${version}-${arch}.${ext}"
   }
 }

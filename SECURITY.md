@@ -6,7 +6,7 @@ Moleui is a local system maintenance tool. It includes high-risk operations such
 
 Please report suspected security issues privately.
 
-- Email: `hitw93@gmail.com`
+- Email: `security@stwgabriel.com`
 - Subject line: `Moleui security report`
 
 Do not open a public GitHub issue for an unpatched vulnerability.

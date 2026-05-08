@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { PanelLeftOpen } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { cn } from '@/utils/cn';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -18,10 +17,8 @@ const PAGE_ORDER: PageId[] = ['home', 'mymac', 'clean', 'uninstall', 'optimize',
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageId>('home');
-  const [previousPage, setPreviousPage] = useState<PageId>('home');
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [animationDirection, setAnimationDirection] = useState<'up' | 'down'>('down');
-  const [isAnimating, setIsAnimating] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Check IndexedDB on startup to determine initial page
@@ -49,8 +46,6 @@ function App() {
     
     // Determine animation direction based on page order
     setAnimationDirection(newIndex > currentIndex ? 'down' : 'up');
-    setPreviousPage(currentPage);
-    setIsAnimating(true);
     setCurrentPage(newPage);
     
     // Mark home page as seen if navigating away from home
@@ -63,31 +58,26 @@ function App() {
     }
   };
 
-  useEffect(() => {
-    if (isAnimating) {
-      // Reset animation state after animation completes
-      const timer = setTimeout(() => {
-        setIsAnimating(false);
-      }, 400); // Match animation duration
-      return () => clearTimeout(timer);
-    }
-  }, [isAnimating]);
-
-  const renderPage = (pageId: PageId, isExiting: boolean = false) => {
-    const animationClass = isExiting
+  const renderPage = (pageId: PageId) => {
+    const isActive = pageId === currentPage;
+    const animationClass = isActive
       ? animationDirection === 'down'
-        ? 'slide-out-up'
-        : 'slide-out-down'
-      : animationDirection === 'down'
-      ? 'slide-in-up'
-      : 'slide-in-down';
+        ? 'slide-in-up'
+        : 'slide-in-down'
+      : 'opacity-0 pointer-events-none';
 
     const pageContent = (() => {
       switch (pageId) {
         case 'home':
           return <HomePage onNavigate={handlePageChange} onSkipToHome={() => handlePageChange('mymac')} />;
         case 'mymac':
-          return <MyMacPage onNavigate={handlePageChange} />;
+          return (
+            <MyMacPage
+              onNavigate={handlePageChange}
+              isSidebarExpanded={isSidebarExpanded}
+              onExpandSidebar={() => setIsSidebarExpanded(true)}
+            />
+          );
         case 'clean':
           return <CleanPage />;
         case 'uninstall':
@@ -106,6 +96,7 @@ function App() {
     return (
       <div
         key={pageId}
+        aria-hidden={!isActive}
         className={`absolute inset-0 ${animationClass}`}
       >
         {pageContent}
@@ -149,19 +140,7 @@ function App() {
             />
           )}
           <main className={cn('overflow-hidden relative', currentPage === 'home' && 'flex-1')} aria-live="polite">
-            {/* Floating expand button when sidebar is collapsed */}
-            {!isSidebarExpanded && currentPage !== 'home' && (
-              <button
-                onClick={() => setIsSidebarExpanded(true)}
-                className="absolute top-4 left-4 z-10 p-2 rounded-lg glass-surface hover:bg-surface-hover transition-all duration-200 hover:scale-105 active:scale-95"
-                aria-label="Expand sidebar"
-              >
-                <PanelLeftOpen className="w-5 h-5 text-text-secondary" />
-              </button>
-            )}
-            {/* Render both pages during transition */}
-            {isAnimating && renderPage(previousPage, true)}
-            {renderPage(currentPage, false)}
+            {PAGE_ORDER.map((pageId) => renderPage(pageId))}
           </main>
         </div>
       </div>

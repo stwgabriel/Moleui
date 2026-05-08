@@ -569,7 +569,7 @@ download_binary() {
     local fallback_tag
     fallback_tag=$(get_latest_release_tag 2> /dev/null || true)
     if [[ -n "$fallback_tag" && "$fallback_tag" != "V${version}" ]]; then
-        local fallback_url="https://github.com/tw93/mole/releases/download/${fallback_tag}/${binary_name}-darwin-${arch_suffix}"
+        local fallback_url="https://github.com/stwgabriel/mole/releases/download/${fallback_tag}/${binary_name}-darwin-${arch_suffix}"
         if [[ -t 1 ]]; then
             start_line_spinner "Retrying ${binary_name} from ${fallback_tag}..."
         else
