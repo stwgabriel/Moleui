@@ -421,9 +421,22 @@ scan_purge_targets() {
         return
     fi
 
+    local cachedir_tag_min_depth=$((min_depth + 1))
+    local cachedir_tag_max_depth=$((max_depth + 1))
+
     # Update current scanning path
     local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
     echo "$search_path" > "$stats_dir/purge_scanning" 2> /dev/null || true
+
+    emit_valid_cachedir_tag_dirs() {
+        while IFS= read -r tag_file; do
+            [[ -n "$tag_file" ]] || continue
+            local cache_dir="${tag_file%/*}"
+            if [[ -n "$cache_dir" ]] && mole_dir_has_cachedir_tag "$cache_dir"; then
+                printf '%s\n' "$cache_dir"
+            fi
+        done
+    }
 
     # Helper to process raw results
     process_scan_results() {
@@ -473,11 +486,26 @@ scan_purge_targets() {
             "--exclude" ".Trash"
             "--exclude" "Applications"
         )
+        local fd_tag_args=(
+            "--absolute-path"
+            "--hidden"
+            "--no-ignore"
+            "--type" "f"
+            "--min-depth" "$cachedir_tag_min_depth"
+            "--max-depth" "$cachedir_tag_max_depth"
+            "--threads" "8"
+            "--exclude" ".git"
+            "--exclude" "Library"
+            "--exclude" ".Trash"
+            "--exclude" "Applications"
+        )
 
         # Trust fd when it exits successfully, including an empty result set.
         # Empty scans are common in healthy project trees; falling back to find
         # doubles the scan cost and can make "nothing to clean" feel slow.
         if fd "${fd_args[@]}" "$pattern" "$search_path" 2> /dev/null > "$output_file.raw"; then
+            fd "${fd_tag_args[@]}" "^${MOLE_CACHEDIR_TAG_NAME}$" "$search_path" \
+                2> /dev/null | emit_valid_cachedir_tag_dirs >> "$output_file.raw" || true
             debug_log "Using fd for scanning"
             process_scan_results "$output_file.raw"
             use_find=false
@@ -510,6 +538,11 @@ scan_purge_targets() {
             \( "${prune_expr[@]}" \) -prune -o \
             \( "${target_expr[@]}" \) -print -prune \
             2> /dev/null > "$output_file.raw" || true
+
+        find "$search_path" -mindepth "$cachedir_tag_min_depth" -maxdepth "$cachedir_tag_max_depth" \
+            \( "${prune_expr[@]}" \) -prune -o \
+            -type f -name "$MOLE_CACHEDIR_TAG_NAME" -print \
+            2> /dev/null | emit_valid_cachedir_tag_dirs >> "$output_file.raw" || true
 
         process_scan_results "$output_file.raw"
     fi
@@ -596,7 +629,8 @@ get_dir_size_kb() {
     fi
 
     if [[ $du_exit -ne 0 ]]; then
-        echo "0"
+        debug_log "Size calculation failed (exit $du_exit): $path"
+        echo "ERROR"
         return
     fi
 
@@ -605,7 +639,8 @@ get_dir_size_kb() {
     if [[ "$size_kb" =~ ^[0-9]+$ ]]; then
         echo "$size_kb"
     else
-        echo "0"
+        debug_log "Size calculation returned invalid output: $path"
+        echo "ERROR"
     fi
 }
 # Purge category selector.
@@ -1348,14 +1383,17 @@ clean_project_artifacts() {
         if [[ "$size_raw" == "TIMEOUT" ]]; then
             size_unknown=true
             size_human="unknown"
+        elif [[ "$size_raw" == "ERROR" ]]; then
+            debug_log "Skipping purge target with unknown size: $item"
+            continue
         elif [[ "$size_raw" =~ ^[0-9]+$ ]]; then
             size_kb="$size_raw"
-            # Skip empty directories (0 bytes)
-            if [[ $size_kb -eq 0 ]]; then
+            if [[ $size_kb -eq 0 && "${MOLE_PURGE_INCLUDE_EMPTY:-0}" != "1" ]]; then
                 continue
             fi
             size_human=$(bytes_to_human "$((size_kb * 1024))")
         else
+            debug_log "Skipping purge target with invalid size result '$size_raw': $item"
             continue
         fi
 

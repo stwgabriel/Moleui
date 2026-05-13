@@ -74,7 +74,7 @@ setup() {
     bash -c "
         set +e
         source '$PROJECT_ROOT/lib/core/timeout.sh'
-        run_with_timeout 1 sleep 10
+        run_with_timeout 1 sleep 3
         exit \$?
     "
     exit_code=$?
@@ -88,7 +88,7 @@ setup() {
     bash -c "
         set +e
         source '$PROJECT_ROOT/lib/core/timeout.sh'
-        run_with_timeout 2 sleep 30
+        run_with_timeout 2 sleep 5
     " >/dev/null 2>&1
     set -e
     end_time=$(date +%s)

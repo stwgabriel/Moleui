@@ -282,6 +282,7 @@ show_help() {
     echo -e "${YELLOW}Options:${NC}"
     echo "  --paths         Edit custom scan directories"
     echo "  --dry-run       Preview purge actions without making changes"
+    echo "  --include-empty Show zero-size project artifact directories"
     echo "  --debug         Enable debug logging"
     echo "  --help          Show this help message"
     echo ""
@@ -313,6 +314,9 @@ main() {
                 ;;
             "--dry-run" | "-n")
                 export MOLE_DRY_RUN=1
+                ;;
+            "--include-empty")
+                export MOLE_PURGE_INCLUDE_EMPTY=1
                 ;;
             *)
                 echo "Unknown option: $arg"

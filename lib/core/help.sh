@@ -27,34 +27,12 @@ show_installer_help() {
 show_optimize_help() {
     echo "Usage: mo optimize [OPTIONS]"
     echo ""
-    echo "Check and maintain system health, apply optimizations."
+    echo "Refresh system caches and services, repair safe maintenance issues."
     echo ""
     echo "Options:"
     echo "  --dry-run         Preview optimization without making changes"
     echo "  --whitelist       Manage protected items"
     echo "  --debug           Show detailed operation logs"
-    echo "  -h, --help        Show this help message"
-}
-
-show_check_help() {
-    echo "Usage: mo check [OPTIONS]"
-    echo ""
-    echo "Run system diagnostics in parallel and report status of:"
-    echo "  - Mole and Homebrew updates"
-    echo "  - System health (disk, memory, swap, uptime)"
-    echo "  - Security posture (FileVault, firewall, SIP, Touch ID)"
-    echo "  - Configuration (whitelist, login items, launch agents)"
-    echo "  - Developer environment (shell, Git, common toolchains)"
-    echo ""
-    echo "After the report, you may be prompted to apply safe auto-fixes"
-    echo "(e.g. cleaning crash reports) or run available updates. Both"
-    echo "prompts default to no, so check is non-destructive unless you"
-    echo "explicitly confirm."
-    echo ""
-    echo "Aliases:"
-    echo "  mo doctor         Same as mo check"
-    echo ""
-    echo "Options:"
     echo "  -h, --help        Show this help message"
 }
 

@@ -76,11 +76,29 @@ run_clean_dry_run() {
     [[ "$output" != *"system preview included"* ]]
 }
 
-@test "mo clean --dry-run includes system preview when sudo is cached" {
+@test "mo clean --dry-run does not probe sudo in test mode" {
     set_mock_sudo_cached
+    cat > "$TEST_MOCK_BIN/sudo" << 'MOCK'
+#!/bin/bash
+echo "sudo should not be called" >&2
+exit 99
+MOCK
+    chmod +x "$TEST_MOCK_BIN/sudo"
+
     run_clean_dry_run
     [ "$status" -eq 0 ]
-    [[ "$output" == *"system preview included"* ]]
+    [[ "$output" == *"sudo -v && mo clean --dry-run"* ]]
+    [[ "$output" != *"sudo should not be called"* ]]
+}
+
+@test "mo clean rejects removed cleanup selection flags" {
+    local removed_flag
+    for removed_flag in "--select" "--categories" "--exclude"; do
+        run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mole" clean "$removed_flag"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"was removed in this release"* ]]
+        [[ "$output" == *"mo clean --dry-run"* ]]
+    done
 }
 
 @test "mo clean --dry-run shows hint when sudo is not cached" {
@@ -283,7 +301,11 @@ EOF
     touch "$HOME/Library/Mail Downloads/old.pdf"
     touch -t 202301010000 "$HOME/Library/Mail Downloads/old.pdf"
 
-    dd if=/dev/zero of="$HOME/Library/Mail Downloads/dummy.dat" bs=1024 count=6000 2>/dev/null
+    if command -v mkfile > /dev/null 2>&1; then
+        mkfile -n 6000k "$HOME/Library/Mail Downloads/dummy.dat"
+    else
+        truncate -s 6000k "$HOME/Library/Mail Downloads/dummy.dat"
+    fi
 
     [ -f "$HOME/Library/Mail Downloads/old.pdf" ]
 

@@ -510,6 +510,19 @@ uninstall_resolve_eligible_bundle_id() {
     printf '%s\n' "$bundle_id"
 }
 
+uninstall_print_app_paths_with_mtime() {
+    local app_dir="$1"
+    local app_path app_mtime
+
+    [[ -d "$app_dir" ]] || return 0
+
+    while IFS= read -r -d '' app_path; do
+        [[ -n "$app_path" ]] || continue
+        app_mtime=$(get_file_mtime "$app_path")
+        printf '%s\t%s\n' "${app_mtime:-0}" "$app_path"
+    done < <(command find "$app_dir" -maxdepth 3 -name "*.app" -print0 2> /dev/null)
+}
+
 uninstall_app_inventory_fingerprint() {
     local app_dir app_path app_mtime pkg_app_path
 
@@ -526,7 +539,7 @@ uninstall_app_inventory_fingerprint() {
                 [[ -n "$app_path" ]] || continue
                 uninstall_should_skip_app_path "$app_path" && continue
                 printf '%s|%s\n' "$app_path" "${app_mtime:-0}"
-            done < <(command find "$app_dir" -maxdepth 3 -name "*.app" -exec stat -f $'%m\t%N' {} + 2> /dev/null)
+            done < <(uninstall_print_app_paths_with_mtime "$app_dir")
         done < <(uninstall_print_app_search_dirs)
     } | sort -u
 }
@@ -667,7 +680,7 @@ scan_applications() {
             uninstall_should_skip_app_path "$app_path" && continue
 
             printf "%s|%s|%s\n" "$app_path" "$app_name" "${app_mtime:-0}" >> "$discovered_file"
-        done < <(command find "$app_dir" -maxdepth 3 -name "*.app" -exec stat -f $'%m\t%N' {} + 2> /dev/null)
+        done < <(uninstall_print_app_paths_with_mtime "$app_dir")
     done
 
     if [[ -s "$discovered_file" ]]; then
@@ -771,21 +784,26 @@ scan_applications() {
     ) &
     spinner_pid=$!
 
-    for app_data_tuple in "${app_data_tuples[@]+"${app_data_tuples[@]}"}"; do
-        ((app_count++))
-        process_app_metadata "$app_data_tuple" "$scan_raw_file" &
-        pids+=($!)
-        update_scan_status "Scanning applications..." "$app_count" "$total_apps"
+    # Skip Pass 2 when the warm cache already wrote every row to $scan_raw_file.
+    # Also avoids expanding an empty array — macOS bash 3.2 (the /bin/bash that
+    # this script targets) treats `"${empty[@]}"` as unbound under `set -u`.
+    if ((total_apps > 0)); then
+        for app_data_tuple in "${app_data_tuples[@]}"; do
+            ((app_count++))
+            process_app_metadata "$app_data_tuple" "$scan_raw_file" &
+            pids+=($!)
+            update_scan_status "Scanning applications..." "$app_count" "$total_apps"
 
-        if ((${#pids[@]} >= max_parallel)); then
-            wait "${pids[0]}" 2> /dev/null
-            pids=("${pids[@]:1}")
-        fi
-    done
+            if ((${#pids[@]} >= max_parallel)); then
+                wait "${pids[0]}" 2> /dev/null
+                pids=("${pids[@]:1}")
+            fi
+        done
 
-    for pid in "${pids[@]+"${pids[@]}"}"; do
-        wait "$pid" 2> /dev/null
-    done
+        for pid in "${pids[@]}"; do
+            wait "$pid" 2> /dev/null
+        done
+    fi
 
     update_scan_status "Building uninstall index..." "0" "0"
 

@@ -257,7 +257,10 @@ func createOverviewEntriesWithInsights(insightEntries []dirEntry) []dirEntry {
 
 		userLibrary := filepath.Join(home, "Library")
 		if _, err := os.Stat(userLibrary); err == nil {
-			entries = append(entries, dirEntry{Name: "App Library", Path: userLibrary, IsDir: true, Size: -1})
+			// Renamed from "App Library" to "User Library" so it parallels
+			// "System Library" (`/Library`) and is not confused with
+			// `/Applications`. Path unchanged.
+			entries = append(entries, dirEntry{Name: "User Library", Path: userLibrary, IsDir: true, Size: -1})
 		}
 	}
 

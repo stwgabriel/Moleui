@@ -21,7 +21,7 @@ const (
 	cacheReuseWindow       = 24 * time.Hour
 	staleCacheTTL          = 3 * 24 * time.Hour
 
-	// Worker pool limits. Deliberately conservative: the App Library scan
+	// Worker pool limits. Deliberately conservative: the User Library scan
 	// blocks many goroutines in syscalls on high-fan-out trees (Steam
 	// workshop/temp, browser caches), and each blocked goroutine holds an
 	// OS thread. Exceeding the per-user thread limit on macOS produces a

@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/lib/core/commands.sh"
 trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
-VERSION="1.37.0"
+VERSION="1.38.1"
 MOLE_TAGLINE="Deep clean and optimize your Mac."
 
 is_touchid_configured() {
@@ -394,6 +394,11 @@ update_mole() {
             echo -e "${ICON_REVIEW} Try again with: ${GRAY}mo update${NC}"
             exit 1
         fi
+        if [[ ! "$latest" =~ ^[Vv]?[0-9]+(\.[0-9]+)*$ ]]; then
+            log_error "Invalid version response: $latest"
+            echo -e "${ICON_REVIEW} Try again later or use: ${GRAY}mo update --nightly${NC}"
+            exit 1
+        fi
 
         if [[ "$VERSION" == "$latest" && "$force_update" != "true" ]]; then
             echo ""
@@ -409,7 +414,11 @@ update_mole() {
         echo "${download_label%...}"
     fi
 
-    local installer_url="https://raw.githubusercontent.com/stwgabriel/moleui/main/install.sh"
+    local installer_ref="main"
+    if [[ "$nightly_update" != "true" ]]; then
+        installer_ref="V${latest#V}"
+    fi
+    local installer_url="https://raw.githubusercontent.com/stwgabriel/moleui/${installer_ref}/install.sh"
     local tmp_installer
     tmp_installer="$(mktemp_file)" || {
         log_error "Update failed"
@@ -755,7 +764,7 @@ remove_mole() {
         for install in "${manual_installs[@]}"; do
             if [[ -f "$install" ]]; then
                 if [[ ! -w "$(dirname "$install")" ]]; then
-                    if ! sudo rm -f "$install" 2> /dev/null; then
+                    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]] || ! sudo rm -f "$install" 2> /dev/null; then
                         has_error=true
                     fi
                 else
@@ -770,7 +779,7 @@ remove_mole() {
         for alias in "${alias_installs[@]}"; do
             if [[ -f "$alias" ]]; then
                 if [[ ! -w "$(dirname "$alias")" ]]; then
-                    if ! sudo rm -f "$alias" 2> /dev/null; then
+                    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]] || ! sudo rm -f "$alias" 2> /dev/null; then
                         has_error=true
                     fi
                 else
@@ -833,7 +842,7 @@ show_main_menu() {
 
     printf '\r\033[2K%s\n' "$(show_menu_option 1 "Clean        Free up disk space" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
     printf '\r\033[2K%s\n' "$(show_menu_option 2 "Uninstall    Remove apps completely" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 3 "Optimize     Check and maintain system" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 3 "Optimize     Refresh caches and services" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
     printf '\r\033[2K%s\n' "$(show_menu_option 4 "Analyze      Explore disk usage" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
     printf '\r\033[2K%s\n' "$(show_menu_option 5 "Status       Monitor system health" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
 
@@ -992,9 +1001,6 @@ main() {
             ;;
         "completion")
             exec "$SCRIPT_DIR/bin/completion.sh" "${args[@]:1}"
-            ;;
-        "check" | "doctor")
-            exec "$SCRIPT_DIR/bin/check.sh" "${args[@]:1}"
             ;;
         "update")
             local force_update=false
