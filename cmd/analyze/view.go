@@ -191,7 +191,15 @@ func (m model) View() string {
 					displayNum++
 					displayIndex := displayNum
 
-					hintLabel := entryHintLabel(entry)
+					// In overview mode the leading icon (👀 vs 📁) already
+					// signals "inspect this" vs "browse this", so the
+					// right-side hint shows only the unused-time tag.
+					// The cleanable broom (🧹) belongs to non-overview
+					// directory rows, where it acts as a per-row marker.
+					hintLabel := ""
+					if unusedTime := formatUnusedTime(entry.LastAccess); unusedTime != "" {
+						hintLabel = fmt.Sprintf("%s%s%s", colorGray, unusedTime, colorReset)
+					}
 
 					if hintLabel == "" {
 						fmt.Fprintf(&b, "%s%s%2d.%s %s %s%s%s  |  %s %s%10s%s\n",

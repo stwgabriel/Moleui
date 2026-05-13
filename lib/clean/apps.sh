@@ -50,7 +50,7 @@ clean_ds_store_tree() {
         size_human=$(bytes_to_human "$total_bytes")
         local size_kb=$(((total_bytes + 1023) / 1024))
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $size_human dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$size_kb")
@@ -108,7 +108,7 @@ scan_installed_apps() {
             local -a app_paths=()
             while IFS= read -r app_path; do
                 [[ -n "$app_path" ]] && app_paths+=("$app_path")
-            done < <(find "$app_dir" -name '*.app' -maxdepth 3 -type d 2> /dev/null)
+            done < <(command find "$app_dir" -maxdepth 3 -type d -name '*.app' 2> /dev/null)
             local count=0
             for app_path in "${app_paths[@]:-}"; do
                 local plist_path="$app_path/Contents/Info.plist"
@@ -419,7 +419,7 @@ clean_orphaned_app_data() {
 # These are left behind when apps are uninstalled but their system services remain
 clean_orphaned_system_services() {
     # Requires sudo
-    if ! sudo -n true 2> /dev/null; then
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]] || ! sudo -n true 2> /dev/null; then
         return 0
     fi
 

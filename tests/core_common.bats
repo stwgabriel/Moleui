@@ -112,7 +112,11 @@ EOF
 @test "rotate_log_once only checks log size once per session" {
     local log_file="$HOME/Library/Logs/mole/mole.log"
     mkdir -p "$(dirname "$log_file")"
-    dd if=/dev/zero of="$log_file" bs=1024 count=1100 2> /dev/null
+    if command -v mkfile > /dev/null 2>&1; then
+        mkfile -n 1100k "$log_file"
+    else
+        truncate -s 1100k "$log_file"
+    fi
 
     HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'"
     [[ -f "${log_file}.old" ]]
@@ -157,6 +161,32 @@ EOF
     [ "${bytes_lines[1]}" = "2KB" ]
     [ "${bytes_lines[2]}" = "5.0MB" ]
     [ "${bytes_lines[3]}" = "3.00GB" ]
+}
+
+@test "colorize_human_size colors dry-run size units by suffix" {
+    output="$(
+        HOME="$HOME" bash --noprofile --norc << 'EOF'
+source "$PROJECT_ROOT/lib/core/common.sh"
+colorize_human_size "1.00GB"
+printf '\n'
+colorize_human_size "5.0MB"
+printf '\n'
+colorize_human_size "180KB"
+printf '\n'
+colorize_human_size "0B"
+printf '\n'
+EOF
+    )"
+
+    color_lines=()
+    while IFS= read -r line; do
+        color_lines+=("$line")
+    done <<< "$output"
+
+    [ "${color_lines[0]}" = $'\033[0;31m1.00GB\033[0m' ]
+    [ "${color_lines[1]}" = $'\033[0;33m5.0MB\033[0m' ]
+    [ "${color_lines[2]}" = $'\033[0;32m180KB\033[0m' ]
+    [ "${color_lines[3]}" = $'\033[0;90m0B\033[0m' ]
 }
 
 @test "create_temp_file and create_temp_dir are tracked and cleaned" {
@@ -290,6 +320,10 @@ EOF
 }
 
 @test "start_inline_spinner ignores PATH-provided sleep in TTY mode" {
+    if ! /usr/bin/script -q /dev/null /bin/true > /dev/null 2>&1; then
+        skip "script cannot allocate a TTY in this environment"
+    fi
+
     local fake_bin="$HOME/fake-bin"
     local marker="$HOME/fake-sleep.marker"
 
@@ -349,6 +383,32 @@ SCRIPT
     [ "$status" -eq 0 ]
     [[ "$output" == *"EXIT=1"* ]]
     [[ "$output" == *"FLAG=false"* ]]
+}
+
+@test "sudo helpers do not invoke sudo in no-auth test mode" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 bash --noprofile --norc <<'SCRIPT'
+source "$PROJECT_ROOT/lib/core/base.sh"
+source "$PROJECT_ROOT/lib/core/sudo.sh"
+sudo() {
+    echo "SUDO_CALLED:$*" >&2
+    exit 99
+}
+export -f sudo
+
+has_sudo_session && has_rc=0 || has_rc=$?
+request_sudo_access "Test prompt" && request_rc=0 || request_rc=$?
+ensure_sudo_session "Test prompt" && ensure_rc=0 || ensure_rc=$?
+
+echo "HAS=$has_rc"
+echo "REQUEST=$request_rc"
+echo "ENSURE=$ensure_rc"
+SCRIPT
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"HAS=1"* ]]
+    [[ "$output" == *"REQUEST=1"* ]]
+    [[ "$output" == *"ENSURE=1"* ]]
+    [[ "$output" != *"SUDO_CALLED"* ]]
 }
 
 @test "ensure_sudo_session short-circuits to 0 when session already established" {

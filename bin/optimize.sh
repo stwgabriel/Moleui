@@ -1,6 +1,6 @@
 #!/bin/bash
 # Mole - Optimize command.
-# Runs system maintenance checks and fixes.
+# Runs system maintenance tasks.
 # Supports dry-run where applicable.
 
 set -euo pipefail
@@ -15,19 +15,15 @@ source "$SCRIPT_DIR/lib/core/common.sh"
 # Clean temp files on exit.
 trap cleanup_temp_files EXIT INT TERM
 source "$SCRIPT_DIR/lib/core/sudo.sh"
-source "$SCRIPT_DIR/lib/manage/update.sh"
-source "$SCRIPT_DIR/lib/manage/autofix.sh"
 source "$SCRIPT_DIR/lib/optimize/diagnostics.sh"
 source "$SCRIPT_DIR/lib/optimize/maintenance.sh"
 source "$SCRIPT_DIR/lib/optimize/tasks.sh"
 source "$SCRIPT_DIR/lib/check/health_json.sh"
-source "$SCRIPT_DIR/lib/check/all.sh"
-source "$SCRIPT_DIR/lib/check/dev_environment.sh"
 source "$SCRIPT_DIR/lib/manage/whitelist.sh"
 
 print_header() {
     printf '\n'
-    echo -e "${PURPLE_BOLD}Optimize and Check${NC}"
+    echo -e "${PURPLE_BOLD}Optimize${NC}"
 }
 
 # Bash-native JSON parsing helpers (no jq dependency).
@@ -84,49 +80,9 @@ parse_optimization_items() {
     ' <<< "$json"
 }
 
-run_system_checks() {
-    # Skip checks in dry-run mode.
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        return 0
-    fi
-
-    unset AUTO_FIX_SUMMARY AUTO_FIX_DETAILS
-    unset MOLE_SECURITY_FIXES_SHOWN
-    unset MOLE_SECURITY_FIXES_SKIPPED
-    echo ""
-
-    check_all_updates
-    echo ""
-
-    check_system_health
-    echo ""
-
-    check_all_security
-    if ask_for_security_fixes; then
-        perform_security_fixes
-    fi
-    if [[ "${MOLE_SECURITY_FIXES_SKIPPED:-}" != "true" ]]; then
-        echo ""
-    fi
-
-    check_all_config
-    echo ""
-
-    check_all_dev_environment
-
-    show_suggestions
-
-    if ask_for_updates; then
-        perform_updates
-    fi
-    if ask_for_auto_fix; then
-        perform_auto_fix
-    fi
-}
-
 show_optimization_summary() {
     local safe_count="${OPTIMIZE_SAFE_COUNT:-0}"
-    if ((safe_count == 0)) && [[ -z "${AUTO_FIX_SUMMARY:-}" ]]; then
+    if ((safe_count == 0)); then
         return
     fi
 
@@ -139,7 +95,7 @@ show_optimization_summary() {
         summary_details+=("Would apply ${YELLOW}${total_applied:-0}${NC} optimizations")
         summary_details+=("Run without ${YELLOW}--dry-run${NC} to apply these changes")
     else
-        summary_title="Optimization and Check Complete"
+        summary_title="Optimization Complete"
 
         # Build statistics summary
         local -a stats=()
@@ -177,16 +133,6 @@ show_optimization_summary() {
             summary_details+=("Applied ${GREEN}${total_applied:-0}${NC} optimizations, all services tuned")
         fi
 
-        local summary_line3=""
-        if [[ -n "${AUTO_FIX_SUMMARY:-}" ]]; then
-            summary_line3="${AUTO_FIX_SUMMARY}"
-            if [[ -n "${AUTO_FIX_DETAILS:-}" ]]; then
-                local detail_join
-                detail_join=$(echo "${AUTO_FIX_DETAILS}" | paste -sd ", " -)
-                [[ -n "$detail_join" ]] && summary_line3+=": ${detail_join}"
-            fi
-            summary_details+=("$summary_line3")
-        fi
         summary_details+=("System fully optimized")
     fi
 
@@ -227,169 +173,6 @@ announce_action() {
     echo -e "${BLUE}${ICON_ARROW} ${name}${NC}"
 }
 
-touchid_configured() {
-    local pam_file="/etc/pam.d/sudo"
-    [[ -f "$pam_file" ]] && grep -q "pam_tid.so" "$pam_file" 2> /dev/null
-}
-
-touchid_supported() {
-    if command -v bioutil > /dev/null 2>&1; then
-        if bioutil -r 2> /dev/null | grep -qi "Touch ID"; then
-            return 0
-        fi
-    fi
-
-    # Fallback: Apple Silicon Macs usually have Touch ID.
-    if [[ "$(uname -m)" == "arm64" ]]; then
-        return 0
-    fi
-    return 1
-}
-
-cleanup_path() {
-    local raw_path="$1"
-    local label="$2"
-
-    local expanded_path="${raw_path/#\~/$HOME}"
-    if [[ ! -e "$expanded_path" ]]; then
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} $label"
-        return
-    fi
-    if should_protect_path "$expanded_path"; then
-        echo -e "${GRAY}${ICON_WARNING}${NC} Protected $label"
-        return
-    fi
-
-    local size_kb
-    size_kb=$(get_path_size_kb "$expanded_path")
-    local size_display=""
-    if [[ "$size_kb" =~ ^[0-9]+$ && "$size_kb" -gt 0 ]]; then
-        size_display=$(bytes_to_human "$((size_kb * 1024))")
-    fi
-
-    local removed=false
-    if safe_remove "$expanded_path" true; then
-        removed=true
-    elif request_sudo_access "Removing $label requires admin access"; then
-        if safe_sudo_remove "$expanded_path"; then
-            removed=true
-        fi
-    fi
-
-    if [[ "$removed" == "true" ]]; then
-        if [[ -n "$size_display" ]]; then
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} $label${NC}, ${GREEN}${size_display}${NC}"
-        else
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} $label"
-        fi
-    else
-        echo -e "${GRAY}${ICON_WARNING}${NC} Skipped $label${NC}"
-        echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}Grant Full Disk Access to your terminal, then retry${NC}"
-    fi
-}
-
-ensure_directory() {
-    local raw_path="$1"
-    local expanded_path="${raw_path/#\~/$HOME}"
-    ensure_user_dir "$expanded_path"
-}
-
-declare -a SECURITY_FIXES=()
-
-collect_security_fix_actions() {
-    SECURITY_FIXES=()
-    if [[ "${FIREWALL_DISABLED:-}" == "true" ]]; then
-        if ! is_whitelisted "firewall"; then
-            SECURITY_FIXES+=("firewall|Enable macOS firewall")
-        fi
-    fi
-    # Gatekeeper state is intentionally user-managed. Optimize may report it,
-    # but it must not change the user's "Anywhere" preference.
-    if touchid_supported && ! touchid_configured; then
-        if ! is_whitelisted "check_touchid"; then
-            SECURITY_FIXES+=("touchid|Enable Touch ID for sudo")
-        fi
-    fi
-
-    ((${#SECURITY_FIXES[@]} > 0))
-}
-
-ask_for_security_fixes() {
-    if ! collect_security_fix_actions; then
-        return 1
-    fi
-
-    echo ""
-    echo -e "${BLUE}SECURITY FIXES${NC}"
-    for entry in "${SECURITY_FIXES[@]}"; do
-        IFS='|' read -r _ label <<< "$entry"
-        echo -e "  ${ICON_LIST} $label"
-    done
-    echo ""
-    export MOLE_SECURITY_FIXES_SHOWN=true
-    echo -ne "${GRAY}${ICON_REVIEW}${NC} ${YELLOW}Apply now?${NC} ${GRAY}Enter confirm / Space cancel${NC}: "
-
-    local key
-    if ! key=$(read_key); then
-        export MOLE_SECURITY_FIXES_SKIPPED=true
-        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} Security fixes skipped"
-        echo ""
-        return 1
-    fi
-
-    if [[ "$key" == "ENTER" ]]; then
-        echo ""
-        return 0
-    else
-        export MOLE_SECURITY_FIXES_SKIPPED=true
-        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} Security fixes skipped"
-        echo ""
-        return 1
-    fi
-}
-
-apply_firewall_fix() {
-    if sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on > /dev/null 2>&1; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Firewall enabled"
-        FIREWALL_DISABLED=false
-        return 0
-    fi
-    echo -e "  ${GRAY}${ICON_WARNING}${NC} Failed to enable firewall, check permissions"
-    return 1
-}
-
-apply_touchid_fix() {
-    if "$SCRIPT_DIR/bin/touchid.sh" enable; then
-        return 0
-    fi
-    return 1
-}
-
-perform_security_fixes() {
-    if ! ensure_sudo_session "Security changes require admin access"; then
-        echo -e "${GRAY}${ICON_WARNING}${NC} Skipped security fixes, sudo denied"
-        return 1
-    fi
-
-    local applied=0
-    for entry in "${SECURITY_FIXES[@]}"; do
-        IFS='|' read -r action _ <<< "$entry"
-        case "$action" in
-            firewall)
-                apply_firewall_fix && ((applied++))
-                ;;
-            touchid)
-                apply_touchid_fix && ((applied++))
-                ;;
-        esac
-    done
-
-    if ((applied > 0)); then
-        log_success "Security settings updated"
-    fi
-    SECURITY_FIXES=()
-}
-
 cleanup_all() {
     stop_inline_spinner 2> /dev/null || true
     stop_sudo_session
@@ -423,6 +206,11 @@ main() {
             "--whitelist")
                 manage_whitelist "optimize"
                 exit 0
+                ;;
+            *)
+                echo "Unknown optimize option: $arg"
+                echo "Use 'mo optimize --help' for supported options."
+                exit 1
                 ;;
         esac
     done
@@ -502,8 +290,17 @@ main() {
     done < "$opts_file"
 
     echo ""
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
-        ensure_sudo_session "System optimization requires admin access" || true
+    # Track sudo availability so individual tasks can skip cleanly when admin
+    # access was denied. Without this, every sudo task re-prompts for the
+    # password and half-runs after a refusal. Default true in dry-run so the
+    # task list still expands fully for inspection.
+    export MOLE_OPTIMIZE_SUDO_AVAILABLE="false"
+    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+        MOLE_OPTIMIZE_SUDO_AVAILABLE="true"
+    elif ensure_sudo_session "System optimization requires admin access"; then
+        MOLE_OPTIMIZE_SUDO_AVAILABLE="true"
+    else
+        opt_msg "Skipping sudo-required optimizations: admin access not granted"
     fi
 
     export FIRST_ACTION=true
@@ -518,8 +315,6 @@ main() {
     done
 
     local safe_count=${#items[@]}
-
-    run_system_checks
 
     export OPTIMIZE_SAFE_COUNT=$safe_count
     export OPTIMIZE_CONFIRM_COUNT=0

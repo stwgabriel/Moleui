@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
 
       - name: Install tools
-        run: brew install bats-core shellcheck coreutils
+        run: brew install bats-core shellcheck coreutils parallel
 
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5
@@ -28,6 +28,8 @@ jobs:
         env:
           MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS: "6000"
           MOLE_PERF_GET_FILE_SIZE_LIMIT_MS: "3000"
+          MOLE_PERF_NORMALIZE_PATHS_LIMIT_MS: "10000"
+          MOLE_TEST_JOBS: "6"
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
@@ -60,6 +62,7 @@ jobs:
       - name: Run core bats subset
         env:
           MOLE_TEST_NO_AUTH: "1"
+          MOLE_PERF_NORMALIZE_PATHS_LIMIT_MS: "10000"
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
@@ -121,6 +124,7 @@ jobs:
 
       - name: Run high-risk path regression tests
         env:
+          MOLE_TEST_NO_AUTH: "1"
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8

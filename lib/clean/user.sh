@@ -1,6 +1,60 @@
 #!/bin/bash
 # User Data Cleanup Module
 set -euo pipefail
+
+clean_trash() {
+    if is_path_whitelisted "$HOME/.Trash"; then
+        return 0
+    fi
+
+    local trash_count
+    local trash_count_status=0
+    # Skip AppleScript during tests to avoid permission dialogs
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        trash_count=$(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null |
+            tr -dc '\0' | wc -c | tr -d ' ' || echo "0")
+    else
+        trash_count=$(run_with_timeout 3 osascript -e 'tell application "Finder" to count items in trash' 2> /dev/null) || trash_count_status=$?
+    fi
+    if [[ $trash_count_status -eq 124 ]]; then
+        debug_log "Finder trash count timed out, using direct .Trash scan"
+        trash_count=$(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null |
+            tr -dc '\0' | wc -c | tr -d ' ' || echo "0")
+    fi
+    [[ "$trash_count" =~ ^[0-9]+$ ]] || trash_count="0"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        [[ $trash_count -gt 0 ]] && echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Trash · would empty, $trash_count items" || echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · already empty"
+    elif [[ $trash_count -gt 0 ]]; then
+        local emptied_via_finder=false
+        # Skip AppleScript during tests to avoid permission dialogs
+        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+            debug_log "Skipping Finder AppleScript in test mode"
+        else
+            if run_with_timeout 5 osascript -e 'tell application "Finder" to empty trash' > /dev/null 2>&1; then
+                emptied_via_finder=true
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied, $trash_count items"
+                note_activity
+            fi
+        fi
+        if [[ "$emptied_via_finder" != "true" ]]; then
+            debug_log "Finder trash empty failed or timed out, falling back to direct deletion"
+            local cleaned_count=0
+            while IFS= read -r -d '' item; do
+                if safe_remove "$item" true; then
+                    cleaned_count=$((cleaned_count + 1))
+                fi
+            done < <(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
+            if [[ $cleaned_count -gt 0 ]]; then
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied, $cleaned_count items"
+                note_activity
+            fi
+        fi
+    else
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · already empty"
+    fi
+}
+
 clean_user_essentials() {
     start_section_spinner "Scanning caches..."
     safe_clean ~/Library/Caches/* "User app cache"
@@ -10,53 +64,8 @@ clean_user_essentials() {
 
     _clean_darwin_user_runtime_dirs
 
-    if ! is_path_whitelisted "$HOME/.Trash"; then
-        local trash_count
-        local trash_count_status=0
-        # Skip AppleScript during tests to avoid permission dialogs
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-            trash_count=$(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null |
-                tr -dc '\0' | wc -c | tr -d ' ' || echo "0")
-        else
-            trash_count=$(run_with_timeout 3 osascript -e 'tell application "Finder" to count items in trash' 2> /dev/null) || trash_count_status=$?
-        fi
-        if [[ $trash_count_status -eq 124 ]]; then
-            debug_log "Finder trash count timed out, using direct .Trash scan"
-            trash_count=$(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null |
-                tr -dc '\0' | wc -c | tr -d ' ' || echo "0")
-        fi
-        [[ "$trash_count" =~ ^[0-9]+$ ]] || trash_count="0"
-
-        if [[ "$DRY_RUN" == "true" ]]; then
-            [[ $trash_count -gt 0 ]] && echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Trash · would empty, $trash_count items" || echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · already empty"
-        elif [[ $trash_count -gt 0 ]]; then
-            local emptied_via_finder=false
-            # Skip AppleScript during tests to avoid permission dialogs
-            if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-                debug_log "Skipping Finder AppleScript in test mode"
-            else
-                if run_with_timeout 5 osascript -e 'tell application "Finder" to empty trash' > /dev/null 2>&1; then
-                    emptied_via_finder=true
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied, $trash_count items"
-                    note_activity
-                fi
-            fi
-            if [[ "$emptied_via_finder" != "true" ]]; then
-                debug_log "Finder trash empty failed or timed out, falling back to direct deletion"
-                local cleaned_count=0
-                while IFS= read -r -d '' item; do
-                    if safe_remove "$item" true; then
-                        cleaned_count=$((cleaned_count + 1))
-                    fi
-                done < <(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
-                if [[ $cleaned_count -gt 0 ]]; then
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied, $cleaned_count items"
-                    note_activity
-                fi
-            fi
-        else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · already empty"
-        fi
+    if [[ "${MOLE_SKIP_TRASH_CLEANUP:-0}" != "1" ]]; then
+        clean_trash
     fi
 
     # Recent items
@@ -278,7 +287,7 @@ _clean_darwin_user_runtime_dir() {
         local cap_note=""
         [[ "$hit_cap" == "true" ]] && cap_note=", capped"
         if [[ "${DRY_RUN:-false}" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${label}${NC}, ${YELLOW}${count} old items, ${size_human} dry${cap_note}${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${label}${NC}, ${YELLOW}${count} old items, $(colorize_human_size "$size_human") ${YELLOW}dry${cap_note}${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size_kb")
@@ -414,7 +423,7 @@ clean_chrome_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Chrome old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Chrome old versions${NC}, ${YELLOW}${cleaned_count} dirs, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
@@ -509,7 +518,7 @@ clean_edge_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge old versions${NC}, ${YELLOW}${cleaned_count} dirs, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
@@ -573,7 +582,7 @@ clean_edge_updater_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge updater old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge updater old versions${NC}, ${YELLOW}${cleaned_count} dirs, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
@@ -665,7 +674,7 @@ clean_brave_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Brave old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Brave old versions${NC}, ${YELLOW}${cleaned_count} dirs, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
@@ -892,7 +901,7 @@ clean_app_caches() {
             else
                 local size_human
                 size_human=$(bytes_to_human "$((total_size * 1024))")
-                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Sandboxed app caches${NC}, ${YELLOW}$size_human dry${NC}"
+                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Sandboxed app caches${NC}, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
             fi
         else
             if [[ "$total_size_partial" == "true" ]]; then
@@ -1109,7 +1118,7 @@ clean_group_container_caches() {
             else
                 local size_human
                 size_human=$(bytes_to_human "$((total_size * 1024))")
-                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Group Containers logs/caches${NC}, ${YELLOW}$size_human dry${NC}"
+                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Group Containers logs/caches${NC}, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
             fi
         else
             if [[ "$total_size_partial" == "true" ]]; then
@@ -1284,7 +1293,7 @@ clean_external_volume_target() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} External volume cleanup${NC}, ${YELLOW}${volume_name}, $size_human dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} External volume cleanup${NC}, ${YELLOW}${volume_name}, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
@@ -1507,11 +1516,24 @@ clean_office_applications() {
 }
 
 # Virtualization caches.
+clean_utm_caches() {
+    if pgrep -x "UTM" > /dev/null 2>&1; then
+        debug_log "Skipping UTM caches while UTM is running"
+        return 0
+    fi
+
+    safe_clean ~/Library/Caches/com.utmapp.UTM/* "UTM app cache"
+    safe_clean ~/Library/Containers/com.utmapp.UTM/Data/Library/Caches/* "UTM sandbox cache"
+    safe_clean ~/Library/Containers/com.utmapp.UTM/Data/tmp/* "UTM temporary files"
+}
+
 clean_virtualization_tools() {
     stop_section_spinner
     safe_clean ~/Library/Caches/com.vmware.fusion "VMware Fusion cache"
     safe_clean ~/Library/Caches/com.parallels.* "Parallels cache"
+    clean_utm_caches
     safe_clean ~/VirtualBox\ VMs/.cache "VirtualBox cache"
+    safe_clean ~/Library/Caches/lima/download/by-url-sha256/* "Lima download cache"
     safe_clean ~/.vagrant.d/tmp/* "Vagrant temporary files"
 }
 
@@ -1567,6 +1589,25 @@ app_support_item_size_bytes() {
         printf '%s\n' "$((size_kb * 1024))"
         return 0
     fi
+
+    return 1
+}
+
+app_support_dir_has_regenerable_cache_markers() {
+    local app_dir="$1"
+    local marker
+
+    for marker in \
+        "$app_dir/Code Cache" \
+        "$app_dir/GPUCache" \
+        "$app_dir/DawnCache" \
+        "$app_dir/GrShaderCache" \
+        "$app_dir/GraphiteDawnCache" \
+        "$app_dir/DawnGraphiteCache" \
+        "$app_dir/DawnWebGPUCache" \
+        "$app_dir/Crashpad"; do
+        [[ -e "$marker" ]] && return 0
+    done
 
     return 1
 }
@@ -1640,8 +1681,16 @@ clean_application_support_logs() {
             "$app_dir/DawnCache"
             "$app_dir/GrShaderCache"
             "$app_dir/GraphiteDawnCache"
+            "$app_dir/DawnGraphiteCache"
+            "$app_dir/DawnWebGPUCache"
             "$app_dir/Crashpad/completed"
         )
+        if app_support_dir_has_regenerable_cache_markers "$app_dir"; then
+            start_candidates+=(
+                "$app_dir/Cache"
+                "$app_dir/CachedData"
+            )
+        fi
         for candidate in "${start_candidates[@]}"; do
             if [[ -d "$candidate" ]]; then
                 if should_protect_path "$candidate" 2> /dev/null || is_path_whitelisted "$candidate" 2> /dev/null; then
@@ -1803,9 +1852,9 @@ clean_application_support_logs() {
         local total_size_kb=$(((total_size_bytes + 1023) / 1024))
         if [[ "$DRY_RUN" == "true" ]]; then
             if [[ "$total_size_partial" == "true" ]]; then
-                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Application Support logs/caches${NC}, ${YELLOW}at least $size_human dry${NC}"
+                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Application Support logs/caches${NC}, ${YELLOW}at least $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
             else
-                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Application Support logs/caches${NC}, ${YELLOW}$size_human dry${NC}"
+                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Application Support logs/caches${NC}, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
             fi
         else
             local line_color
@@ -1890,7 +1939,7 @@ clean_cached_device_firmware() {
         local size_human
         size_human=$(bytes_to_human "$((total_size_kb * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Cached device firmware${NC}, ${YELLOW}${cleaned_count} files, $size_human dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Cached device firmware${NC}, ${YELLOW}${cleaned_count} files, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size_kb")

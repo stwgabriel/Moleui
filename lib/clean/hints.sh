@@ -59,12 +59,22 @@ hint_extract_launch_agent_program_path() {
     local plist="$1"
     local program=""
 
-    program=$(plutil -extract ProgramArguments.0 raw "$plist" 2> /dev/null || echo "")
+    if ! program=$(plutil -extract ProgramArguments.0 raw "$plist" 2> /dev/null); then
+        program=""
+    fi
     if [[ -z "$program" ]]; then
-        program=$(plutil -extract Program raw "$plist" 2> /dev/null || echo "")
+        if ! program=$(plutil -extract Program raw "$plist" 2> /dev/null); then
+            program=""
+        fi
     fi
 
     printf '%s\n' "$program"
+}
+
+# shellcheck disable=SC2329
+hint_launch_agent_has_mach_services() {
+    local plist="$1"
+    plutil -extract MachServices raw "$plist" > /dev/null 2>&1
 }
 
 # shellcheck disable=SC2329
@@ -72,9 +82,13 @@ hint_extract_launch_agent_associated_bundle() {
     local plist="$1"
     local associated=""
 
-    associated=$(plutil -extract AssociatedBundleIdentifiers.0 raw "$plist" 2> /dev/null || echo "")
+    if ! associated=$(plutil -extract AssociatedBundleIdentifiers.0 raw "$plist" 2> /dev/null); then
+        associated=""
+    fi
     if [[ -z "$associated" ]] || [[ "$associated" == "1" ]]; then
-        associated=$(plutil -extract AssociatedBundleIdentifiers raw "$plist" 2> /dev/null || echo "")
+        if ! associated=$(plutil -extract AssociatedBundleIdentifiers raw "$plist" 2> /dev/null); then
+            associated=""
+        fi
         if [[ "$associated" == "{"* ]] || [[ "$associated" == "["* ]]; then
             associated=""
         fi
@@ -122,6 +136,99 @@ hint_launch_agent_bundle_exists() {
     # Delegate to the shared resolver so Spotlight misses (e.g. KeePassXC
     # installed via Homebrew) fall back to a direct /Applications scan. See #732.
     bundle_has_installed_app "$bundle_id"
+}
+
+# shellcheck disable=SC2329
+hint_normalize_app_match_text() {
+    printf '%s' "${1:-}" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cd '[:alnum:]'
+}
+
+# shellcheck disable=SC2329
+hint_dotdir_candidate_matches_text() {
+    local text="$1"
+    shift || true
+    [[ $# -gt 0 ]] || return 1
+
+    local normalized_text
+    normalized_text=$(hint_normalize_app_match_text "$text")
+    [[ -n "$normalized_text" ]] || return 1
+
+    local candidate normalized_candidate
+    for candidate in "$@"; do
+        normalized_candidate=$(hint_normalize_app_match_text "$candidate")
+        [[ ${#normalized_candidate} -ge 4 ]] || continue
+        if [[ "$normalized_text" == "$normalized_candidate" || "$normalized_text" == *"$normalized_candidate"* ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# shellcheck disable=SC2329
+hint_collect_installed_gui_app_match_texts() {
+    local -a app_roots=(
+        "/Applications"
+        "/Applications/Setapp"
+        "/Applications/Utilities"
+        "$HOME/Applications"
+        "/Library/Input Methods"
+        "$HOME/Library/Input Methods"
+        "$HOME/Library/Application Support/Setapp/Applications"
+    )
+
+    local app_root app_path app_name info value
+    for app_root in "${app_roots[@]}"; do
+        [[ -d "$app_root" ]] || continue
+        while IFS= read -r -d '' app_path; do
+            [[ -n "$app_path" ]] || continue
+
+            app_name="${app_path##*/}"
+            app_name="${app_name%.app}"
+            printf '%s\n' "$app_name"
+
+            info="$app_path/Contents/Info.plist"
+            [[ -f "$info" ]] || continue
+            for value in \
+                "$(plutil -extract CFBundleIdentifier raw "$info" 2> /dev/null || echo "")" \
+                "$(plutil -extract CFBundleName raw "$info" 2> /dev/null || echo "")" \
+                "$(plutil -extract CFBundleDisplayName raw "$info" 2> /dev/null || echo "")"; do
+                [[ -n "$value" && "$value" != "(null)" ]] && printf '%s\n' "$value"
+            done
+        done < <(run_with_timeout 2 find "$app_root" -maxdepth 2 -name "*.app" -print0 2> /dev/null || true)
+    done
+
+    local -a cask_roots=(
+        "/opt/homebrew/Caskroom"
+        "/usr/local/Caskroom"
+    )
+
+    local cask_root cask_dir cask_name
+    for cask_root in "${cask_roots[@]}"; do
+        [[ -d "$cask_root" ]] || continue
+        while IFS= read -r -d '' cask_dir; do
+            [[ -n "$cask_dir" ]] || continue
+            cask_name="${cask_dir##*/}"
+            printf '%s\n' "$cask_name"
+        done < <(run_with_timeout 1 find "$cask_root" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null || true)
+    done
+}
+
+# shellcheck disable=SC2329
+hint_dotdir_owned_by_installed_gui_app() {
+    local installed_app_texts="$1"
+    shift || true
+    [[ -n "$installed_app_texts" && $# -gt 0 ]] || return 1
+
+    local value
+    while IFS= read -r value; do
+        [[ -n "$value" ]] || continue
+        if hint_dotdir_candidate_matches_text "$value" "$@"; then
+            return 0
+        fi
+    done <<< "$installed_app_texts"
+
+    return 1
 }
 
 # shellcheck disable=SC2329
@@ -419,7 +526,11 @@ show_project_artifact_hint_notice() {
     if [[ -n "$example_text" ]]; then
         echo -e "  ${GRAY}${ICON_SUBLIST}${NC} Examples: ${GRAY}${example_text}${NC}"
     fi
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: mo purge"
+    local review_command="mo purge"
+    if [[ $PROJECT_ARTIFACT_HINT_ESTIMATE_SAMPLES -gt 0 && $PROJECT_ARTIFACT_HINT_ESTIMATED_KB -eq 0 ]]; then
+        review_command="mo purge --include-empty"
+    fi
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: ${review_command}"
 }
 
 # shellcheck disable=SC2329
@@ -444,6 +555,9 @@ show_user_launch_agent_hint_notice() {
         local associated=""
 
         program=$(hint_extract_launch_agent_program_path "$plist")
+        if [[ -z "$program" ]] && hint_launch_agent_has_mach_services "$plist"; then
+            continue
+        fi
         if [[ -n "$program" ]] && hint_is_system_binary "$program"; then
             continue
         fi
@@ -527,6 +641,83 @@ readonly ORPHAN_DOTDIR_KNOWN_SAFE=(
     ".fly" ".gemini"
 )
 
+# Standard locations for installed GUI apps. Overridable from tests.
+_MOLE_DOTDIR_OWNER_APP_ROOTS=(
+    "/Applications"
+    "/Applications/Setapp"
+    "$HOME/Applications"
+)
+
+# Emit every alnum token found in installed .app filenames + brew casks,
+# lowercased, one per line. Caller filters/dedups.
+# shellcheck disable=SC2329
+_dotdir_owner_collect_tokens() {
+    local root entry name
+    for root in "${_MOLE_DOTDIR_OWNER_APP_ROOTS[@]}"; do
+        [[ -d "$root" ]] || continue
+        for entry in "$root"/*.app; do
+            [[ -e "$entry" ]] || continue
+            name=$(basename "$entry")
+            name="${name%.app}"
+            printf '%s\n' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cs 'a-z0-9' '\n'
+        done
+    done
+
+    if command -v brew > /dev/null 2>&1; then
+        local cask_list=""
+        cask_list=$(HOMEBREW_NO_ENV_HINTS=1 run_with_timeout 5 brew list --cask 2> /dev/null) || true
+        if [[ -n "$cask_list" ]]; then
+            printf '%s\n' "$cask_list" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cs 'a-z0-9' '\n'
+        fi
+    fi
+}
+
+# Return 0 if any ≥4-char token from `name` matches a token harvested from
+# installed `.app` bundles or Homebrew casks. Cached for 5 minutes. Short
+# tokens (<4 chars) on either side are ignored to avoid false matches like
+# `.ai-old` vs `AI.app`. See issue #872.
+# shellcheck disable=SC2329
+dotdir_has_owning_gui_app() {
+    local name="$1"
+    [[ -z "$name" ]] && return 1
+    [[ ${#name} -lt 4 ]] && return 1
+
+    local cache_dir="$HOME/.cache/mole"
+    local cache_file="$cache_dir/installed_app_tokens_cache"
+    local cache_ttl=300
+    local now
+    now=$(date +%s)
+
+    local rebuild=1
+    if [[ -f "$cache_file" ]]; then
+        local mtime
+        mtime=$(get_file_mtime "$cache_file" 2> /dev/null || echo 0)
+        if [[ -n "$mtime" ]] && [[ $((now - mtime)) -lt $cache_ttl ]]; then
+            rebuild=0
+        fi
+    fi
+    if [[ $rebuild -eq 1 ]]; then
+        ensure_user_dir "$cache_dir" 2> /dev/null || true
+        _dotdir_owner_collect_tokens 2> /dev/null |
+            LC_ALL=C awk 'length($0) >= 4' |
+            LC_ALL=C sort -u > "$cache_file" 2> /dev/null || return 1
+    fi
+    [[ -s "$cache_file" ]] || return 1
+
+    local name_lower
+    name_lower=$(printf '%s' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+    local tok
+    while IFS= read -r tok; do
+        [[ -z "$tok" ]] && continue
+        [[ ${#tok} -ge 4 ]] || continue
+        if LC_ALL=C grep -Fxq "$tok" "$cache_file" 2> /dev/null; then
+            return 0
+        fi
+    done < <(printf '%s\n' "$name_lower" | LC_ALL=C tr -cs 'a-z0-9' '\n')
+
+    return 1
+}
+
 # Detect ~/.<dir> directories that may belong to uninstalled CLI tools.
 # shellcheck disable=SC2329
 show_orphan_dotdir_hint_notice() {
@@ -537,6 +728,8 @@ show_orphan_dotdir_hint_notice() {
 
     local -a labels=()
     local -a details=()
+    local installed_gui_app_texts=""
+    local installed_gui_app_texts_loaded=false
 
     while IFS= read -r dotdir; do
         [[ -d "$dotdir" ]] || continue
@@ -585,10 +778,22 @@ show_orphan_dotdir_hint_notice() {
         done
         [[ "$has_binary" == "true" ]] && continue
 
+        if [[ "$installed_gui_app_texts_loaded" != "true" ]]; then
+            installed_gui_app_texts=$(hint_collect_installed_gui_app_match_texts)
+            installed_gui_app_texts_loaded=true
+        fi
+        if hint_dotdir_owned_by_installed_gui_app "$installed_gui_app_texts" "${candidates[@]}"; then
+            continue
+        fi
+
         if [[ -d "$HOME/Library/LaunchAgents" ]]; then
             if run_with_timeout 2 grep -rlq "$basename" "$HOME/Library/LaunchAgents/" 2> /dev/null; then
                 continue
             fi
+        fi
+
+        if dotdir_has_owning_gui_app "$name"; then
+            continue
         fi
 
         local size_human=""

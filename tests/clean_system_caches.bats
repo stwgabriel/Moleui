@@ -71,7 +71,7 @@ setup() {
     local test_cache="$HOME/test_sw_cache"
     mkdir -p "$test_cache"
 
-    run bash -c "
+    run /bin/bash --noprofile --norc -c "
         source '$PROJECT_ROOT/lib/core/common.sh'
         source '$PROJECT_ROOT/lib/clean/caches.sh'
         run_with_timeout() { shift; \"\$@\"; }
@@ -285,6 +285,29 @@ fi
     [[ "$output" == $'empty\nhas-bytecode' ]]
 }
 
+@test "pycache_has_bytecode tolerates empty matches when nullglob is enabled" {
+    mkdir -p "$HOME/Projects/nullglob-app/pkg/__pycache__"
+
+    run bash -c "
+set -euo pipefail
+source '$PROJECT_ROOT/lib/clean/caches.sh'
+shopt -s nullglob
+if pycache_has_bytecode '$HOME/Projects/nullglob-app/pkg/__pycache__'; then
+    echo has-bytecode
+else
+    echo empty
+fi
+if shopt -q nullglob; then
+    echo nullglob-restored
+else
+    echo nullglob-lost
+fi
+"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == $'empty\nnullglob-restored' ]]
+}
+
 @test "clean_project_caches pycache dry-run exports grouped targets and counts skips" {
     mkdir -p "$HOME/Projects/python-app/pkg/__pycache__"
     mkdir -p "$HOME/Projects/python-app/protected/__pycache__"
@@ -439,14 +462,14 @@ for arg in "\$@"; do
 done
 if [[ "\$root" == "$HOME/SlowProjects" ]]; then
     trap "" TERM
-    sleep 30
+    sleep 5
     exit 0
 fi
 exit 0
 EOF
     chmod +x "$fake_bin/find"
 
-    run /usr/bin/perl -e 'alarm 8; exec @ARGV' env -i HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$fake_bin:$PATH:/usr/bin:/bin:/usr/sbin:/sbin" TERM="${TERM:-xterm-256color}" bash --noprofile --norc <<'EOF'
+    run /usr/bin/perl -e 'alarm 5; exec @ARGV' env -i HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$fake_bin:$PATH:/usr/bin:/bin:/usr/sbin:/sbin" TERM="${TERM:-xterm-256color}" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/caches.sh"

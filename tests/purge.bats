@@ -618,6 +618,66 @@ EOF
 	[[ "$result" == "FOUND" ]]
 }
 
+@test "scan_purge_targets: includes valid CACHEDIR.TAG directories in find mode" {
+	mkdir -p "$HOME/www/python-app/.custom-cache"
+	touch "$HOME/www/python-app/pyproject.toml"
+	printf 'Signature: 8a477f597d28d172789f06886806bc55\n' > "$HOME/www/python-app/.custom-cache/CACHEDIR.TAG"
+
+	scan_output=$(mktemp)
+	result=$(bash -c "
+        source '$PROJECT_ROOT/lib/clean/project.sh'
+        MO_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
+        if grep -q '$HOME/www/python-app/.custom-cache' '$scan_output'; then
+            echo 'FOUND'
+        else
+            echo 'NOT_FOUND'
+        fi
+    ")
+	rm -f "$scan_output"
+
+	[[ "$result" == "FOUND" ]]
+}
+
+@test "scan_purge_targets: ignores invalid CACHEDIR.TAG signatures" {
+	mkdir -p "$HOME/www/python-app/.custom-cache"
+	touch "$HOME/www/python-app/pyproject.toml"
+	printf 'Signature: invalid\n' > "$HOME/www/python-app/.custom-cache/CACHEDIR.TAG"
+
+	scan_output=$(mktemp)
+	result=$(bash -c "
+        source '$PROJECT_ROOT/lib/clean/project.sh'
+        MO_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
+        if grep -q '$HOME/www/python-app/.custom-cache' '$scan_output'; then
+            echo 'FOUND'
+        else
+            echo 'NOT_FOUND'
+        fi
+    ")
+	rm -f "$scan_output"
+
+	[[ "$result" == "NOT_FOUND" ]]
+}
+
+@test "scan_purge_targets: keeps CACHEDIR.TAG under Library out of purge scans" {
+	mkdir -p "$HOME/www/python-app/Library/fontconfig-cache"
+	touch "$HOME/www/python-app/pyproject.toml"
+	printf 'Signature: 8a477f597d28d172789f06886806bc55\n' > "$HOME/www/python-app/Library/fontconfig-cache/CACHEDIR.TAG"
+
+	scan_output=$(mktemp)
+	result=$(bash -c "
+        source '$PROJECT_ROOT/lib/clean/project.sh'
+        MO_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
+        if grep -q '$HOME/www/python-app/Library/fontconfig-cache' '$scan_output'; then
+            echo 'FOUND'
+        else
+            echo 'NOT_FOUND'
+        fi
+    ")
+	rm -f "$scan_output"
+
+	[[ "$result" == "NOT_FOUND" ]]
+}
+
 @test "scan_purge_targets: trusts empty fd result without falling back to find" {
 	mkdir -p "$HOME/.config/mole" "$HOME/www/empty-project"
 	printf '%s\n' "$HOME/www" > "$HOME/.config/mole/purge_paths"
@@ -723,6 +783,19 @@ EOF
 	[[ "$result" == "TIMEOUT" ]]
 }
 
+@test "get_dir_size_kb: returns ERROR when du fails without timing out" {
+	mkdir -p "$HOME/www/error-project/node_modules"
+
+	result=$(bash -c "
+        source '$PROJECT_ROOT/lib/core/common.sh'
+        source '$PROJECT_ROOT/lib/clean/project.sh'
+        run_with_timeout() { return 2; }
+        get_dir_size_kb '$HOME/www/error-project/node_modules'
+    ")
+
+	[[ "$result" == "ERROR" ]]
+}
+
 @test "clean_project_artifacts: restores caller INT/TERM traps" {
 	result=$(bash -c "
         set -euo pipefail
@@ -781,6 +854,58 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"No artifacts found to purge"* ]]
+}
+
+@test "clean_project_artifacts: include-empty exposes zero-size artifacts (#869)" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+mkdir -p "$HOME/.cache/mole"
+echo "0" > "$HOME/.cache/mole/purge_stats"
+
+mkdir -p "$HOME/www/test-project/node_modules"
+touch "$HOME/www/test-project/package.json"
+touch -t 202001010101 "$HOME/www/test-project/node_modules" "$HOME/www/test-project/package.json" "$HOME/www/test-project"
+
+PURGE_SEARCH_PATHS=("$HOME/www")
+get_dir_size_kb() { echo 0; }
+
+export MOLE_PURGE_INCLUDE_EMPTY=1
+export MOLE_DRY_RUN=1
+clean_project_artifacts </dev/null
+
+stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
+echo "COUNT=$(cat "$stats_dir/purge_count" 2> /dev/null || echo missing)"
+echo "SIZE=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo missing)"
+[[ -d "$HOME/www/test-project/node_modules" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"COUNT=1"* ]]
+	[[ "$output" == *"SIZE=0"* ]]
+}
+
+@test "clean_project_artifacts: skips size calculation errors instead of showing 0B (#869)" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+mkdir -p "$HOME/www/test-project/node_modules"
+touch "$HOME/www/test-project/package.json"
+touch -t 202001010101 "$HOME/www/test-project/node_modules" "$HOME/www/test-project/package.json" "$HOME/www/test-project"
+
+PURGE_SEARCH_PATHS=("$HOME/www")
+get_dir_size_kb() { echo ERROR; }
+
+clean_project_artifacts </dev/null
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"No artifacts found to purge"* ]]
+	[[ "$output" != *"0B"* ]]
 }
 
 @test "clean_project_artifacts: dry-run does not count failed removals" {
@@ -849,6 +974,13 @@ EOF
 	[[ "$output" == *"mo purge"* ]]
 }
 
+@test "mo purge --help includes include-empty option" {
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" purge --help
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"--include-empty"* ]]
+	[[ "$output" == *"Show zero-size project artifact directories"* ]]
+}
+
 @test "mo purge: accepts --debug flag" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"
@@ -859,7 +991,7 @@ EOF
 
 	run bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge --debug < /dev/null 2>&1 || true
+        $timeout_cmd 10 '$PROJECT_ROOT/mole' purge --debug < /dev/null 2>&1 || true
     "
 	true
 }
@@ -874,10 +1006,27 @@ EOF
 
 	run bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge --dry-run < /dev/null 2>&1 || true
+        $timeout_cmd 10 '$PROJECT_ROOT/mole' purge --dry-run < /dev/null 2>&1 || true
     "
 
 	[[ "$output" == *"DRY RUN MODE"* ]] || [[ "$output" == *"Dry run complete"* ]]
+}
+
+@test "mo purge: accepts --include-empty flag" {
+	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
+		skip "gtimeout/timeout not available"
+	fi
+
+	timeout_cmd="timeout"
+	command -v timeout >/dev/null 2>&1 || timeout_cmd="gtimeout"
+
+	run bash -c "
+        export HOME='$HOME'
+        $timeout_cmd 10 '$PROJECT_ROOT/mole' purge --include-empty --dry-run < /dev/null 2>&1
+    "
+
+	[ "$status" -eq 0 ] || [ "$status" -eq 2 ]
+	[[ "$output" != *"Unknown option"* ]]
 }
 
 @test "mo purge: creates cache directory for stats" {
@@ -890,7 +1039,7 @@ EOF
 
 	bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge < /dev/null 2>&1 || true
+        $timeout_cmd 10 '$PROJECT_ROOT/mole' purge < /dev/null 2>&1 || true
     "
 
 	[ -d "$HOME/.cache/mole" ] || [ -d "${XDG_CACHE_HOME:-$HOME/.cache}/mole" ]

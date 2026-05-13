@@ -66,6 +66,135 @@ EOF
     [[ -n "$(ls -A "$MOLE_TEST_TRASH_DIR" 2> /dev/null || true)" ]]
 }
 
+@test "mole_delete moves sudo-required paths to invoking user Trash" {
+    local victim="$SANDBOX/victim_sudo_trash"
+    local fake_bin="$SANDBOX/bin"
+    local fake_home="$SANDBOX/home"
+    local trace="$SANDBOX/trace.log"
+
+    mkdir -p "$fake_bin" "$fake_home"
+    mkdir -p "$victim"
+    printf 'payload' > "$victim/data.txt"
+
+    cat > "$fake_bin/trash" <<'SH'
+#!/bin/bash
+printf 'trash %s\n' "$*" >> "$MOLE_TEST_TRACE"
+exit 99
+SH
+    cat > "$fake_bin/sudo" <<'SH'
+#!/bin/bash
+printf 'sudo %s\n' "$*" >> "$MOLE_TEST_TRACE"
+"$@"
+SH
+    cat > "$fake_bin/osascript" <<'SH'
+#!/bin/bash
+printf 'osascript %s\n' "$*" >> "$MOLE_TEST_TRACE"
+exit 98
+SH
+    chmod +x "$fake_bin/trash" "$fake_bin/sudo" "$fake_bin/osascript"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+unset MOLE_TEST_TRASH_DIR
+unset MOLE_TEST_NO_AUTH
+export MOLE_DELETE_MODE=trash
+export PATH="$fake_bin:\$PATH"
+export HOME="$fake_home"
+export MOLE_TEST_TRACE="$trace"
+mole_delete "$victim" true
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ ! -e "$victim" ]]
+    [[ -d "$fake_home/.Trash/$(basename "$victim")" ]]
+    [[ "$(grep -c '^sudo mv ' "$trace" 2> /dev/null || true)" -eq 1 ]]
+    [[ "$(grep -c '^sudo trash ' "$trace" 2> /dev/null || true)" -eq 0 ]]
+    [[ "$(grep -c '^trash ' "$trace" 2> /dev/null || true)" -eq 0 ]]
+    [[ "$(grep -c '^osascript ' "$trace" 2> /dev/null || true)" -eq 0 ]]
+
+    local status_col
+    status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
+    [ "$status_col" = "ok" ]
+}
+
+@test "mole_delete refuses symlinked invoking user Trash for sudo-required paths" {
+    local victim="$SANDBOX/victim_sudo_symlink_trash"
+    local fake_bin="$SANDBOX/bin"
+    local fake_home="$SANDBOX/home"
+    local redirected="$SANDBOX/redirected"
+    local trace="$SANDBOX/trace.log"
+
+    mkdir -p "$fake_bin" "$fake_home" "$redirected" "$victim"
+    printf 'payload' > "$victim/data.txt"
+    ln -s "$redirected" "$fake_home/.Trash"
+
+    cat > "$fake_bin/sudo" <<'SH'
+#!/bin/bash
+printf 'sudo %s\n' "$*" >> "$MOLE_TEST_TRACE"
+"$@"
+SH
+    chmod +x "$fake_bin/sudo"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+unset MOLE_TEST_TRASH_DIR
+unset MOLE_TEST_NO_AUTH
+export MOLE_DELETE_MODE=trash
+export PATH="$fake_bin:\$PATH"
+export HOME="$fake_home"
+export MOLE_TEST_TRACE="$trace"
+mole_delete "$victim" true
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ ! -e "$victim" ]]
+    [[ -z "$(ls -A "$redirected" 2> /dev/null || true)" ]]
+    [[ "$(grep -c '^sudo mv ' "$trace" 2> /dev/null || true)" -eq 0 ]]
+
+    local status_col
+    status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
+    [ "$status_col" = "trash-fallback-rm" ]
+}
+
+@test "mole_delete uses unique Trash name for sudo-required path conflicts" {
+    local victim="$SANDBOX/conflict_app"
+    local fake_bin="$SANDBOX/bin"
+    local fake_home="$SANDBOX/home"
+    local trace="$SANDBOX/trace.log"
+
+    mkdir -p "$fake_bin" "$fake_home/.Trash" "$victim"
+    printf 'payload' > "$victim/data.txt"
+    mkdir -p "$fake_home/.Trash/$(basename "$victim")"
+
+    cat > "$fake_bin/sudo" <<'SH'
+#!/bin/bash
+printf 'sudo %s\n' "$*" >> "$MOLE_TEST_TRACE"
+"$@"
+SH
+    chmod +x "$fake_bin/sudo"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+unset MOLE_TEST_TRASH_DIR
+unset MOLE_TEST_NO_AUTH
+export MOLE_DELETE_MODE=trash
+export PATH="$fake_bin:\$PATH"
+export HOME="$fake_home"
+export MOLE_TEST_TRACE="$trace"
+mole_delete "$victim" true
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ ! -e "$victim" ]]
+    [[ -d "$fake_home/.Trash/$(basename "$victim")" ]]
+    [[ -n "$(find "$fake_home/.Trash" -mindepth 1 -maxdepth 1 -name "$(basename "$victim").*" -print -quit)" ]]
+    [[ "$(grep -c '^sudo mv -n ' "$trace" 2> /dev/null || true)" -eq 1 ]]
+
+    local status_col
+    status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
+    [ "$status_col" = "ok" ]
+}
+
 @test "mole_delete writes a tab-separated log line per call" {
     local victim="$SANDBOX/logged"
     : > "$victim"

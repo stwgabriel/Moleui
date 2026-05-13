@@ -297,6 +297,10 @@ safe_remove_symlink() {
 
     local rm_exit=0
     if [[ "$use_sudo" == "true" ]]; then
+        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo blocked in test mode"
+            return 1
+        fi
         sudo rm "$path" 2> /dev/null || rm_exit=$?
     else
         rm "$path" 2> /dev/null || rm_exit=$?
@@ -330,6 +334,15 @@ safe_sudo_remove() {
 
     if [[ -L "$path" ]]; then
         log_error "Refusing to sudo remove symlink: $path"
+        return 1
+    fi
+
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+            log_info "[DRY-RUN] Would sudo remove: $path"
+            return 0
+        fi
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo blocked in test mode"
         return 1
     fi
 
@@ -464,8 +477,12 @@ mole_delete() {
         local raw_size=""
         local du_rc=0
         if [[ "$needs_sudo" == "true" ]]; then
-            raw_size=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
-            du_rc=${PIPESTATUS[0]}
+            if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+                du_rc=1
+            else
+                raw_size=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
+                du_rc=${PIPESTATUS[0]}
+            fi
         else
             raw_size=$(get_path_size_kb "$path" 2> /dev/null) || du_rc=$?
         fi
@@ -478,6 +495,13 @@ mole_delete() {
         debug_log "[DRY RUN] Would delete ($mode): $path"
         _mole_delete_log "$mode" "$size_kb" "dry-run" "$path"
         return 0
+    fi
+
+    if [[ "$needs_sudo" == "true" ]]; then
+        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+            _mole_delete_log "$mode" "$size_kb" "sudo-blocked-test-mode" "$path"
+            return 1
+        fi
     fi
 
     # Trash mode: attempt Trash move first, fall through to permanent removal
@@ -538,15 +562,14 @@ _mole_move_to_trash() {
         return 1
     fi
 
-    # Prefer the `trash` CLI (Homebrew formula) when available, it's faster
-    # and does not need Finder running. Fall back to AppleScript, which
-    # ships with macOS but prompts for auth on root-owned targets.
+    if [[ "$needs_sudo" == "true" ]]; then
+        _mole_move_sudo_path_to_user_trash "$path"
+        return $?
+    fi
+
+    # Prefer the `trash` CLI (Homebrew formula) for normal user-owned paths.
     if command -v trash > /dev/null 2>&1; then
-        if [[ "$needs_sudo" == "true" ]]; then
-            sudo trash "$path" > /dev/null 2>&1 && return 0
-        else
-            trash "$path" > /dev/null 2>&1 && return 0
-        fi
+        trash "$path" > /dev/null 2>&1 && return 0
     fi
 
     # AppleScript fallback. Pass the path via argv so special chars (quotes,
@@ -559,6 +582,102 @@ on run argv
     end tell
 end run
 APPLESCRIPT
+}
+
+_mole_move_sudo_path_to_user_trash() {
+    local path="$1"
+    local user_home=""
+
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        return 1
+    fi
+
+    if declare -f get_invoking_home > /dev/null 2>&1; then
+        user_home=$(get_invoking_home)
+    else
+        user_home="${HOME:-}"
+    fi
+
+    if [[ -z "$user_home" || "$user_home" != /* || "$user_home" == "/" || "$user_home" == "/var/root" ]]; then
+        debug_log "Refusing sudo Trash move: invalid invoking user home: ${user_home:-<empty>}"
+        return 1
+    fi
+
+    if [[ -z "$path" ]] || [[ ! -e "$path" && ! -L "$path" ]]; then
+        debug_log "Refusing sudo Trash move: path does not exist: ${path:-<empty>}"
+        return 1
+    fi
+
+    local trash_dir="${user_home%/}/.Trash"
+
+    # The destination must be the invoking user's Trash, even though sudo is
+    # needed to unlink the original protected path.
+    if [[ -L "$trash_dir" ]]; then
+        debug_log "Refusing sudo Trash move: invoking user Trash is a symlink: $trash_dir"
+        return 1
+    fi
+    if ! mkdir -p "$trash_dir" 2> /dev/null; then
+        if ! sudo mkdir -p "$trash_dir" 2> /dev/null; then
+            debug_log "Failed to create invoking user Trash: $trash_dir"
+            return 1
+        fi
+    fi
+    if [[ ! -d "$trash_dir" || -L "$trash_dir" ]]; then
+        debug_log "Refusing sudo Trash move: invoking user Trash is not a normal directory: $trash_dir"
+        return 1
+    fi
+
+    local owner_uid="" owner_gid=""
+    if declare -f get_invoking_uid > /dev/null 2>&1; then
+        owner_uid=$(get_invoking_uid)
+    fi
+    if declare -f get_invoking_gid > /dev/null 2>&1; then
+        owner_gid=$(get_invoking_gid)
+    fi
+    if [[ "$owner_uid" =~ ^[0-9]+$ && "$owner_gid" =~ ^[0-9]+$ ]]; then
+        sudo chown "$owner_uid:$owner_gid" "$trash_dir" 2> /dev/null || true
+    fi
+    if ! chmod 700 "$trash_dir" 2> /dev/null; then
+        sudo chmod 700 "$trash_dir" 2> /dev/null || true
+    fi
+
+    # Avoid Finder-style ':' path weirdness and keep generated names filesystem-safe.
+    local base
+    base=$(basename "$path")
+    base="${base//:/__}"
+    base="${base//\//__}"
+    [[ -n "$base" && "$base" != "." && "$base" != ".." ]] || base="mole-trash-item"
+
+    local dest="$trash_dir/$base"
+    local ts suffix
+    ts=$(date +%s 2> /dev/null || echo 0)
+    suffix=0
+
+    while [[ -e "$dest" || -L "$dest" ]]; do
+        suffix=$((suffix + 1))
+        if [[ $suffix -gt 100 ]]; then
+            debug_log "Failed to choose unique Trash destination for: $path"
+            return 1
+        fi
+        dest="$trash_dir/$base.$ts.$$.$suffix"
+    done
+
+    if ! sudo mv -n "$path" "$dest" > /dev/null 2>&1; then
+        debug_log "Failed to move sudo-required path to invoking user Trash: $path -> $dest"
+        return 1
+    fi
+    if [[ -e "$path" || -L "$path" ]] || [[ ! -e "$dest" && ! -L "$dest" ]]; then
+        debug_log "Failed to move sudo-required path without overwriting destination: $path -> $dest"
+        return 1
+    fi
+
+    # Best-effort ownership repair makes restored Trash items behave like user files.
+    if [[ "$owner_uid" =~ ^[0-9]+$ && "$owner_gid" =~ ^[0-9]+$ ]]; then
+        sudo chown -R "$owner_uid:$owner_gid" "$dest" 2> /dev/null || true
+    fi
+
+    debug_log "Moved sudo-required path to invoking user Trash: $path -> $dest"
+    return 0
 }
 
 # Batched Trash move for non-sudo, non-symlink paths. Removes the per-file
@@ -696,6 +815,11 @@ safe_sudo_find_delete() {
     local pattern="$2"
     local age_days="${3:-7}"
     local type_filter="${4:-f}"
+
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        debug_log "Skipping sudo find/delete in test mode: $base_dir"
+        return 0
+    fi
 
     # Validate base directory (use sudo for permission-restricted dirs)
     if ! sudo test -d "$base_dir" 2> /dev/null; then

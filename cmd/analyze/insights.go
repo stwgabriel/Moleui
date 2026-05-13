@@ -130,25 +130,26 @@ func measureOldDownloads(dir string, daysOld int) (int64, error) {
 	return total, nil
 }
 
-// insightIcon returns an appropriate icon for an overview entry.
+// insightIcon returns the icon for an overview entry.
+//
+// Two-icon scheme so the column stays visually clean:
+//   - 📁 for top-level directories (Home, User Library, Applications, System
+//     Library) where the user is browsing structure.
+//   - 👀 for "hidden space insights": paths that silently accumulate disk
+//     usage and deserve a peek. Eyes signal attention without promising the
+//     contents are safe to delete, which matters for iOS Backups, Xcode
+//     Archives, and Old Downloads (valuable user data, not just cache).
+//
+// History: an earlier per-name icon zoo (📋 💾 🔨 📲 🐳 📱 📥) varied in
+// render width and added no information. A broom (🧹) followed but
+// mis-signalled "all of these are cleanable", which Xcode Archives and iOS
+// Backups are not.
 func insightIcon(entry dirEntry) string {
 	switch entry.Name {
-	case "iOS Backups":
-		return "📱"
-	case "Old Downloads (90d+)":
-		return "📥"
-	case "Homebrew Cache", "pip Cache", "CocoaPods Cache", "Gradle Cache", "Spotify Cache", "JetBrains Cache":
-		return "💾"
-	case "System Logs":
-		return "📋"
-	case "Xcode DerivedData", "Xcode Archives":
-		return "🔨"
-	case "Xcode Simulators":
-		return "📲"
-	case "Docker Data":
-		return "🐳"
-	default:
+	case "Home", "User Library", "App Library", "Applications", "System Library":
 		return "📁"
+	default:
+		return "👀"
 	}
 }
 

@@ -228,6 +228,33 @@ end_section() {
 normalize_paths_for_cleanup() {
     local -a input_paths=("$@")
 
+    local _normalized_cleanup_path=""
+    _normalize_single_cleanup_path() {
+        local raw_path="$1"
+        local normalized="${raw_path%/}"
+        [[ -z "$normalized" ]] && normalized="$raw_path"
+
+        local gradle_caches_root="$HOME/.gradle/caches"
+        case "$normalized" in
+            "$gradle_caches_root"/*/groovy-dsl/*/* | "$gradle_caches_root"/*/kotlin-dsl/*/*)
+                local rel version dsl_dir rest hash
+                rel="${normalized#"$gradle_caches_root"/}"
+                version="${rel%%/*}"
+                rest="${rel#*/}"
+                dsl_dir="${rest%%/*}"
+                rest="${rest#*/}"
+                hash="${rest%%/*}"
+                if [[ -n "$version" && -n "$hash" &&
+                    ("$dsl_dir" == "groovy-dsl" || "$dsl_dir" == "kotlin-dsl") ]]; then
+                    _normalized_cleanup_path="$gradle_caches_root/$version/$dsl_dir/$hash"
+                    return
+                fi
+                ;;
+        esac
+
+        _normalized_cleanup_path="$normalized"
+    }
+
     # Fast path for large batches: O(n log n) via sort|awk instead of O(n²) bash loops.
     # Lex sort guarantees every parent path precedes its children, so a single-pass
     # awk can filter child paths by tracking only the last kept path.
@@ -235,11 +262,30 @@ normalize_paths_for_cleanup() {
     # they are output directly with null-byte delimiters and skipped by the sort pass.
     if [[ ${#input_paths[@]} -gt 50 ]]; then
         local -a _fast_pipeline=()
-        local _fast_path
+        local _fast_path _fast_raw
         for _fast_path in "${input_paths[@]}"; do
             if [[ "$_fast_path" == *$'\n'* ]]; then
                 printf '%s\0' "$_fast_path"
             else
+                _fast_raw="$_fast_path"
+                _fast_path="${_fast_path%/}"
+                [[ -z "$_fast_path" ]] && _fast_path="$_fast_raw"
+                local _gradle_caches_root="$HOME/.gradle/caches"
+                case "$_fast_path" in
+                    "$_gradle_caches_root"/*/groovy-dsl/*/* | "$_gradle_caches_root"/*/kotlin-dsl/*/*)
+                        local _rel _version _dsl_dir _rest _hash
+                        _rel="${_fast_path#"$_gradle_caches_root"/}"
+                        _version="${_rel%%/*}"
+                        _rest="${_rel#*/}"
+                        _dsl_dir="${_rest%%/*}"
+                        _rest="${_rest#*/}"
+                        _hash="${_rest%%/*}"
+                        if [[ -n "$_version" && -n "$_hash" &&
+                            ("$_dsl_dir" == "groovy-dsl" || "$_dsl_dir" == "kotlin-dsl") ]]; then
+                            _fast_path="$_gradle_caches_root/$_version/$_dsl_dir/$_hash"
+                        fi
+                        ;;
+                esac
                 _fast_pipeline+=("$_fast_path")
             fi
         done
@@ -259,8 +305,9 @@ normalize_paths_for_cleanup() {
     local -a unique_paths=()
 
     for path in "${input_paths[@]}"; do
-        local normalized="${path%/}"
-        [[ -z "$normalized" ]] && normalized="$path"
+        local normalized
+        _normalize_single_cleanup_path "$path"
+        normalized="$_normalized_cleanup_path"
         local found=false
         if [[ ${#unique_paths[@]} -gt 0 ]]; then
             for existing in "${unique_paths[@]}"; do
@@ -751,7 +798,9 @@ safe_clean() {
         fi
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$size_human dry${NC}"
+            local size_display
+            size_display=$(colorize_human_size "$size_human")
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${size_display} ${YELLOW}dry${NC}"
 
             local paths_temp
             paths_temp=$(create_temp_file)
@@ -974,7 +1023,7 @@ perform_cleanup() {
         fi
         if [[ "$DRY_RUN" == "true" ]]; then
             echo ""
-            echo "Potential space: 0.00GB"
+            echo -e "Potential space: $(colorize_human_size "0.00GB")"
         fi
         total_items=1
         files_cleaned=0
@@ -1191,7 +1240,7 @@ perform_cleanup() {
         freed_size_human=$(bytes_to_human_kb "$total_size_cleaned")
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            local stats="Potential space: ${GREEN}${freed_size_human}${NC}"
+            local stats="Potential space: $(colorize_human_size "$freed_size_human")"
             [[ $files_cleaned -gt 0 ]] && stats+=" | Items: $files_cleaned"
             [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
             summary_details+=("$stats")
@@ -1300,6 +1349,21 @@ main() {
                 source "$SCRIPT_DIR/../lib/manage/whitelist.sh"
                 manage_whitelist "clean"
                 exit 0
+                ;;
+            "--select" | "--categories" | "--exclude")
+                echo "mo clean $1 was removed in this release." >&2
+                echo "Use 'mo clean --dry-run' to preview cleanup and 'mo clean --whitelist' to protect paths." >&2
+                exit 1
+                ;;
+            -*)
+                echo "Unknown option for mo clean: $1" >&2
+                echo "Run 'mo clean --help' for usage." >&2
+                exit 1
+                ;;
+            *)
+                echo "Unexpected argument for mo clean: $1" >&2
+                echo "Run 'mo clean --help' for usage." >&2
+                exit 1
                 ;;
         esac
         shift

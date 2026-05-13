@@ -159,17 +159,6 @@ EOF
 get_optimize_whitelist_items() {
     # Format: "display_name|pattern|category"
     cat << 'EOF'
-macOS Firewall check|firewall|security_check
-Gatekeeper check|gatekeeper|security_check
-macOS system updates check|check_macos_updates|update_check
-Mole updates check|check_mole_update|update_check
-Homebrew health check (doctor)|check_brew_health|health_check
-SIP status check|check_sip|security_check
-FileVault status check|check_filevault|security_check
-TouchID sudo check|check_touchid|config_check
-Rosetta 2 check|check_rosetta|config_check
-Git configuration check|check_git_config|config_check
-Login items check|check_login_items|config_check
 DNS & Spotlight Check|system_maintenance|optimize_task
 Finder Cache Refresh|cache_refresh|optimize_task
 App State Cleanup|saved_state_cleanup|optimize_task
@@ -234,10 +223,18 @@ load_whitelist() {
             patterns+=("$line")
         done < "$config_file"
     else
+        # bash 3.2 (default on macOS) raises "unbound variable" under set -u
+        # when expanding "${arr[@]}" on an empty array, so gate each branch
+        # on the array length. patterns stays the local empty default when a
+        # default list is empty, which the downstream dedupe loop handles.
         if [[ "$mode" == "clean" ]]; then
-            patterns=("${DEFAULT_WHITELIST_PATTERNS[@]}")
+            if [[ ${#DEFAULT_WHITELIST_PATTERNS[@]} -gt 0 ]]; then
+                patterns=("${DEFAULT_WHITELIST_PATTERNS[@]}")
+            fi
         elif [[ "$mode" == "optimize" ]]; then
-            patterns=("${DEFAULT_OPTIMIZE_WHITELIST_PATTERNS[@]}")
+            if [[ ${#DEFAULT_OPTIMIZE_WHITELIST_PATTERNS[@]} -gt 0 ]]; then
+                patterns=("${DEFAULT_OPTIMIZE_WHITELIST_PATTERNS[@]}")
+            fi
         fi
     fi
 
@@ -311,7 +308,7 @@ manage_whitelist_categories() {
         items_source=$(get_optimize_whitelist_items)
         active_config_file="$WHITELIST_CONFIG_OPTIMIZE"
         local display_config="${active_config_file/#$HOME/~}"
-        menu_title="Whitelist Manager, Select system checks or optimize tasks to ignore
+        menu_title="Whitelist Manager, Select optimize tasks to ignore
 ${GRAY}Edit: ${display_config}${NC}"
     else
         items_source=$(get_all_cache_items)

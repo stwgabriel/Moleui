@@ -18,10 +18,17 @@ setup_file() {
 
 	mkdir -p "$HOME"
 
-	# Build Go binaries from current source for JSON tests.
-	# Point GOPATH/GOMODCACHE/GOCACHE at the real home so go build can reuse
-	# the module and build caches rather than doing a cold rebuild every run.
-	if command -v go > /dev/null 2>&1; then
+	CLI_OWNS_GO_HELPERS=0
+	export CLI_OWNS_GO_HELPERS
+
+	if [[ -x "${MOLE_TEST_ANALYZE_BIN:-}" && -x "${MOLE_TEST_STATUS_BIN:-}" ]]; then
+		ANALYZE_BIN="$MOLE_TEST_ANALYZE_BIN"
+		STATUS_BIN="$MOLE_TEST_STATUS_BIN"
+		export ANALYZE_BIN STATUS_BIN
+	elif command -v go > /dev/null 2>&1; then
+		# Build Go binaries from current source for JSON tests.
+		# Point GOPATH/GOMODCACHE/GOCACHE at the real home so local focused runs
+		# can reuse caches when the full runner did not prebuild helpers.
 		ANALYZE_BIN="$(mktemp "${TMPDIR:-/tmp}/analyze-go.XXXXXX")"
 		STATUS_BIN="$(mktemp "${TMPDIR:-/tmp}/status-go.XXXXXX")"
 		GOPATH="${ORIGINAL_HOME}/go" GOMODCACHE="${ORIGINAL_HOME}/go/pkg/mod" \
@@ -30,6 +37,7 @@ setup_file() {
 		GOPATH="${ORIGINAL_HOME}/go" GOMODCACHE="${ORIGINAL_HOME}/go/pkg/mod" \
 			GOCACHE="${ORIGINAL_GOCACHE}" \
 			go build -o "$STATUS_BIN" "$PROJECT_ROOT/cmd/status" 2>/dev/null
+		CLI_OWNS_GO_HELPERS=1
 		export ANALYZE_BIN STATUS_BIN
 	fi
 }
@@ -40,7 +48,9 @@ teardown_file() {
 	if [[ -n "${ORIGINAL_HOME:-}" ]]; then
 		export HOME="$ORIGINAL_HOME"
 	fi
-	rm -f "${ANALYZE_BIN:-}" "${STATUS_BIN:-}"
+	if [[ "${CLI_OWNS_GO_HELPERS:-0}" == "1" ]]; then
+		rm -f "${ANALYZE_BIN:-}" "${STATUS_BIN:-}"
+	fi
 }
 
 create_fake_utils() {
@@ -94,7 +104,7 @@ setup() {
 	ln -s "$PROJECT_ROOT/mole" "$fake_bin/mole"
 	cat > "$fake_bin/brew" <<'SCRIPT'
 #!/usr/bin/env bash
-sleep 5
+sleep 3
 exit 1
 SCRIPT
 	chmod +x "$fake_bin/brew"
@@ -123,29 +133,28 @@ EOF
 	[[ "$output" == *"Unknown command: unknown-command"* ]]
 }
 
-@test "mole --help lists check command" {
+@test "mole --help does not list check command" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"mo check"* ]]
+	[[ "$output" != *"mo check"* ]]
 }
 
-@test "mole check --help shows diagnostics description" {
+@test "mole check is not a public command" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" check --help
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"Run system diagnostics"* ]]
-	[[ "$output" == *"mo doctor"* ]]
-}
-
-@test "mole doctor --help is an alias for mo check --help" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" doctor --help
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"Run system diagnostics"* ]]
-}
-
-@test "mole check rejects unknown options" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" check --bogus
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"Unknown check option: --bogus"* ]]
+	[[ "$output" == *"Unknown command: check"* ]]
+}
+
+@test "mole doctor is not a public command" {
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" doctor --help
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Unknown command: doctor"* ]]
+}
+
+@test "mole optimize --check is not a public option" {
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" optimize --check
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Unknown optimize option: --check"* ]]
 }
 
 @test "mole uninstall --whitelist returns unsupported option error" {
@@ -290,7 +299,7 @@ EOF
 @test "mo uninstall --help directs leftover-only cleanup to clean" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" uninstall --help
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"already gone, use mo clean"* ]]
+	[[ "$output" == *"For leftovers from apps that are already gone, use mo clean."* ]]
 }
 
 @test "mo clean --external accepts canonicalized custom root" {

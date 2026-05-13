@@ -35,18 +35,27 @@ func TestCreateInsightEntries(t *testing.T) {
 }
 
 func TestInsightIcon(t *testing.T) {
+	// Two-icon scheme: top-level directories use 📁, every insight row
+	// uses 👀 (eyes; signals "peek here" without promising deletability).
 	tests := []struct {
 		name string
 		want string
 	}{
-		{"iOS Backups", "📱"},
-		{"Old Downloads (90d+)", "📥"},
-		{"Homebrew Cache", "💾"},
-		{"System Logs", "📋"},
-		{"Xcode Simulators", "📲"},
-		{"Docker Data", "🐳"},
+		// Top-level dirs.
 		{"Home", "📁"},
+		{"User Library", "📁"},
+		{"App Library", "📁"}, // Legacy name retained for backwards compatibility.
 		{"Applications", "📁"},
+		{"System Library", "📁"},
+		// Insights collapsed to a single eyes glyph.
+		{"iOS Backups", "👀"},
+		{"Old Downloads (90d+)", "👀"},
+		{"Homebrew Cache", "👀"},
+		{"System Logs", "👀"},
+		{"Xcode DerivedData", "👀"},
+		{"Xcode Simulators", "👀"},
+		{"Xcode Archives", "👀"},
+		{"Docker Data", "👀"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

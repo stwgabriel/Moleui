@@ -93,6 +93,21 @@ teardown() {
     [[ "$output" == *"critical system directory"* ]]
 }
 
+@test "should_protect_path applies high-risk cleanup denylist" {
+    run bash -c "
+        source '$PROJECT_ROOT/lib/core/common.sh'
+        should_protect_path '$HOME/Library/Caches/ms-playwright/chromium-123'
+        should_protect_path '$HOME/Library/Caches/com.apple.homed/state'
+        should_protect_path '$HOME/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite'
+        should_protect_path '$HOME/Library/Preferences/com.paceap.eden.iLokLicenseManager.plist'
+        should_protect_path '/private/var/folders/aa/bb/C/com.native-instruments.NativeAccess/license'
+        should_protect_path '/Library/Audio/Plug-Ins/VST3/Example.vst3'
+        should_protect_data 'com.native-instruments.NativeAccess'
+        ! should_protect_path '$HOME/Library/Application Support/Example/Cache/item'
+    "
+    [ "$status" -eq 0 ]
+}
+
 @test "safe_remove validates path before deletion" {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_remove '/System/test' 2>&1"
     [ "$status" -eq 1 ]
