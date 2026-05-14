@@ -9,12 +9,18 @@ export interface MoleResult {
 }
 
 export interface MoleDesktopAPI {
+  getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
   openExternal: (url: string) => Promise<{ ok: boolean; message?: string }>;
+  copyText: (text: string) => Promise<{ ok: boolean }>;
+  revealPath: (commandPath: string) => Promise<{ ok: boolean; message?: string }>;
+  openActivityMonitor: () => Promise<{ ok: boolean; message?: string }>;
+  signalProcess: (pid: number, signal: 'SIGTERM' | 'SIGKILL') => Promise<{ ok: boolean; message?: string }>;
   runStatus: () => Promise<MoleResult>;
   uninstall: {
     list: () => Promise<MoleResult>;
     killList: () => Promise<{ ok: boolean; message: string }>;
     getAppIcon: (appPath: string) => Promise<{ ok: boolean; icon: string; message?: string }>;
+    getAppIcons: (appPaths: string[]) => Promise<{ ok: boolean; icons: Record<string, string>; message?: string }>;
     dryRun: (appNames: string[]) => Promise<MoleResult>;
     execute: (appNames: string[]) => Promise<MoleResult>;
     onListStdout: (callback: (data: string) => void) => void;
@@ -26,7 +32,7 @@ export interface MoleDesktopAPI {
     removeListeners: () => void;
   };
   clean: {
-    execute: (options: { dryRun: boolean }) => Promise<MoleResult>;
+    execute: (options: { dryRun: boolean; sections?: string[] }) => Promise<MoleResult>;
     kill: () => Promise<MoleResult>;
     onStdout: (callback: (data: string) => void) => void;
     onStderr: (callback: (data: string) => void) => void;
@@ -122,6 +128,7 @@ export interface SystemMetrics {
     status: string;
     health: string;
     cycle_count: number;
+    time_left?: string;
   }>;
   gpu: Array<{
     name: string;
@@ -129,25 +136,37 @@ export interface SystemMetrics {
     memory_used?: number;
     memory_total?: number;
   }>;
+  processes?: Array<{
+    name: string;
+    pid: number;
+    cpu: number;
+    memory: number;
+    command?: string;
+  }>;
   top_processes?: Array<{
     name: string;
     pid: number;
     cpu: number;
     memory: number;
+    command?: string;
   }>;
   hardware?: HardwareInfo;
   health_score: number;
 }
 
 export interface CleanCategory {
+  section: string;
   name: string;
   icon: string;
   color: string;
   size: number;
   fileCount: number;
+  items: string[];
+  cleanable: boolean;
+  scanned: boolean;
 }
 
-export type PageId = 'home' | 'mymac' | 'clean' | 'uninstall' | 'optimize' | 'analyze' | 'status';
+export type PageId = 'home' | 'mymac' | 'clean' | 'uninstall' | 'optimize' | 'analyze';
 
 export interface PageConfig {
   title: string;

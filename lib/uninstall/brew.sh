@@ -10,6 +10,9 @@ if [[ -n "${MOLE_BREW_UNINSTALL_LOADED:-}" ]]; then
 fi
 readonly MOLE_BREW_UNINSTALL_LOADED=1
 
+MOLE_BREW_CASK_LIST_CACHE_LOADED="${MOLE_BREW_CASK_LIST_CACHE_LOADED:-0}"
+MOLE_BREW_CASK_LIST_CACHE="${MOLE_BREW_CASK_LIST_CACHE:-}"
+
 # Resolve a path to its absolute real path (follows symlinks)
 # Args: $1 - path to resolve
 # Returns: Absolute resolved path, or empty string on failure
@@ -35,6 +38,17 @@ is_homebrew_available() {
     command -v brew > /dev/null 2>&1
 }
 
+get_brew_cask_list() {
+    is_homebrew_available || return 1
+
+    if [[ "${MOLE_BREW_CASK_LIST_CACHE_LOADED:-0}" != "1" ]]; then
+        MOLE_BREW_CASK_LIST_CACHE=$(HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null) || return 1
+        MOLE_BREW_CASK_LIST_CACHE_LOADED=1
+    fi
+
+    printf '%s\n' "$MOLE_BREW_CASK_LIST_CACHE"
+}
+
 # Check whether a cask is still recorded as installed in Homebrew.
 # Exit codes:
 #   0 - cask is installed
@@ -46,7 +60,7 @@ is_brew_cask_installed() {
     is_homebrew_available || return 2
 
     local cask_list
-    cask_list=$(HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null) || return 2
+    cask_list=$(get_brew_cask_list) || return 2
     grep -qxF "$cask_name" <<< "$cask_list"
 }
 
@@ -117,7 +131,7 @@ _detect_cask_via_caskroom_search() {
 
     # Only succeed if exactly one unique token found and it's installed
     if ((${#uniq[@]} == 1)) && [[ -n "${uniq[0]}" ]]; then
-        HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null | grep -qxF "${uniq[0]}" || return 1
+        get_brew_cask_list | grep -qxF "${uniq[0]}" || return 1
         echo "${uniq[0]}"
         return 0
     fi
@@ -143,7 +157,7 @@ _detect_cask_via_brew_list() {
     app_name_lower=$(echo "${app_bundle_name%.app}" | LC_ALL=C tr '[:upper:]' '[:lower:]')
 
     local cask_name
-    cask_name=$(HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null | grep -Fix "$app_name_lower") || return 1
+    cask_name=$(get_brew_cask_list | grep -Fix "$app_name_lower") || return 1
 
     # Verify this cask actually owns this app path
     HOMEBREW_NO_ENV_HINTS=1 brew info --cask "$cask_name" 2> /dev/null | grep -qF "$app_path" || return 1

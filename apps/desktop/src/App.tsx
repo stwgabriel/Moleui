@@ -8,17 +8,15 @@ import { CleanPage } from '@/pages/CleanPage';
 import { UninstallPage } from '@/pages/UninstallPage';
 import { OptimizePage } from '@/pages/OptimizePage';
 import { AnalyzePage } from '@/pages/AnalyzePage';
-import { StatusPage } from '@/pages/StatusPage';
 import { hasSeenHomePage, markHomePageSeen } from '@/utils/storage';
 import type { PageId } from '@/types';
 
 // Page order for determining animation direction
-const PAGE_ORDER: PageId[] = ['home', 'mymac', 'clean', 'uninstall', 'optimize', 'analyze', 'status'];
+const PAGE_ORDER: PageId[] = ['home', 'mymac', 'clean', 'uninstall', 'optimize', 'analyze'];
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageId>('home');
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
-  const [animationDirection, setAnimationDirection] = useState<'up' | 'down'>('down');
+  const [animationDirection, setAnimationDirection] = useState<'left' | 'right'>('left');
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Check IndexedDB on startup to determine initial page
@@ -38,16 +36,24 @@ function App() {
     initPage();
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('my-mac-effects', currentPage === 'mymac' || currentPage === 'analyze');
+
+    return () => {
+      document.documentElement.classList.remove('my-mac-effects');
+    };
+  }, [currentPage]);
+
   const handlePageChange = async (newPage: PageId) => {
     if (newPage === currentPage) return;
-    
+
     const currentIndex = PAGE_ORDER.indexOf(currentPage);
     const newIndex = PAGE_ORDER.indexOf(newPage);
-    
+
     // Determine animation direction based on page order
-    setAnimationDirection(newIndex > currentIndex ? 'down' : 'up');
+    setAnimationDirection(newIndex > currentIndex ? 'left' : 'right');
     setCurrentPage(newPage);
-    
+
     // Mark home page as seen if navigating away from home
     if (currentPage === 'home') {
       try {
@@ -61,9 +67,9 @@ function App() {
   const renderPage = (pageId: PageId) => {
     const isActive = pageId === currentPage;
     const animationClass = isActive
-      ? animationDirection === 'down'
-        ? 'slide-in-up'
-        : 'slide-in-down'
+      ? animationDirection === 'left'
+        ? 'slide-in-right'
+        : 'slide-in-left'
       : 'opacity-0 pointer-events-none';
 
     const pageContent = (() => {
@@ -71,13 +77,7 @@ function App() {
         case 'home':
           return <HomePage onNavigate={handlePageChange} onSkipToHome={() => handlePageChange('mymac')} />;
         case 'mymac':
-          return (
-            <MyMacPage
-              onNavigate={handlePageChange}
-              isSidebarExpanded={isSidebarExpanded}
-              onExpandSidebar={() => setIsSidebarExpanded(true)}
-            />
-          );
+          return <MyMacPage onNavigate={handlePageChange} />;
         case 'clean':
           return <CleanPage />;
         case 'uninstall':
@@ -86,8 +86,6 @@ function App() {
           return <OptimizePage />;
         case 'analyze':
           return <AnalyzePage />;
-        case 'status':
-          return <StatusPage />;
         default:
           return <HomePage onNavigate={handlePageChange} onSkipToHome={() => handlePageChange('mymac')} />;
       }
@@ -124,24 +122,17 @@ function App() {
         }}
       />
       <div className="window-drag-region" aria-hidden="true" />
-      <div className="min-h-screen h-full p-2 overflow-hidden flex">
-      <div className={cn(
-        'w-full items-stretch',
-        currentPage === 'home'
-          ? 'flex'
-          : 'grid grid-cols-[auto_minmax(0,1fr)] gap-3'
-      )}>
-          {currentPage !== 'home' && (
-            <Sidebar 
-              currentPage={currentPage} 
-              onPageChange={handlePageChange}
-              onCollapseChange={setIsSidebarExpanded}
-              isExpanded={isSidebarExpanded}
-            />
-          )}
-          <main className={cn('overflow-hidden relative', currentPage === 'home' && 'flex-1')} aria-live="polite">
+      <div className="h-screen overflow-hidden p-2">
+        <div className="flex h-full w-full flex-col overflow-hidden">
+          <main className={cn('relative min-h-0 flex-1 overflow-hidden', currentPage === 'home' && 'h-full')} aria-live="polite">
             {PAGE_ORDER.map((pageId) => renderPage(pageId))}
           </main>
+          {currentPage !== 'home' && (
+            <Sidebar
+              currentPage={currentPage}
+              onPageChange={handlePageChange}
+            />
+          )}
         </div>
       </div>
     </>

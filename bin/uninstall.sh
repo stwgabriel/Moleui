@@ -1242,6 +1242,12 @@ uninstall_list_apps() {
     fi
 
     if [[ "$format" == "json" ]]; then
+        if is_homebrew_available; then
+            MOLE_BREW_CASK_LIST_CACHE=$(HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null || true)
+            MOLE_BREW_CASK_LIST_CACHE_LOADED=1
+            export MOLE_BREW_CASK_LIST_CACHE MOLE_BREW_CASK_LIST_CACHE_LOADED
+        fi
+
         printf '['
         local first=1
         local app_data
@@ -1281,6 +1287,12 @@ uninstall_list_apps() {
     if [[ $total -eq 0 ]]; then
         echo "No applications found."
         return 0
+    fi
+
+    if is_homebrew_available; then
+        MOLE_BREW_CASK_LIST_CACHE=$(HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null || true)
+        MOLE_BREW_CASK_LIST_CACHE_LOADED=1
+        export MOLE_BREW_CASK_LIST_CACHE MOLE_BREW_CASK_LIST_CACHE_LOADED
     fi
 
     printf '\n'

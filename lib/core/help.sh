@@ -7,6 +7,7 @@ show_clean_help() {
     echo ""
     echo "Options:"
     echo "  --dry-run, -n     Preview cleanup without making changes"
+    echo "  --section NAME    Clean only a named section (repeatable)"
     echo "  --external PATH   Clean OS metadata from a mounted external volume"
     echo "  --whitelist       Manage protected paths"
     echo "  --debug           Show detailed operation logs"

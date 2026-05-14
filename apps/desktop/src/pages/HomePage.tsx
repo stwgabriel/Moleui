@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Trash2, PackageX, Zap, PieChart, Activity, ArrowRight, Sparkles } from 'lucide-react';
+import { Trash2, PackageX, Zap, PieChart, ArrowRight, Sparkles } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { PageId } from '@/types';
 
@@ -49,15 +49,6 @@ const features: Feature[] = [
     color: '#202936',
     animation: 'animate-spin-slow',
     dropShadow: 'drop-shadow(0 8px 32px rgba(32,41,54,0.25))',
-  },
-  {
-    id: 'status',
-    icon: Activity,
-    label: 'Status',
-    description: 'Live CPU, memory, disk, and network stats at a glance.',
-    color: '#8d7cff',
-    animation: 'animate-pulse-wave',
-    dropShadow: 'drop-shadow(0 8px 32px rgba(141,124,255,0.35))',
   },
 ];
 

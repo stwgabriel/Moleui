@@ -121,8 +121,21 @@ func processNameFromCommand(command string) string {
 }
 
 func topProcesses(processes []ProcessInfo, limit int) []ProcessInfo {
-	if limit <= 0 || len(processes) == 0 {
+	if limit < 0 || len(processes) == 0 {
 		return nil
+	}
+	if limit == 0 || limit >= len(processes) {
+		top := slices.Clone(processes)
+		slices.SortFunc(top, func(a, b ProcessInfo) int {
+			if processRanksBefore(a, b) {
+				return -1
+			}
+			if processRanksBefore(b, a) {
+				return 1
+			}
+			return 0
+		})
+		return top
 	}
 
 	h := &processHeap{}

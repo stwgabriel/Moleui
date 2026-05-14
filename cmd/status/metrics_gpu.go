@@ -22,6 +22,7 @@ const (
 var (
 	gpuActiveResidencyRe = regexp.MustCompile(`GPU HW active residency:\s+([\d.]+)%`)
 	gpuIdleResidencyRe   = regexp.MustCompile(`GPU idle residency:\s+([\d.]+)%`)
+	gpuTemperatureRe     = regexp.MustCompile(`(?i)GPU(?:\s+die)?\s+temperature:\s+([\d.]+)\s*C`)
 )
 
 func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
@@ -106,11 +107,14 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 
 	var data struct {
 		Displays []struct {
-			Name   string `json:"_name"`
-			VRAM   string `json:"spdisplays_vram"`
-			Vendor string `json:"spdisplays_vendor"`
-			Metal  string `json:"spdisplays_metal"`
-			Cores  string `json:"sppci_cores"`
+			Name       string `json:"_name"`
+			Model      string `json:"sppci_model"`
+			VRAM       string `json:"spdisplays_vram"`
+			Vendor     string `json:"spdisplays_vendor"`
+			Metal      string `json:"spdisplays_metal"`
+			MetalGPU   string `json:"spdisplays_mtlgpufamilysupport"`
+			Cores      string `json:"sppci_cores"`
+			DeviceType string `json:"sppci_device_type"`
 		} `json:"SPDisplaysDataType"`
 	}
 	if err := json.Unmarshal([]byte(out), &data); err != nil {
@@ -119,23 +123,30 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 
 	var gpus []GPUStatus
 	for _, d := range data.Displays {
-		if d.Name == "" {
+		name := strings.TrimSpace(d.Model)
+		if name == "" {
+			name = strings.TrimSpace(d.Name)
+		}
+		if name == "" || (d.DeviceType != "" && d.DeviceType != "spdisplays_gpu") {
 			continue
 		}
+		coreCount, _ := strconv.Atoi(d.Cores)
+		metal := normalizeMacProfilerToken(firstNonEmpty(d.MetalGPU, d.Metal))
+		vendor := normalizeMacProfilerToken(d.Vendor)
+
 		noteParts := []string{}
 		if d.VRAM != "" {
 			noteParts = append(noteParts, "VRAM "+d.VRAM)
 		}
-		if d.Metal != "" {
-			noteParts = append(noteParts, d.Metal)
+		if metal != "" {
+			noteParts = append(noteParts, metal)
 		}
-		if d.Vendor != "" {
-			noteParts = append(noteParts, d.Vendor)
+		if vendor != "" {
+			noteParts = append(noteParts, vendor)
 		}
 		note := strings.Join(noteParts, " · ")
-		coreCount, _ := strconv.Atoi(d.Cores)
 		gpus = append(gpus, GPUStatus{
-			Name:      d.Name,
+			Name:      formatMacGPUName(name, coreCount),
 			Usage:     -1, // Will be updated with real-time data
 			CoreCount: coreCount,
 			Note:      note,
@@ -150,6 +161,39 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 	}
 
 	return gpus, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func formatMacGPUName(name string, coreCount int) string {
+	name = strings.TrimSpace(name)
+	if coreCount <= 0 || strings.Contains(strings.ToLower(name), "gpu") {
+		return name
+	}
+	return name + " " + strconv.Itoa(coreCount) + "-core GPU"
+}
+
+func normalizeMacProfilerToken(value string) string {
+	value = strings.TrimSpace(value)
+	switch {
+	case value == "sppci_vendor_Apple":
+		return "Apple"
+	case strings.HasPrefix(value, "spdisplays_metal"):
+		version := strings.TrimPrefix(value, "spdisplays_metal")
+		if version == "" {
+			return "Metal"
+		}
+		return "Metal " + version
+	default:
+		return value
+	}
 }
 
 func (c *Collector) getMacGPUUsage(now time.Time) float64 {
@@ -193,4 +237,29 @@ func getMacGPUUsage() float64 {
 	}
 
 	return -1
+}
+
+func getMacGPUTemperature() float64 {
+	if runtime.GOOS != "darwin" || !commandExists("powermetrics") {
+		return 0
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+
+	out, err := runCmd(ctx, "powermetrics", "--samplers", "smc", "-i", "250", "-n", "1")
+	if err != nil {
+		return 0
+	}
+
+	matches := gpuTemperatureRe.FindStringSubmatch(out)
+	if len(matches) < 2 {
+		return 0
+	}
+
+	temp, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil || temp <= 0 || temp > 150 {
+		return 0
+	}
+	return temp
 }

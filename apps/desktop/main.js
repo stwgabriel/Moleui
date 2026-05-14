@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, nativeTheme, shell } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, shell } from "electron";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -13,6 +13,59 @@ app.setName("Moleui Desktop");
 
 // Store active processes for cancellation
 const activeProcesses = new Map();
+const appIconCache = new Map();
+
+function withTimeout(promise, timeoutMs, message) {
+  return Promise.race([
+    promise,
+    new Promise((_resolve, reject) => {
+      setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]);
+}
+
+async function getAppIconData(appPath) {
+  if (!appPath || typeof appPath !== "string") {
+    return { ok: false, icon: "", message: "Invalid app path" };
+  }
+
+  if (appIconCache.has(appPath)) {
+    return appIconCache.get(appPath);
+  }
+
+  try {
+    const fileIcon = await withTimeout(
+      app.getFileIcon(appPath, { size: "normal" }),
+      1500,
+      "Icon lookup timed out",
+    );
+    const result = fileIcon.isEmpty()
+      ? { ok: false, icon: "", message: "No icon found" }
+      : { ok: true, icon: fileIcon.toDataURL() };
+    appIconCache.set(appPath, result);
+    return result;
+  } catch (error) {
+    const result = { ok: false, icon: "", message: error.message };
+    appIconCache.set(appPath, result);
+    return result;
+  }
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }));
+
+  return results;
+}
 
 function runtimeDir() {
   return app.isPackaged
@@ -159,6 +212,36 @@ function runMole(args, options = {}) {
   });
 }
 
+function normalizeAnalyzePath(input = "/") {
+  const rawPath = String(input || "/").trim() || "/";
+  const homePath = app.getPath("home");
+
+  if (rawPath === "~") {
+    return homePath;
+  }
+
+  if (rawPath.startsWith("~/") || rawPath.startsWith("~\\")) {
+    return path.join(homePath, rawPath.slice(2));
+  }
+
+  return rawPath;
+}
+
+function existingProcessPath(commandPath) {
+  const rawPath = String(commandPath || "").trim();
+  if (!rawPath.startsWith("/")) {
+    return "";
+  }
+  if (fs.existsSync(rawPath)) {
+    return rawPath;
+  }
+  const firstToken = rawPath.split(/\s+/)[0];
+  if (firstToken && fs.existsSync(firstToken)) {
+    return firstToken;
+  }
+  return "";
+}
+
 let splashWindow;
 
 function createSplashWindow() {
@@ -195,14 +278,14 @@ function createSplashWindow() {
 
 function createWindow() {
   const window = new BrowserWindow({
-    width: 960,
-    height: 720,
+    width: 1280,
+    height: 920,
     minWidth: 1280,
-    minHeight: 820,
+    minHeight: 920,
     titleBarStyle: "hidden",
     trafficLightPosition: {
       x: 18,
-      y: 20,
+      y: 6,
     },
     icon: appIconPath,
     webPreferences: {
@@ -231,7 +314,7 @@ function createWindow() {
 
 let mainWindow;
 
-ipcMain.handle("mole:status", async () => runMole(["status", "--json"]));
+ipcMain.handle("mole:status", async () => runMole(["status", "--json", "--process-limit", "0"]));
 
 ipcMain.handle("mole:uninstall:list", async (event) => {
   return runMole(["uninstall", "--list"], {
@@ -262,24 +345,31 @@ ipcMain.handle("mole:uninstall:list:kill", async () => {
 });
 
 ipcMain.handle("mole:uninstall:app-icon", async (_event, appPath) => {
-  if (!appPath || typeof appPath !== "string") {
-    return { ok: false, icon: "", message: "Invalid app path" };
+  return getAppIconData(appPath);
+});
+
+ipcMain.handle("mole:uninstall:app-icons", async (_event, appPaths) => {
+  if (!Array.isArray(appPaths)) {
+    return { ok: false, icons: {}, message: "Invalid app paths" };
   }
 
-  try {
-    const fileIcon = await Promise.race([
-      app.getFileIcon(appPath, { size: "normal" }),
-      new Promise((_resolve, reject) => {
-        setTimeout(() => reject(new Error("Icon lookup timed out")), 1500);
-      }),
-    ]);
-    if (fileIcon.isEmpty()) {
-      return { ok: false, icon: "", message: "No icon found" };
+  const uniquePaths = [...new Set(appPaths.filter((appPath) => typeof appPath === "string" && appPath))];
+  const iconResults = await mapWithConcurrency(uniquePaths, 8, async (appPath) => {
+    const result = await getAppIconData(appPath);
+    return [appPath, result];
+  });
+  const icons = {};
+
+  for (const [appPath, result] of iconResults) {
+    if (result.ok && result.icon) {
+      icons[appPath] = result.icon;
+    } else {
+      console.log(`Failed to get icon for ${appPath}: ${result.message}`);
     }
-    return { ok: true, icon: fileIcon.toDataURL() };
-  } catch (error) {
-    return { ok: false, icon: "", message: error.message };
   }
+
+  console.log(`Sending back ${Object.keys(icons).length} icons`);
+  return { ok: true, icons };
 });
 
 ipcMain.handle("mole:uninstall:dry-run", async (event, appNames) => {
@@ -310,6 +400,12 @@ ipcMain.handle("mole:uninstall:execute", async (event, appNames) => {
 ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
   const args = ["clean"];
   if (options.dryRun) args.push("--dry-run");
+  if (Array.isArray(options.sections)) {
+    for (const section of options.sections) {
+      const cleanSection = String(section || "").trim();
+      if (cleanSection) args.push("--section", cleanSection);
+    }
+  }
   
   return runMole(args, {
     processId: "clean",
@@ -325,7 +421,11 @@ ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
 ipcMain.handle("mole:clean:kill", async () => {
   const process = activeProcesses.get("clean");
   if (process && !process.killed) {
-    process.kill("SIGTERM");
+    if (process.__killMoleProcess) {
+      process.__killMoleProcess();
+    } else {
+      process.kill("SIGTERM");
+    }
     return { ok: true, message: "Clean process terminated" };
   }
   return { ok: false, message: "No active clean process" };
@@ -350,7 +450,11 @@ ipcMain.handle("mole:optimize:execute", async (event, options = {}) => {
 ipcMain.handle("mole:optimize:kill", async () => {
   const process = activeProcesses.get("optimize");
   if (process && !process.killed) {
-    process.kill("SIGTERM");
+    if (process.__killMoleProcess) {
+      process.__killMoleProcess();
+    } else {
+      process.kill("SIGTERM");
+    }
     return { ok: true, message: "Optimize process terminated" };
   }
   return { ok: false, message: "No active optimize process" };
@@ -358,7 +462,8 @@ ipcMain.handle("mole:optimize:kill", async () => {
 
 // Analyze command handlers
 ipcMain.handle("mole:analyze:execute", async (event, path = "/") => {
-  const args = ["analyze", path, "--json"];
+  const scanPath = normalizeAnalyzePath(path);
+  const args = ["analyze", "--json", scanPath];
   
   return runMole(args, {
     processId: "analyze",
@@ -374,7 +479,11 @@ ipcMain.handle("mole:analyze:execute", async (event, path = "/") => {
 ipcMain.handle("mole:analyze:kill", async () => {
   const process = activeProcesses.get("analyze");
   if (process && !process.killed) {
-    process.kill("SIGTERM");
+    if (process.__killMoleProcess) {
+      process.__killMoleProcess();
+    } else {
+      process.kill("SIGTERM");
+    }
     return { ok: true, message: "Analyze process terminated" };
   }
   return { ok: false, message: "No active analyze process" };
@@ -398,6 +507,49 @@ ipcMain.handle("mole:open-external", async (_event, url) => {
 
   await shell.openExternal(url);
   return { ok: true };
+});
+
+ipcMain.handle("mole:copy-text", async (_event, text) => {
+  clipboard.writeText(String(text ?? ""));
+  return { ok: true };
+});
+
+ipcMain.handle("mole:reveal-path", async (_event, commandPath) => {
+  const processPath = existingProcessPath(commandPath);
+  if (!processPath) {
+    return { ok: false, message: "Process path is not available" };
+  }
+  shell.showItemInFolder(processPath);
+  return { ok: true };
+});
+
+ipcMain.handle("mole:open-activity-monitor", async () => {
+  const paths = [
+    "/System/Applications/Utilities/Activity Monitor.app",
+    "/Applications/Utilities/Activity Monitor.app",
+  ];
+  const activityMonitorPath = paths.find((candidate) => fs.existsSync(candidate));
+  if (!activityMonitorPath) {
+    return { ok: false, message: "Activity Monitor was not found" };
+  }
+  const message = await shell.openPath(activityMonitorPath);
+  return message ? { ok: false, message } : { ok: true };
+});
+
+ipcMain.handle("mole:signal-process", async (_event, pid, signal) => {
+  const processId = Number(pid);
+  if (!Number.isInteger(processId) || processId <= 0) {
+    return { ok: false, message: "Invalid process ID" };
+  }
+  if (signal !== "SIGTERM" && signal !== "SIGKILL") {
+    return { ok: false, message: "Invalid signal" };
+  }
+  try {
+    process.kill(processId, signal);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: error.message };
+  }
 });
 
 app.whenReady().then(() => {

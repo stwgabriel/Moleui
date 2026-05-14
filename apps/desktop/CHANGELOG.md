@@ -1,5 +1,20 @@
 # Desktop App Changelog
 
+## [0.5.0] - 2026-05-13
+
+### Added
+- Added selective cleanup results with sortable sections and desktop cleanup execution for chosen clean sections.
+- Added full process visibility on My Mac, including sortable CPU/memory rows and actions to copy, reveal, terminate, force quit, or open Activity Monitor.
+- Added quick analyze targets, persisted analyze path state, and regression tests for clean and analyze page behavior.
+
+### Changed
+- Redesigned the desktop shell with bottom liquid-glass navigation, a user menu, wider app window sizing, and refreshed My Mac, Clean, Analyze, and Uninstall views.
+- Batched desktop app icon loading and stopped persisting large icon payloads with uninstall app state.
+
+### Fixed
+- Fixed desktop analyze path normalization for `~` and `~/...` paths before invoking the CLI.
+- Fixed stale scan and cleanup cancellation flows so the UI returns to a usable state.
+
 ## [0.4.1] - 2026-05-08
 
 ### Fixed

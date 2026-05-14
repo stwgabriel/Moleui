@@ -22,6 +22,7 @@ var (
 
 	// Command-line flags
 	jsonOutput       = flag.Bool("json", false, "output metrics as JSON instead of TUI")
+	processLimit     = flag.Int("process-limit", 5, "number of processes to include in top_processes; 0 includes all")
 	procCPUThreshold = flag.Float64("proc-cpu-threshold", 100, "alert when a process stays above this CPU percent")
 	procCPUWindow    = flag.Duration("proc-cpu-window", 5*time.Minute, "continuous duration a process must exceed the CPU threshold")
 	procCPUAlerts    = flag.Bool("proc-cpu-alerts", true, "enable persistent high-CPU process alerts")
@@ -133,6 +134,9 @@ func processWatchOptionsFromFlags() ProcessWatchOptions {
 }
 
 func validateFlags() error {
+	if *processLimit < 0 {
+		return fmt.Errorf("--process-limit must be >= 0")
+	}
 	if *procCPUThreshold < 0 {
 		return fmt.Errorf("--proc-cpu-threshold must be >= 0")
 	}

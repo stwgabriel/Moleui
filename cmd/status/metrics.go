@@ -81,6 +81,7 @@ type MetricsSnapshot struct {
 	Thermal        ThermalStatus      `json:"thermal"`
 	Sensors        []SensorReading    `json:"sensors"`
 	Bluetooth      []BluetoothDevice  `json:"bluetooth"`
+	Processes      []ProcessInfo      `json:"processes"`
 	TopProcesses   []ProcessInfo      `json:"top_processes"`
 	ProcessWatch   ProcessWatchConfig `json:"process_watch"`
 	ProcessAlerts  []ProcessAlert     `json:"process_alerts"`
@@ -343,7 +344,7 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 	hwInfo := c.cachedHW
 
 	score, scoreMsg := calculateHealthScore(cpuStats, memStats, diskStats, diskIO, thermalStats, batteryStats, hostInfo.Uptime)
-	topProcs := topProcesses(allProcs, 5)
+	topProcs := topProcesses(allProcs, *processLimit)
 
 	var processAlerts []ProcessAlert
 	c.watchMu.Lock()
@@ -379,6 +380,7 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 		Thermal:       thermalStats,
 		Sensors:       sensorStats,
 		Bluetooth:     btStats,
+		Processes:     allProcs,
 		TopProcesses:  topProcs,
 		ProcessWatch:  c.processWatch,
 		ProcessAlerts: processAlerts,

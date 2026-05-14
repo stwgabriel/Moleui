@@ -207,6 +207,7 @@ func collectThermal() ThermalStatus {
 		thermal.AdapterPower = powerThermal.AdapterPower
 		thermal.BatteryPower = powerThermal.BatteryPower
 	}
+	thermal.GPUTemp = getMacGPUTemperature()
 
 	// Do not synthesize CPU temperature from battery sensors or cpu_thermal_level.
 	// Those values are not CPU-package temperatures and produce false overheating data.

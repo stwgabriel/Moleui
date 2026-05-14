@@ -29,17 +29,26 @@ interface CommandResult {
   stderr: string;
 }
 
-function AppIcon({ app }: { app: App }) {
+function stripPersistedIcon(app: App) {
+  if (!app.icon) return app;
+
+  const appWithoutIcon = { ...app };
+  delete appWithoutIcon.icon;
+  return appWithoutIcon;
+}
+
+function AppIcon({ icon }: { icon?: string }) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setFailed(false);
-  }, [app.icon]);
+  }, [icon]);
 
-  if (app.icon && !failed) {
+  if (icon && !failed) {
+    console.log('AppIcon received:', icon.substring(0, 50) + '...');
     return (
       <img
-        src={app.icon}
+        src={icon}
         alt=""
         className="w-10 h-10 rounded-xl object-contain flex-shrink-0"
         onError={() => setFailed(true)}
@@ -57,6 +66,13 @@ function AppIcon({ app }: { app: App }) {
 export function UninstallPage() {
   const [stage, setStage] = usePersistentState<Stage>('mole-uninstall-stage', 'idle');
   const [apps, setApps] = usePersistentState<App[]>('mole-uninstall-apps', []);
+  const [appIcons, setAppIcons] = useState<Record<string, string>>(() => {
+    const icons: Record<string, string> = {};
+    apps.forEach(app => {
+      if (app.path && app.icon) icons[app.path] = app.icon;
+    });
+    return icons;
+  });
   const [selectedAppIndexes, setSelectedAppIndexes] = usePersistentState<number[]>('mole-uninstall-selected-apps', []);
   const [scanStatus, setScanStatus] = usePersistentState('mole-uninstall-scan-status', '');
   const [dryRunOutput, setDryRunOutput] = usePersistentState<string[]>('mole-uninstall-dry-run-output', []);
@@ -73,12 +89,19 @@ export function UninstallPage() {
   const executeListRef = useRef<HTMLDivElement>(null);
   const scanCancelledRef = useRef(false);
   const iconLoadRunRef = useRef(0);
+  const requestedIconsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (stage === 'loading') {
       setStage('idle');
       setScanStatus('');
     }
+  }, []);
+
+  useEffect(() => {
+    if (!apps.some(app => app.icon)) return;
+
+    setApps(currentApps => currentApps.map(stripPersistedIcon));
   }, []);
 
   // Setup stream listeners
@@ -136,15 +159,22 @@ export function UninstallPage() {
   }, []);
 
   useEffect(() => {
-    if (stage !== 'selection' || apps.length === 0 || !apps.some(app => app.path && !app.icon)) return;
+    if (stage !== 'selection' || apps.length === 0) return;
+
+    const appsWithoutIcons = apps.filter(app => app.path && !appIcons[app.path] && !requestedIconsRef.current.has(app.path));
+    if (appsWithoutIcons.length === 0) return;
+
+    appsWithoutIcons.forEach(app => requestedIconsRef.current.add(app.path));
 
     iconLoadRunRef.current += 1;
-    loadAppIcons(apps, iconLoadRunRef.current);
-  }, [stage]);
+    console.log('Loading apps icons for:', appsWithoutIcons.map(a => a.path));
+    loadAppIcons(appsWithoutIcons, iconLoadRunRef.current);
+  }, [stage, apps, appIcons]);
 
   const startScan = async () => {
     scanCancelledRef.current = false;
     iconLoadRunRef.current += 1;
+    setAppIcons({});
     setStage('loading');
     setScanStatus('Scanning applications...');
 
@@ -181,7 +211,7 @@ export function UninstallPage() {
           return;
         }
 
-        setApps(parsedApps);
+        setApps(parsedApps.map(stripPersistedIcon));
         setStage('selection');
       } catch (e: any) {
         setError({
@@ -213,14 +243,18 @@ export function UninstallPage() {
   };
 
   const loadAppIcons = async (appsToLoad: App[], runId: number) => {
-    const batchSize = 8;
-    for (let index = 0; index < appsToLoad.length; index += batchSize) {
+    if (!window.moleDesktop) return;
+
+    try {
+      const result = await window.moleDesktop.uninstall.getAppIcons(appsToLoad.map(app => app.path));
+      console.log('getAppIcons result:', Object.keys(result?.icons || {}).length);
+      if (iconLoadRunRef.current !== runId || !result.ok) return;
+
+      setAppIcons(currentIcons => ({ ...currentIcons, ...result.icons }));
+    } catch {
       if (iconLoadRunRef.current !== runId) return;
 
-      const batch = appsToLoad.slice(index, index + batchSize);
-      const icons = await Promise.all(batch.map(async app => {
-        if (app.icon) return { path: app.path, icon: app.icon };
-
+      const icons = await Promise.all(appsToLoad.map(async app => {
         try {
           const result = await window.moleDesktop.uninstall.getAppIcon(app.path);
           return result.ok && result.icon ? { path: app.path, icon: result.icon } : null;
@@ -231,10 +265,13 @@ export function UninstallPage() {
 
       if (iconLoadRunRef.current !== runId) return;
 
-      setApps(currentApps => currentApps.map(app => {
-        const match = icons.find(icon => icon?.path === app.path);
-        return match ? { ...app, icon: match.icon } : app;
-      }));
+      setAppIcons(currentIcons => {
+        const nextIcons = { ...currentIcons };
+        icons.forEach(icon => {
+          if (icon) nextIcons[icon.path] = icon.icon;
+        });
+        return nextIcons;
+      });
     }
   };
 
@@ -336,6 +373,7 @@ export function UninstallPage() {
     iconLoadRunRef.current += 1;
     setStage('idle');
     setApps([]);
+    setAppIcons({});
     setSelectedAppIndexes([]);
     setScanStatus('');
     setDryRunOutput([]);
@@ -346,6 +384,7 @@ export function UninstallPage() {
     setAnalysisProgress(0);
     setSearchQuery('');
     setSortBy('size');
+    requestedIconsRef.current.clear();
   };
 
   // Parse size string to bytes for sorting
@@ -683,7 +722,7 @@ export function UninstallPage() {
                         className="w-5 h-5"
                         onClick={(e) => e.stopPropagation()}
                       />
-                      <AppIcon app={app} />
+                      <AppIcon icon={appIcons[app.path]} />
                       <div className="flex-1">
                         <div className="font-semibold text-text-primary">{app.name}</div>
                         <div className="text-sm text-text-tertiary">{app.path}</div>

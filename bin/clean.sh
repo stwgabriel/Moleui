@@ -26,6 +26,7 @@ DRY_RUN=false
 PROTECT_FINDER_METADATA=false
 EXTERNAL_VOLUME_TARGET=""
 IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
+declare -a SELECTED_CLEAN_SECTIONS=()
 
 EXPORT_LIST_FILE="$HOME/.config/mole/clean-list.txt"
 CURRENT_SECTION=""
@@ -222,6 +223,19 @@ end_section() {
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Nothing to clean"
     fi
     TRACK_SECTION=0
+}
+
+should_run_clean_section() {
+    local section="$1"
+
+    [[ ${#SELECTED_CLEAN_SECTIONS[@]} -eq 0 ]] && return 0
+
+    local selected
+    for selected in "${SELECTED_CLEAN_SECTIONS[@]}"; do
+        [[ "$selected" == "$section" ]] && return 0
+    done
+
+    return 1
 }
 
 # shellcheck disable=SC2329
@@ -1114,7 +1128,7 @@ perform_cleanup() {
         end_section
     else
         # ===== 1. System =====
-        if [[ "$SYSTEM_CLEAN" == "true" ]]; then
+        if [[ "$SYSTEM_CLEAN" == "true" ]] && should_run_clean_section "System"; then
             start_section "System"
             clean_deep_system
             clean_local_snapshots
@@ -1129,97 +1143,129 @@ perform_cleanup() {
         fi
 
         # ===== 2. User essentials =====
-        start_section "User essentials"
-        clean_user_essentials
-        clean_finder_metadata
-        end_section
+        if should_run_clean_section "User essentials"; then
+            start_section "User essentials"
+            clean_user_essentials
+            clean_finder_metadata
+            end_section
+        fi
 
         # ===== 3. App caches (merged sandboxed and standard app caches) =====
-        start_section "App caches"
-        clean_app_caches
-        end_section
+        if should_run_clean_section "App caches"; then
+            start_section "App caches"
+            clean_app_caches
+            end_section
+        fi
 
         # ===== 4. Browsers =====
-        start_section "Browsers"
-        clean_browsers
-        end_section
+        if should_run_clean_section "Browsers"; then
+            start_section "Browsers"
+            clean_browsers
+            end_section
+        fi
 
         # ===== 5. Cloud & Office =====
-        start_section "Cloud & Office"
-        # Force shell fallback so timeout runs in this shell context.
-        # The Cloud/Office cleaners rely on helpers (safe_clean, whitelist checks)
-        # defined in this script and sourced modules.
-        if run_with_shell_timeout 300 run_cloud_and_office_cleanup; then
-            : # completed successfully
-        else
-            local ret=$?
-            if [[ $ret -eq 124 ]]; then
-                log_warning "Cloud & Office cleanup timed out after 5 minutes, skipping remaining items"
-            elif [[ $ret -eq 130 ]]; then
-                return 130
+        if should_run_clean_section "Cloud & Office"; then
+            start_section "Cloud & Office"
+            # Force shell fallback so timeout runs in this shell context.
+            # The Cloud/Office cleaners rely on helpers (safe_clean, whitelist checks)
+            # defined in this script and sourced modules.
+            if run_with_shell_timeout 300 run_cloud_and_office_cleanup; then
+                : # completed successfully
             else
-                log_warning "Cloud & Office cleanup failed with exit code $ret"
+                local ret=$?
+                if [[ $ret -eq 124 ]]; then
+                    log_warning "Cloud & Office cleanup timed out after 5 minutes, skipping remaining items"
+                elif [[ $ret -eq 130 ]]; then
+                    return 130
+                else
+                    log_warning "Cloud & Office cleanup failed with exit code $ret"
+                fi
             fi
+            end_section
         fi
-        end_section
 
         # ===== 6. Developer tools (merged CLI and GUI tooling) =====
-        start_section "Developer tools"
-        clean_developer_tools
-        end_section
+        if should_run_clean_section "Developer tools"; then
+            start_section "Developer tools"
+            clean_developer_tools
+            end_section
+        fi
 
         # ===== 7. Applications =====
-        start_section "Applications"
-        clean_user_gui_applications
-        end_section
+        if should_run_clean_section "Applications"; then
+            start_section "Applications"
+            clean_user_gui_applications
+            end_section
+        fi
 
         # ===== 8. Virtualization =====
-        start_section "Virtualization"
-        clean_virtualization_tools
-        end_section
+        if should_run_clean_section "Virtualization"; then
+            start_section "Virtualization"
+            clean_virtualization_tools
+            end_section
+        fi
 
         # ===== 9. Application Support =====
-        start_section "Application Support"
-        clean_application_support_logs
-        end_section
+        if should_run_clean_section "Application Support"; then
+            start_section "Application Support"
+            clean_application_support_logs
+            end_section
+        fi
 
         # ===== 10. App leftovers =====
-        start_section "App leftovers"
-        clean_orphaned_app_data
-        clean_orphaned_system_services
-        clean_orphaned_container_stubs
-        show_user_launch_agent_hint_notice
-        show_orphan_dotdir_hint_notice
-        end_section
+        if should_run_clean_section "App leftovers"; then
+            start_section "App leftovers"
+            clean_orphaned_app_data
+            clean_orphaned_system_services
+            clean_orphaned_container_stubs
+            show_user_launch_agent_hint_notice
+            show_orphan_dotdir_hint_notice
+            end_section
+        fi
 
         # ===== 11. Apple Silicon =====
-        clean_apple_silicon_caches
+        if should_run_clean_section "Apple Silicon"; then
+            start_section "Apple Silicon"
+            clean_apple_silicon_caches
+            end_section
+        fi
 
         # ===== 12. Device backups & firmware =====
-        start_section "Device backups & firmware"
-        clean_cached_device_firmware
-        check_ios_device_backups
-        end_section
+        if should_run_clean_section "Device backups & firmware"; then
+            start_section "Device backups & firmware"
+            clean_cached_device_firmware
+            check_ios_device_backups
+            end_section
+        fi
 
         # ===== 13. Time Machine =====
-        start_section "Time Machine"
-        clean_time_machine_failed_backups
-        end_section
+        if should_run_clean_section "Time Machine"; then
+            start_section "Time Machine"
+            clean_time_machine_failed_backups
+            end_section
+        fi
 
         # ===== 14. Large files =====
-        start_section "Large files"
-        check_large_file_candidates
-        end_section
+        if should_run_clean_section "Large files"; then
+            start_section "Large files"
+            check_large_file_candidates
+            end_section
+        fi
 
         # ===== 15. System Data clues =====
-        start_section "System Data clues"
-        show_system_data_hint_notice
-        end_section
+        if should_run_clean_section "System Data clues"; then
+            start_section "System Data clues"
+            show_system_data_hint_notice
+            end_section
+        fi
 
         # ===== 16. Project artifacts =====
-        start_section "Project artifacts"
-        show_project_artifact_hint_notice
-        end_section
+        if should_run_clean_section "Project artifacts"; then
+            start_section "Project artifacts"
+            show_project_artifact_hint_notice
+            end_section
+        fi
     fi
 
     # ===== Final summary =====
@@ -1336,6 +1382,14 @@ main() {
             "--dry-run" | "-n")
                 DRY_RUN=true
                 export MOLE_DRY_RUN=1
+                ;;
+            "--section")
+                shift
+                if [[ $# -eq 0 ]]; then
+                    echo "Missing name for --section" >&2
+                    exit 1
+                fi
+                SELECTED_CLEAN_SECTIONS+=("$1")
                 ;;
             "--external")
                 shift
