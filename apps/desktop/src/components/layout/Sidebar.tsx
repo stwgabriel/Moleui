@@ -31,7 +31,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     >
       <div className="mt-[clamp(3.35rem,5.8vh,4.25rem)] flex justify-center">
         <div className="flex h-[100px] w-[100px] items-center justify-center overflow-visible">
-          <img src="/assets/images/rounded-logo.png" alt="Moleui" className="h-full w-full object-contain object-center" draggable={false} />
+          <img src="./assets/images/rounded-logo.png" alt="Moleui" className="h-full w-full object-contain object-center" draggable={false} />
         </div>
       </div>
 

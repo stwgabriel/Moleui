@@ -72,6 +72,13 @@ const featureThemes: Record<string, { accent: string; glow: string; footerText: 
   },
 };
 
+const featureImages: Record<string, string> = {
+  Sparkles: './assets/images/cleanup-3d.png',
+  Gauge: './assets/images/performance-3d.png',
+  Database: './assets/images/storage-3d.png',
+  PackageX: './assets/images/uninstall-3d.png',
+};
+
 export function StartScreen({ config, onStart, variant = 'default' }: StartScreenProps) {
   // Map icon name to actual component
   const getIcon = (iconName: string) => {
@@ -90,6 +97,7 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
     glow: 'rgba(109,93,252,0.22)',
     footerText: 'Review the results before making changes',
   };
+  const featureImage = featureImages[config.icon];
 
   if (variant === 'myMac') {
     return (
@@ -220,11 +228,12 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
           <section className="relative flex min-h-0 items-center justify-center overflow-hidden pb-[clamp(1rem,3vh,2.5rem)]">
             <div className="absolute bottom-[14%] h-20 w-[min(410px,42vw)] rounded-[50%] bg-white/35 shadow-[0_30px_70px_rgba(255,80,110,0.18),inset_0_1px_1px_rgba(255,255,255,0.65)] backdrop-blur-xl" />
             <div className="absolute bottom-[11%] h-20 w-[min(500px,50vw)] rounded-[50%] border border-white/35" />
-            {variant === 'uninstall' ? (
+            {featureImage ? (
               <img
-                src="./assets/images/uninstall-3d.png"
+                src={featureImage}
                 alt=""
-                className="relative z-10 w-[clamp(18rem,30vw,28rem)] object-contain drop-shadow-[0_24px_54px_rgba(255,45,61,0.25)]"
+                className="relative z-10 w-[clamp(18rem,30vw,28rem)] object-contain"
+                style={{ filter: `drop-shadow(0 24px 54px ${featureTheme.glow})` }}
                 draggable={false}
                 aria-hidden="true"
               />
@@ -247,7 +256,7 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
             <img
               src="./assets/images/start-here-bg.png"
               alt="Start here"
-              className="absolute -top-[clamp(2.5rem,5vh,4rem)] left-0 w-[clamp(10rem,16vw,15rem)] object-contain"
+              className="absolute -top-[clamp(3rem,5.8vh,4.6rem)] left-[clamp(2rem,6vw,6rem)] w-[clamp(8.75rem,14vw,13rem)] object-contain"
               draggable={false}
             />
             <Button

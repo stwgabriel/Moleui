@@ -347,7 +347,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
-      <div className="relative flex h-full min-h-0 w-full flex-col p-4">
+      <div className="relative flex h-full min-h-0 w-full flex-col p-2">
         {error && !metrics ? (
           <Card className="p-8 text-center">
             <p className="text-accent-danger mb-4">{error}</p>
@@ -559,7 +559,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             </button>
 
             {/* RAM + Storage - Row 1, Col 3 */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 col-start-3 row-start-1">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 col-start-3 row-start-1">
               {/* RAM */}
               <Card className={`min-h-44 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
                 <div className="flex flex-col h-full">
@@ -641,7 +641,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             </div>
 
             {/* Network + Battery - Row 2, Col 3 */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 col-start-3 row-start-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 col-start-3 row-start-2">
               <Card className={`min-h-36 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
                 <div className="flex flex-col h-full">
                   <div className="mb-2">
