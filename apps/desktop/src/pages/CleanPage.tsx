@@ -168,9 +168,9 @@ const SECTION_NAMES = new Set(CLEAN_SECTIONS.map((section) => section.section));
 const HINT_ONLY_SECTIONS = new Set(['Large files', 'System Data clues', 'Project artifacts']);
 
 const config: PageConfig = {
-  title: 'Clean',
+  title: 'Cleanup',
   description: 'Remove unnecessary files, caches, and temporary data to free up valuable disk space.',
-  icon: 'Trash2',
+  icon: 'Sparkles',
   buttonText: 'Start Cleaning',
   items: [
     {
@@ -719,7 +719,7 @@ export function CleanPage() {
   );
 
   if (stage === 'idle') {
-    return <StartScreen config={config} onStart={startScan} />;
+    return <StartScreen config={config} onStart={startScan} variant="feature" />;
   }
 
   if (stage === 'scanning') {

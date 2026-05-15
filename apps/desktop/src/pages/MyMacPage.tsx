@@ -347,7 +347,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
-      <div className="relative flex h-full min-h-0 w-full flex-col p-4 sm:p-6">
+      <div className="relative flex h-full min-h-0 w-full flex-col p-4">
         {error && !metrics ? (
           <Card className="p-8 text-center">
             <p className="text-accent-danger mb-4">{error}</p>
@@ -355,11 +355,11 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
           </Card>
         ) : metrics && (
           <div
-            className="grid min-h-0 flex-1 grid-cols-1 gap-4  lg:grid-cols-[1fr_1fr_1.15fr]"
-            style={{ gridTemplateRows: 'repeat(4, minmax(0, 1fr))' }}
+            className="grid min-h-0  gap-2 grid-cols-[1fr_1fr_1.15fr]"
+            style={{ gridTemplateRows: 'repeat(2, minmax(0, 1.25fr)) repeat(2, minmax(0, 0.75fr))' }}
           >
             {/* Mac Info - Row 1-2, Col 1 */}
-            <Card className={`lg:col-span-1 lg:row-span-2 rounded-[1.75rem] p-5 ${GLASS_CARD}`}>
+            <Card className={`col-span-1 row-span-2 rounded-[1.75rem] p-5 ${GLASS_CARD}`}>
               <div className="flex h-full flex-col justify-between gap-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-start gap-4">
@@ -399,7 +399,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
             {/* Clean - Row 3, Col 1 */}
             <button
-              className={`lg:col-start-1 lg:row-start-3 ${ACTION_CARD} focus-visible:ring-cyan-500`}
+              className={`hidden col-start-1 row-start-3 ${ACTION_CARD} focus-visible:ring-cyan-500`}
               onClick={() => onNavigate('clean')}
               aria-label="Open Clean page to free up space"
             >
@@ -416,7 +416,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
             {/* Uninstall - Row 4, Col 1 */}
             <button
-              className={`lg:col-start-1 lg:row-start-4 ${ACTION_CARD} focus-visible:ring-rose-500`}
+              className={`hidden col-start-1 row-start-4 ${ACTION_CARD} focus-visible:ring-rose-500`}
               onClick={() => onNavigate('uninstall')}
               aria-label="Open Uninstall page to remove apps"
             >
@@ -432,7 +432,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             </button>
 
             {/* Processor - Row 1, Col 2 */}
-            <Card className={`min-h-36 lg:col-start-2 lg:row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
+            <Card className={`min-h-36 col-start-2 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex flex-col h-full">
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xl font-bold text-slate-950">Processor</div>
@@ -476,7 +476,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             </Card>
 
             {/* GPU - Row 2, Col 2 */}
-            <Card className={`min-h-36 lg:col-start-2 lg:row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
+            <Card className={`min-h-36 col-start-2 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex flex-col h-full">
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xl font-bold text-slate-950">GPU</div>
@@ -526,7 +526,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
             {/* Optimize - Row 3, Col 2 */}
             <button
-              className={`lg:col-start-2 lg:row-start-3 ${ACTION_CARD} focus-visible:ring-violet-500`}
+              className={`hidden col-start-2 row-start-3 ${ACTION_CARD} focus-visible:ring-violet-500`}
               onClick={() => onNavigate('optimize')}
               aria-label="Open Optimize page to boost performance"
             >
@@ -543,7 +543,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
             {/* Analyze - Row 4, Col 2 */}
             <button
-              className={`lg:col-start-2 lg:row-start-4 ${ACTION_CARD} focus-visible:ring-pink-500`}
+              className={`hidden col-start-2 row-start-4 ${ACTION_CARD} focus-visible:ring-pink-500`}
               onClick={() => onNavigate('analyze')}
               aria-label="Open Analyze page for disk insights"
             >
@@ -559,7 +559,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             </button>
 
             {/* RAM + Storage - Row 1, Col 3 */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-start-3 lg:row-start-1">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 col-start-3 row-start-1">
               {/* RAM */}
               <Card className={`min-h-44 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
                 <div className="flex flex-col h-full">
@@ -641,7 +641,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             </div>
 
             {/* Network + Battery - Row 2, Col 3 */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-start-3 lg:row-start-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 col-start-3 row-start-2">
               <Card className={`min-h-36 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
                 <div className="flex flex-col h-full">
                   <div className="mb-2">
@@ -729,12 +729,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               </Card>
             </div>
 
-            {/* Processes - Row 3-4, Col 3 */}
-            <Card className={`min-h-72 lg:col-start-3 lg:row-start-3 lg:row-span-2 rounded-[1.75rem] p-4 ${GLASS_CARD}`}>
+            {/* Processes - Row 3-4, All Columns */}
+            <Card className={`min-h-72 col-span-3 row-start-3 row-span-2 rounded-[1.75rem] p-4 ${GLASS_CARD}`}>
               <div className="flex flex-col h-full">
-                <div className="mb-2 flex items-end justify-between gap-3">
+                <div className="mb-2 grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-end gap-3 px-2">
                   <div className="text-xl font-bold text-slate-950">All Processes</div>
-                  <div className="grid w-40 grid-cols-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="grid grid-cols-2 items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <button
                       type="button"
                       className="text-left transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
@@ -752,6 +752,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                       MEM{sortIndicator('memory')}
                     </button>
                   </div>
+                  <div aria-hidden="true" />
                 </div>
                 <div className="flex-1 overflow-auto pr-1 custom-scrollbar">
                   {(() => {

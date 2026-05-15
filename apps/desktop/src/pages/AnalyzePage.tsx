@@ -153,9 +153,9 @@ function createTreemapLayout(
 }
 
 const config: PageConfig = {
-  title: 'Analyze',
+  title: 'Analyze storage',
   description: 'Visualize disk usage and identify large files and folders consuming your storage.',
-  icon: 'PieChart',
+  icon: 'Database',
   buttonText: 'Analyze Storage',
   items: [
     {
@@ -354,6 +354,7 @@ export function AnalyzePage() {
       <StartScreen
         config={config}
         onStart={() => setView('pick')}
+        variant="feature"
       />
     );
   }
@@ -503,7 +504,7 @@ export function AnalyzePage() {
     const canGoUp = result.path !== '/';
 
     return (
-      <div className="relative h-full overflow-y-auto p-4 sm:p-6 xl:overflow-hidden">
+      <div className="relative h-full overflow-y-auto p-4 xl:overflow-hidden">
         {/* Breadcrumb navigation bar */}
         <div className="mb-3 flex items-center gap-1.5 rounded-2xl border border-white/50 bg-white/30 px-3 py-2 shadow-inner shadow-white/20 backdrop-blur-xl overflow-x-auto custom-scrollbar">
           <button
@@ -551,8 +552,8 @@ export function AnalyzePage() {
           </div>
         </div>
 
-        <div className="grid min-h-[calc(100%-3.25rem)] grid-cols-1 gap-4 xl:h-[calc(100%-3.25rem)] xl:min-h-0 xl:grid-cols-[20rem_minmax(0,1fr)]">
-          <Card className={`min-h-[34rem] rounded-[1.75rem] p-5 xl:min-h-0 ${ANALYZE_GLASS_CARD}`}>
+        <div className="grid min-h-[calc(100%-3.25rem)] grid-cols-1 gap-4 h-[calc(100%-3.25rem)] min-h-0 grid-cols-[20rem_minmax(0,1fr)]">
+          <Card className={`min-h-[34rem] rounded-[1.75rem] p-4 xl:min-h-0 ${ANALYZE_GLASS_CARD}`}>
             <div className="flex h-full min-h-0 flex-col">
               <div className="flex flex-col items-center text-center">
 

@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld("moleDesktop", {
     list: () => invokeWithLog("mole:uninstall:list", "uninstall --list"),
     killList: () => invokeWithLog("mole:uninstall:list:kill", "uninstall:list:kill"),
     getAppIcon: (appPath) => ipcRenderer.invoke("mole:uninstall:app-icon", appPath),
+    getAppIcons: (appPaths) => ipcRenderer.invoke("mole:uninstall:app-icons", appPaths),
     dryRun: (appNames) => invokeWithLog("mole:uninstall:dry-run", "uninstall --dry-run", appNames),
     execute: (appNames) => invokeWithLog("mole:uninstall:execute", "uninstall --yes", appNames),
 

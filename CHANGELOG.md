@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.40.0] - 2026-05-15
+
+### Changed
+- Redesigned desktop sidebar from a bottom pill-bar to a fixed vertical layout with app logo and updated iconography.
+- Redesigned StartScreen component with distinct `feature` and `uninstall` visual variants, replacing the generic card layout.
+- Updated page titles and icons across Clean, Optimize, Analyze, and Uninstall pages for clarity and consistency.
+- Streamlined MyMac dashboard grid layout and hid redundant quick-action navigation cards.
+- Disabled user text selection globally in the desktop app for a native feel.
+
+### Fixed
+- Fixed Analyze results grid to use a consistent two-column layout instead of responsive breakpoints.
+
 ## [1.39.0] - 2026-05-13
 
 ### Added

@@ -563,7 +563,7 @@ export function UninstallPage() {
           description: 'Find all app-related files and folders',
         },
         {
-          icon: 'Trash',
+          icon: 'Trash2',
           title: 'Complete Removal',
           description: 'Delete apps with all preferences and caches',
         },
@@ -575,7 +575,7 @@ export function UninstallPage() {
       ],
     };
 
-    return <StartScreen config={config} onStart={startScan} />;
+    return <StartScreen config={config} onStart={startScan} variant="uninstall" />;
   }
 
   if (stage === 'loading') {

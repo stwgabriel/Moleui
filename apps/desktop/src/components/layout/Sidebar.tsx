@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 import * as Icons from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { PageId } from '@/types';
@@ -14,158 +14,62 @@ const NAV_ITEMS: Array<{
   label: string;
   activeClassName: string;
 }> = [
-    { page: 'mymac', icon: 'Computer', label: 'Mac', activeClassName: 'text-cyan-500 dark:text-cyan-300' },
-    { page: 'clean', icon: 'Trash2', label: 'Clean', activeClassName: 'text-blue-500 dark:text-blue-300' },
-    { page: 'uninstall', icon: 'PackageX', label: 'Uninstall', activeClassName: 'text-rose-500 dark:text-rose-300' },
-    { page: 'optimize', icon: 'Zap', label: 'Optimize', activeClassName: 'text-violet-500 dark:text-violet-300' },
-    { page: 'analyze', icon: 'PieChart', label: 'Analyze', activeClassName: 'text-pink-500 dark:text-pink-300' },
+    { page: 'mymac', icon: 'LayoutGrid', label: 'My Mac', activeClassName: 'text-violet-600' },
+    { page: 'uninstall', icon: 'PackageX', label: 'Uninstall', activeClassName: 'text-violet-600' },
+    { page: 'clean', icon: 'Sparkles', label: 'Cleanup', activeClassName: 'text-violet-600' },
+    { page: 'optimize', icon: 'Gauge', label: 'Performance', activeClassName: 'text-violet-600' },
+    { page: 'analyze', icon: 'Database', label: 'Storage', activeClassName: 'text-violet-600' },
   ];
 
-const GITHUB_REPO_URL = 'https://github.com/stwgabriel/moleui';
-const GITHUB_FUNDING_URL = 'https://github.com/sponsors/stwgabriel';
-
-const LIQUID_GLASS = cn(
-  'border border-white/55 bg-white/[0.34] backdrop-blur-[34px] saturate-[1.9]',
-  'shadow-[0_24px_80px_rgba(20,30,41,0.18),inset_0_1px_1px_rgba(255,255,255,0.92),inset_0_-18px_36px_rgba(255,255,255,0.16)]',
-  'before:pointer-events-none before:absolute before:inset-x-5 before:top-1 before:h-1/2 before:rounded-full before:bg-white/36 before:blur-xl before:content-[""]',
-  'after:pointer-events-none after:absolute after:-left-12 after:-top-16 after:h-28 after:w-44 after:rounded-full after:bg-white/34 after:blur-3xl after:content-[""]',
-  'dark:border-white/14 dark:bg-white/[0.11] dark:shadow-[0_24px_80px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.18),inset_0_-18px_36px_rgba(255,255,255,0.06)]'
-);
-
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
-  const activeIndex = Math.max(NAV_ITEMS.findIndex((item) => item.page === currentPage), 0);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isMenuOpen) return;
-
-    function handlePointerDown(event: MouseEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [isMenuOpen]);
-
-  const openExternal = async (url: string) => {
-    setIsMenuOpen(false);
-    const result = await window.moleDesktop?.openExternal(url);
-    if (!result?.ok) {
-      console.error(result?.message || 'Failed to open external link');
-    }
-  };
 
   return (
     <aside
-      className="relative z-20 shrink-0 px-3 pb-3 pt-2 bg-transparent"
+      className="relative z-20 flex h-full w-[180px] shrink-0 flex-col overflow-hidden border-r border-white/55 bg-white/[0.26] px-3 pb-5 pt-7 backdrop-blur-[32px]"
       aria-label="Main navigation"
     >
-      <div className="mx-auto flex w-full max-w-[438px] items-end justify-center gap-2">
-        <nav
-          className={cn(
-            'relative isolate grid h-[58px] min-w-0 flex-1 overflow-hidden rounded-full p-1.5',
-            LIQUID_GLASS
-          )}
-          style={{
-            gridTemplateColumns: `repeat(${NAV_ITEMS.length}, minmax(0, 1fr))`,
-            '--active-index': activeIndex,
-            '--item-count': NAV_ITEMS.length,
-          } as CSSProperties}
-        >
-          <div
-            className={cn(
-              'absolute left-1.5 top-1.5 h-[calc(100%-0.75rem)] rounded-full border border-white/65 bg-white/58',
-              'shadow-[0_10px_28px_rgba(20,30,41,0.14),inset_0_1px_1px_rgba(255,255,255,0.95),inset_0_-10px_22px_rgba(20,30,41,0.06)]',
-              'transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]',
-              'dark:border-white/14 dark:bg-white/18 dark:shadow-[0_10px_28px_rgba(0,0,0,0.38),inset_0_1px_1px_rgba(255,255,255,0.2)]'
-            )}
-            style={{
-              width: `calc((100% - 0.75rem) / var(--item-count))`,
-              transform: `translateX(calc(var(--active-index) * 100%))`,
-            }}
-            aria-hidden="true"
-          />
-
-          {NAV_ITEMS.map(({ page, icon, label, activeClassName }) => {
-            const Icon = Icons[icon] as Icons.LucideIcon;
-            const isActive = currentPage === page;
-
-            return (
-              <button
-                key={page}
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  onPageChange(page);
-                }}
-                className={cn(
-                  'relative z-10 flex min-w-0 items-center justify-center rounded-full',
-                  'transition-colors duration-300 ease-smooth active:scale-[0.98]',
-                  isActive ? activeClassName : 'text-text-secondary hover:text-text-primary dark:text-white/58 dark:hover:text-white/88'
-                )}
-                aria-current={isActive ? 'page' : undefined}
-                aria-label={label}
-                title={label}
-              >
-                <Icon
-                  className={cn(
-                    'h-5 w-5 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]',
-                    isActive ? 'scale-110 drop-shadow-[0_4px_10px_rgba(255,255,255,0.38)]' : 'scale-100'
-                  )}
-                  strokeWidth={isActive ? 2.4 : 2}
-                />
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="relative shrink-0" ref={menuRef}>
-          <button
-            className={cn(
-              'relative isolate flex h-[58px] w-[58px] items-center justify-center overflow-hidden rounded-full',
-              LIQUID_GLASS,
-              'transition-transform duration-300 hover:scale-[1.03] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/70'
-            )}
-            aria-label="Open menu"
-            aria-expanded={isMenuOpen}
-            onClick={() => setIsMenuOpen(open => !open)}
-          >
-            <Icons.UserCircle className="relative z-10 h-6 w-6 text-slate-800 dark:text-white/88" aria-hidden="true" />
-          </button>
-
-          {isMenuOpen && (
-            <div className="absolute bottom-full right-0 z-30 mb-3 w-52 overflow-hidden rounded-[1.65rem] border border-white/55 bg-white/48 p-2 shadow-[0_24px_80px_rgba(20,30,41,0.22),inset_0_1px_1px_rgba(255,255,255,0.8)] backdrop-blur-[34px] saturate-[1.8] dark:border-white/14 dark:bg-slate-950/42">
-              <button
-                className="flex w-full items-center gap-3 rounded-[1.15rem] px-3 py-2.5 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-white/48 dark:text-white/88 dark:hover:bg-white/10"
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  setIsSettingsModalOpen(true);
-                }}
-              >
-                <Icons.Settings className="h-4 w-4 text-slate-500 dark:text-white/58" aria-hidden="true" />
-                Settings
-              </button>
-              <button
-                className="flex w-full items-center gap-3 rounded-[1.15rem] px-3 py-2.5 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-white/48 dark:text-white/88 dark:hover:bg-white/10"
-                onClick={() => openExternal(GITHUB_REPO_URL)}
-              >
-                <Icons.Github className="h-4 w-4 text-slate-500 dark:text-white/58" aria-hidden="true" />
-                GitHub
-              </button>
-              <button
-                className="flex w-full items-center gap-3 rounded-[1.15rem] px-3 py-2.5 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-white/48 dark:text-white/88 dark:hover:bg-white/10"
-                onClick={() => openExternal(GITHUB_FUNDING_URL)}
-              >
-                <Icons.Heart className="h-4 w-4 text-slate-500 dark:text-white/58" aria-hidden="true" />
-                Donate
-              </button>
-            </div>
-          )}
+      <div className="mt-[clamp(3.35rem,5.8vh,4.25rem)] flex justify-center">
+        <div className="flex h-[100px] w-[100px] items-center justify-center overflow-visible">
+          <img src="/assets/images/rounded-logo.png" alt="Moleui" className="h-full w-full object-contain object-center" draggable={false} />
         </div>
       </div>
+
+      <nav className="mt-[clamp(1.65rem,4.3vh,3.4rem)] flex flex-1 flex-col items-center gap-[clamp(0.75rem,2.4vh,1.8rem)]">
+        {NAV_ITEMS.map(({ page, icon, label, activeClassName }) => {
+          const Icon = Icons[icon] as Icons.LucideIcon;
+          const isActive = currentPage === page;
+
+          return (
+            <button
+              key={page}
+              onClick={() => onPageChange(page)}
+              className={cn(
+                'group flex w-[116px] flex-col items-center justify-center gap-2.5 rounded-[1.35rem] py-[clamp(0.6rem,1.25vh,0.8rem)] text-center transition-all duration-300 active:scale-[0.98]',
+                isActive
+                  ? `bg-[#e2dcff]/95 ${activeClassName} shadow-[0_16px_45px_rgba(117,90,255,0.18)] ring-1 ring-violet-300/40`
+                  : 'text-slate-500 hover:bg-[#f0edff]/80 hover:text-slate-700'
+              )}
+              aria-current={isActive ? 'page' : undefined}
+            >
+              <Icon
+                className="h-6 w-6 transition-transform duration-300 group-hover:scale-105"
+                strokeWidth={isActive ? 2.2 : 1.9}
+                aria-hidden="true"
+              />
+              <span className="text-[0.95rem] font-semibold leading-none tracking-[-0.02em]">{label}</span>
+            </button>
+          );
+        })}
+
+        <button
+          onClick={() => setIsSettingsModalOpen(true)}
+          className="group mt-auto flex w-[116px] flex-col items-center justify-center gap-2.5 rounded-[1.35rem] py-[clamp(0.6rem,1.25vh,0.8rem)] text-center text-slate-500 transition-all duration-300 hover:bg-[#f0edff]/80 hover:text-slate-700 active:scale-[0.98]"
+        >
+          <Icons.Settings className="h-6 w-6 transition-transform duration-300 group-hover:scale-105" strokeWidth={1.9} aria-hidden="true" />
+          <span className="text-[0.95rem] font-semibold leading-none tracking-[-0.02em]">Settings</span>
+        </button>
+      </nav>
 
       {isSettingsModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/24 p-6 backdrop-blur-sm">

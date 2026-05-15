@@ -26,9 +26,9 @@ interface TimelineStage {
 }
 
 const config: PageConfig = {
-  title: 'Optimize',
+  title: 'Optimize performance',
   description: "Fine-tune your Mac's performance with system optimization and maintenance tasks.",
-  icon: 'Zap',
+  icon: 'Gauge',
   buttonText: 'Start Optimization',
   items: [
     {
@@ -245,7 +245,7 @@ export function OptimizePage() {
   // ─── Idle ────────────────────────────────────────────────────────────────────
 
   if (stage === 'idle') {
-    return <StartScreen config={config} onStart={startPreview} />;
+    return <StartScreen config={config} onStart={startPreview} variant="feature" />;
   }
 
   // ─── Shared timeline renderer ────────────────────────────────────────────────

@@ -122,17 +122,22 @@ function App() {
         }}
       />
       <div className="window-drag-region" aria-hidden="true" />
-      <div className="h-screen overflow-hidden p-2">
-        <div className="flex h-full w-full flex-col overflow-hidden">
-          <main className={cn('relative min-h-0 flex-1 overflow-hidden', currentPage === 'home' && 'h-full')} aria-live="polite">
-            {PAGE_ORDER.map((pageId) => renderPage(pageId))}
-          </main>
+      <div className="h-screen overflow-hidden">
+        <div
+          className={cn(
+            'h-full w-full overflow-hidden rounded-[1rem] border border-white/55 bg-white/[0.22] shadow-[0_30px_90px_rgba(109,93,252,0.16),inset_0_1px_1px_rgba(255,255,255,0.78)] backdrop-blur-[28px]',
+            currentPage !== 'home' && 'flex'
+          )}
+        >
           {currentPage !== 'home' && (
             <Sidebar
               currentPage={currentPage}
               onPageChange={handlePageChange}
             />
           )}
+          <main className={cn('relative min-h-0 flex-1 overflow-hidden', currentPage === 'home' && 'h-full')} aria-live="polite">
+            {PAGE_ORDER.map((pageId) => renderPage(pageId))}
+          </main>
         </div>
       </div>
     </>

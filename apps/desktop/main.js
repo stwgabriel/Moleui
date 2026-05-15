@@ -33,6 +33,12 @@ async function getAppIconData(appPath) {
     return appIconCache.get(appPath);
   }
 
+  const bundleIcon = getMacAppBundleIconData(appPath);
+  if (bundleIcon.ok) {
+    appIconCache.set(appPath, bundleIcon);
+    return bundleIcon;
+  }
+
   try {
     const fileIcon = await withTimeout(
       app.getFileIcon(appPath, { size: "normal" }),
@@ -48,6 +54,42 @@ async function getAppIconData(appPath) {
     const result = { ok: false, icon: "", message: error.message };
     appIconCache.set(appPath, result);
     return result;
+  }
+}
+
+function getMacAppBundleIconData(appPath) {
+  if (process.platform !== "darwin" || path.extname(appPath) !== ".app") {
+    return { ok: false, icon: "", message: "Not a macOS app bundle" };
+  }
+
+  try {
+    const infoPlistPath = path.join(appPath, "Contents", "Info.plist");
+    const resourcesPath = path.join(appPath, "Contents", "Resources");
+    const infoPlist = fs.readFileSync(infoPlistPath, "utf8");
+    const iconFileMatch = infoPlist.match(/<key>CFBundleIconFile<\/key>\s*<string>([^<]+)<\/string>/);
+
+    if (!iconFileMatch) {
+      return { ok: false, icon: "", message: "Bundle icon key not found" };
+    }
+
+    const rawIconName = iconFileMatch[1].trim();
+    const iconNames = path.extname(rawIconName)
+      ? [rawIconName]
+      : [`${rawIconName}.icns`, rawIconName];
+
+    for (const iconName of iconNames) {
+      const iconPath = path.join(resourcesPath, iconName);
+      if (!fs.existsSync(iconPath)) continue;
+
+      const image = nativeImage.createFromPath(iconPath);
+      if (!image.isEmpty()) {
+        return { ok: true, icon: image.resize({ width: 128, height: 128 }).toDataURL() };
+      }
+    }
+
+    return { ok: false, icon: "", message: "Bundle icon file not found" };
+  } catch (error) {
+    return { ok: false, icon: "", message: error.message };
   }
 }
 
@@ -281,7 +323,7 @@ function createWindow() {
     width: 1280,
     height: 920,
     minWidth: 1280,
-    minHeight: 920,
+    minHeight: 840,
     titleBarStyle: "hidden",
     trafficLightPosition: {
       x: 18,
