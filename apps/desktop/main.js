@@ -33,6 +33,12 @@ async function getAppIconData(appPath) {
     return appIconCache.get(appPath);
   }
 
+  const thumbnailIcon = await getAppThumbnailIconData(appPath);
+  if (thumbnailIcon.ok) {
+    appIconCache.set(appPath, thumbnailIcon);
+    return thumbnailIcon;
+  }
+
   const bundleIcon = getMacAppBundleIconData(appPath);
   if (bundleIcon.ok) {
     appIconCache.set(appPath, bundleIcon);
@@ -54,6 +60,26 @@ async function getAppIconData(appPath) {
     const result = { ok: false, icon: "", message: error.message };
     appIconCache.set(appPath, result);
     return result;
+  }
+}
+
+async function getAppThumbnailIconData(appPath) {
+  if (typeof nativeImage.createThumbnailFromPath !== "function") {
+    return { ok: false, icon: "", message: "Thumbnail API not available" };
+  }
+
+  try {
+    const thumbnail = await withTimeout(
+      nativeImage.createThumbnailFromPath(appPath, { width: 128, height: 128 }),
+      1500,
+      "Thumbnail lookup timed out",
+    );
+
+    return thumbnail.isEmpty()
+      ? { ok: false, icon: "", message: "No thumbnail found" }
+      : { ok: true, icon: thumbnail.toDataURL() };
+  } catch (error) {
+    return { ok: false, icon: "", message: error.message };
   }
 }
 
