@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { 
-  CheckCircle, AlertTriangle, Loader, ArrowRight, X, Trash2,
-  Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown
+  CheckCircle, AlertTriangle, Loader, ArrowRight, X, Trash2, Scissors,
+  Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, CheckSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -29,6 +29,14 @@ interface CommandResult {
   stderr: string;
 }
 
+const GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
+const SOFT_CARD = 'rounded-[1.75rem] border border-white/55 bg-white/35  backdrop-blur-2xl';
+const UNINSTALL_SHELL = 'relative h-full min-h-0 overflow-hidden p-2';
+const UNINSTALL_ACCENT_BG = 'pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_88%_16%,rgba(239,68,68,0.16),transparent_34%),radial-gradient(circle_at_16%_88%,rgba(109,93,252,0.12),transparent_38%)]';
+const LIST_CARD = `relative overflow-hidden rounded-[1.5rem] p-4 ${SOFT_CARD}`;
+const PILL_INPUT = 'rounded-full border border-white/60 bg-white/45 text-slate-950 shadow-inner shadow-white/40 backdrop-blur-xl placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/35 focus:border-rose-300 transition-all';
+const MUTED_PILL = 'rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 backdrop-blur-xl';
+
 function stripPersistedIcon(app: App) {
   if (!app.icon) return app;
 
@@ -37,28 +45,48 @@ function stripPersistedIcon(app: App) {
   return appWithoutIcon;
 }
 
-function AppIcon({ icon }: { icon?: string }) {
+const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; size?: 'sm' | 'md' }) {
   const [failed, setFailed] = useState(false);
+  const iconClassName = size === 'sm' ? 'w-6 h-6 rounded-lg' : 'w-10 h-10 rounded-xl';
+  const fallbackIconClassName = size === 'sm' ? 'w-3.5 h-3.5' : 'w-5 h-5';
 
   useEffect(() => {
     setFailed(false);
   }, [icon]);
 
   if (icon && !failed) {
-    console.log('AppIcon received:', icon.substring(0, 50) + '...');
     return (
       <img
         src={icon}
         alt=""
-        className="w-10 h-10 rounded-xl object-contain flex-shrink-0"
+        className={`${iconClassName} object-contain flex-shrink-0 shadow-[0_10px_24px_rgba(15,23,42,0.10)]`}
         onError={() => setFailed(true)}
       />
     );
   }
 
   return (
-    <div className="w-10 h-10 rounded-xl bg-accent-primary/10 flex items-center justify-center flex-shrink-0">
-      <Package className="w-5 h-5 text-accent-primary" />
+    <div className={`${iconClassName} border border-rose-200/70 bg-rose-100/35 flex items-center justify-center flex-shrink-0 shadow-[0_10px_24px_rgba(244,63,94,0.14)] backdrop-blur-xl`}>
+      <Package className={`${fallbackIconClassName} text-rose-500`} />
+    </div>
+  );
+});
+
+function ShredderAnimation() {
+  return (
+    <div className="relative mx-auto flex h-32 w-44 items-center justify-center" aria-hidden="true">
+      <div className="absolute top-3 h-16 w-20 animate-bounce rounded-xl border border-rose-200/70 bg-white/70 shadow-[0_14px_36px_rgba(244,63,94,0.14)]" />
+      <Scissors className="absolute top-8 h-7 w-7 -rotate-12 text-rose-500" />
+      <div className="absolute bottom-9 h-5 w-36 rounded-t-2xl border border-slate-200/70 bg-slate-900/85 shadow-[0_14px_30px_rgba(15,23,42,0.18)]" />
+      <div className="absolute bottom-4 flex gap-1">
+        {[0, 1, 2, 3, 4, 5].map(strip => (
+          <div
+            key={strip}
+            className="h-9 w-2 animate-pulse rounded-full bg-gradient-to-b from-rose-300 to-rose-500"
+            style={{ animationDelay: `${strip * 90}ms` }}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -83,6 +111,10 @@ export function UninstallPage() {
   const [analysisProgress, setAnalysisProgress] = usePersistentState('mole-uninstall-analysis-progress', 0);
   const [searchQuery, setSearchQuery] = usePersistentState('mole-uninstall-search-query', '');
   const [sortBy, setSortBy] = usePersistentState<'name' | 'size'>('mole-uninstall-sort-by', 'size');
+  const [skipFinalConfirmation, setSkipFinalConfirmation] = usePersistentState('mole-uninstall-skip-final-confirmation', false);
+  const [isRefreshingApps, setIsRefreshingApps] = useState(false);
+  const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
+  const [dontShowFinalConfirmationAgain, setDontShowFinalConfirmationAgain] = useState(false);
   const selectedApps = new Set(selectedAppIndexes);
   
   const dryRunListRef = useRef<HTMLDivElement>(null);
@@ -159,7 +191,7 @@ export function UninstallPage() {
   }, []);
 
   useEffect(() => {
-    if (stage !== 'selection' || apps.length === 0) return;
+    if (!['selection', 'confirmation'].includes(stage) || apps.length === 0) return;
 
     const appsWithoutIcons = apps.filter(app => app.path && !appIcons[app.path] && !requestedIconsRef.current.has(app.path));
     if (appsWithoutIcons.length === 0) return;
@@ -167,33 +199,41 @@ export function UninstallPage() {
     appsWithoutIcons.forEach(app => requestedIconsRef.current.add(app.path));
 
     iconLoadRunRef.current += 1;
-    console.log('Loading apps icons for:', appsWithoutIcons.map(a => a.path));
     loadAppIcons(appsWithoutIcons, iconLoadRunRef.current);
   }, [stage, apps, appIcons]);
 
-  const startScan = async () => {
+  const refreshApps = async ({ showCached }: { showCached: boolean }) => {
     scanCancelledRef.current = false;
     iconLoadRunRef.current += 1;
-    setAppIcons({});
-    setStage('loading');
-    setScanStatus('Scanning applications...');
+
+    if (showCached && apps.length > 0) {
+      setStage('selection');
+      setIsRefreshingApps(true);
+      setScanStatus('Refreshing applications in the background...');
+    } else {
+      setAppIcons({});
+      setStage('loading');
+      setScanStatus('Scanning applications...');
+    }
 
     try {
       const moleDesktop = (window as any).moleDesktop;
       const result = await moleDesktop.uninstall.list();
 
       if (scanCancelledRef.current || result.killed) {
-        setStage('idle');
+        if (!showCached) setStage('idle');
         setScanStatus('');
         return;
       }
 
       if (!result.ok) {
-        setError({
-          title: 'Failed to scan applications',
-          message: result.stderr || 'Unknown error occurred'
-        });
-        setStage('error');
+        if (!showCached) {
+          setError({
+            title: 'Failed to scan applications',
+            message: result.stderr || 'Unknown error occurred'
+          });
+          setStage('error');
+        }
         return;
       }
 
@@ -211,22 +251,40 @@ export function UninstallPage() {
           return;
         }
 
+        requestedIconsRef.current.clear();
         setApps(parsedApps.map(stripPersistedIcon));
         setStage('selection');
+        setScanStatus('');
       } catch (e: any) {
+        if (!showCached) {
+          setError({
+            title: 'Failed to parse application list',
+            message: `${e.message}\n\nOutput: ${result.stdout.substring(0, 200)}`
+          });
+          setStage('error');
+        }
+      }
+    } catch (error: any) {
+      if (!showCached) {
         setError({
-          title: 'Failed to parse application list',
-          message: `${e.message}\n\nOutput: ${result.stdout.substring(0, 200)}`
+          title: 'Scan failed',
+          message: error.message
         });
         setStage('error');
       }
-    } catch (error: any) {
-      setError({
-        title: 'Scan failed',
-        message: error.message
-      });
-      setStage('error');
+    } finally {
+      setIsRefreshingApps(false);
     }
+  };
+
+  const startScan = async () => {
+    setSelectedAppIndexes([]);
+    setDryRunOutput([]);
+    setExecuteOutput([]);
+    setError(null);
+    setResult(null);
+    setAnalysisProgress(0);
+    await refreshApps({ showCached: apps.length > 0 });
   };
 
   const cancelScan = async () => {
@@ -247,7 +305,6 @@ export function UninstallPage() {
 
     try {
       const result = await window.moleDesktop.uninstall.getAppIcons(appsToLoad.map(app => app.path));
-      console.log('getAppIcons result:', Object.keys(result?.icons || {}).length);
       if (iconLoadRunRef.current !== runId || !result.ok) return;
 
       setAppIcons(currentIcons => ({ ...currentIcons, ...result.icons }));
@@ -343,8 +400,10 @@ export function UninstallPage() {
   };
 
   const executeUninstall = async () => {
+    setShowFinalConfirmation(false);
     setStage('executing');
     setExecuteOutput([]);
+    setResult(null);
 
     const selectedAppNames = Array.from(selectedApps).map(i => apps[i].uninstall_name);
 
@@ -363,6 +422,24 @@ export function UninstallPage() {
     }
   };
 
+  const requestExecuteUninstall = () => {
+    if (skipFinalConfirmation) {
+      executeUninstall();
+      return;
+    }
+
+    setDontShowFinalConfirmationAgain(false);
+    setShowFinalConfirmation(true);
+  };
+
+  const confirmExecuteUninstall = () => {
+    if (dontShowFinalConfirmationAgain) {
+      setSkipFinalConfirmation(true);
+    }
+
+    executeUninstall();
+  };
+
   const cancelConfirmation = () => {
     setStage('selection');
     setDryRunOutput([]);
@@ -372,8 +449,6 @@ export function UninstallPage() {
   const reset = () => {
     iconLoadRunRef.current += 1;
     setStage('idle');
-    setApps([]);
-    setAppIcons({});
     setSelectedAppIndexes([]);
     setScanStatus('');
     setDryRunOutput([]);
@@ -381,6 +456,8 @@ export function UninstallPage() {
     setError(null);
     setResult(null);
     setShowAllApps(false);
+    setShowFinalConfirmation(false);
+    setDontShowFinalConfirmationAgain(false);
     setAnalysisProgress(0);
     setSearchQuery('');
     setSortBy('size');
@@ -431,8 +508,24 @@ export function UninstallPage() {
     return sorted;
   };
 
+  const sortAppIndexesBySize = (indexes: number[]) => {
+    return [...indexes].sort((a, b) => parseSizeToBytes(apps[b]?.size || '') - parseSizeToBytes(apps[a]?.size || ''));
+  };
+
+  const getAppByName = (name: string) => {
+    return apps.find(app => app.name === name || app.uninstall_name === name);
+  };
+
   const stripAnsi = (text: string) => {
     return text.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').replace(/\x1B\[K/g, '');
+  };
+
+  const sanitizeCliSummary = (text: string) => {
+    return stripAnsi(text).replace(/\s*=+\s*$/g, '').trim();
+  };
+
+  const getCommandOutputLines = (text?: string) => {
+    return text ? text.split(/\r?\n/).filter(line => line.trim()) : [];
   };
 
   // Parse dry-run output into structured data
@@ -484,6 +577,7 @@ export function UninstallPage() {
     });
 
     if (currentApp) apps.push(currentApp);
+    apps.sort((a, b) => parseSizeToBytes(b.size) - parseSizeToBytes(a.size));
     return { apps, summary };
   };
 
@@ -519,10 +613,19 @@ export function UninstallPage() {
         return;
       }
 
+      // File removed: "  ✓ /path/to/file"
+      const fileMatch = cleanLine.match(/^[✓✔☑]\s+(\/.*|~\/.*)$/);
+      if (fileMatch && currentApp) {
+        currentApp.files.push(fileMatch[1]);
+        return;
+      }
+
       // Completed app: "✓ [1/3] AppName"
       const completedMatch = cleanLine.match(/^[✓✔☑]\s+(?:\[(\d+)\/(\d+)\]\s+)?(.+)$/);
-      if (completedMatch && !cleanLine.startsWith('✓ /')) {
+      if (completedMatch) {
         const appName = completedMatch[3].trim();
+        if (appName.startsWith('/') || appName.startsWith('~/')) return;
+
         if (currentApp && currentApp.name === appName) {
           currentApp.completed = true;
         } else if (!currentApp) {
@@ -532,16 +635,9 @@ export function UninstallPage() {
         return;
       }
 
-      // File removed: "  ✓ /path/to/file"
-      const fileMatch = cleanLine.match(/^[✓✔☑]\s+(\/.*|~\/.*)$/);
-      if (fileMatch && currentApp) {
-        currentApp.files.push(fileMatch[1]);
-        return;
-      }
-
       // Summary: "Removed X apps, freed Y MB"
       if (cleanLine.match(/Removed\s+\d+\s+apps?/i)) {
-        summary = cleanLine;
+        summary = sanitizeCliSummary(cleanLine);
       }
     });
 
@@ -580,28 +676,33 @@ export function UninstallPage() {
 
   if (stage === 'loading') {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8">
-        <div className="w-full max-w-3xl text-center space-y-6">
-          <div className="inline-flex p-6 rounded-full bg-accent-primary/10">
-            <Loader className="w-12 h-12 text-accent-primary animate-spin" />
+      <div className={UNINSTALL_SHELL}>
+        <div className={UNINSTALL_ACCENT_BG} />
+        <div className="relative flex h-full items-center justify-center">
+        <div className="w-full max-w-3xl p-8 text-center">
+          <div className="space-y-6">
+          <div className="inline-flex rounded-full border border-rose-200/70 bg-rose-100/35 p-6 shadow-[0_18px_48px_rgba(244,63,94,0.18)] backdrop-blur-xl">
+            <Loader className="w-12 h-12 text-rose-500 animate-spin" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-text-primary mb-2">
+            <h2 className="text-3xl font-black tracking-[-0.04em] text-slate-950 mb-2">
               Analyzing Applications...
             </h2>
-            <p className="text-text-secondary">
+            <p className="font-medium text-slate-600">
               Scanning your system for installed applications
             </p>
           </div>
           {scanStatus && (
-            <Card className="p-4 inline-flex items-center gap-3">
-              <Folder className="w-5 h-5 text-accent-primary" />
-              <span className="text-sm text-text-secondary">{scanStatus}</span>
-            </Card>
+            <div className="inline-flex items-center gap-3 px-4 py-3">
+              <Folder className="w-5 h-5 text-rose-500" />
+              <span className="text-sm font-medium text-slate-600">{scanStatus}</span>
+            </div>
           )}
-          <Button variant="secondary" icon={X} onClick={cancelScan}>
+          <Button variant="secondary" icon={X} onClick={cancelScan} className="rounded-full bg-white/45">
             Cancel
           </Button>
+          </div>
+        </div>
         </div>
       </div>
     );
@@ -612,35 +713,53 @@ export function UninstallPage() {
     const filteredIndices = filteredApps.map(app => apps.indexOf(app));
     
     return (
-      <div className="h-full flex flex-col">
-        <div className="p-6 border-b border-surface">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-2xl font-bold text-text-primary mb-1">
+      <div className={UNINSTALL_SHELL}>
+        <div className={UNINSTALL_ACCENT_BG} />
+        <div className="relative flex h-full min-h-0 flex-col gap-2">
+        <div className="px-4 pb-4 pt-3">
+          <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <h2 className="max-w-xl text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
                 Select Applications to Uninstall
               </h2>
-              <p className="text-sm text-text-secondary">
+              <p className="text-sm font-semibold text-slate-500">
                 {selectedApps.size} of {apps.length} selected
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
               <Button
-                variant="secondary"
+                variant="ghost"
                 icon={X}
                 onClick={reset}
+                size="sm"
+                className="rounded-full px-3 text-slate-500 hover:bg-red-500/10 hover:text-red-500"
               >
                 Cancel
               </Button>
               <Button
                 variant="secondary"
+                icon={Search}
+                onClick={startScan}
+                disabled={isRefreshingApps}
+                size="sm"
+                className="rounded-full bg-white/45 px-4 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60"
+              >
+                {isRefreshingApps ? 'Refreshing...' : 'Scan Again'}
+              </Button>
+              <Button
+                variant="secondary"
+                icon={CheckSquare}
                 onClick={() => selectedApps.size === apps.length ? deselectAll() : selectAll()}
+                size="sm"
+                className="rounded-full bg-white/45 px-4 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60"
               >
                 {selectedApps.size === apps.length ? 'Deselect All' : 'Select All'}
               </Button>
               <Button
                 onClick={proceedToConfirmation}
                 disabled={selectedApps.size === 0}
-                className="gap-2"
+                size="sm"
+                className="gap-2 rounded-full bg-rose-500 px-5 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600"
               >
                 Continue
                 <ArrowRight className="w-4 h-4" />
@@ -651,30 +770,30 @@ export function UninstallPage() {
           {/* Search and Sort Controls */}
           <div className="flex items-center gap-3">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
                 placeholder="Search applications..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-lg bg-surface border border-surface-hover text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-primary/30 focus:border-accent-primary transition-all"
+                className={`w-full py-3 pl-11 pr-10 ${PILL_INPUT}`}
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
               )}
             </div>
             
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-surface-hover">
-              <ArrowUpDown className="w-4 h-4 text-text-tertiary" />
+            <div className={`flex items-center gap-2 px-4 py-3 ${MUTED_PILL}`}>
+              <ArrowUpDown className="w-4 h-4 text-slate-400" />
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'name' | 'size')}
-                className="bg-transparent text-sm text-text-primary focus:outline-none cursor-pointer"
+                className="bg-transparent text-sm font-semibold text-slate-700 focus:outline-none cursor-pointer"
               >
                 <option value="size">Sort by Size</option>
                 <option value="name">Sort by Name</option>
@@ -683,22 +802,22 @@ export function UninstallPage() {
           </div>
 
           {searchQuery && (
-            <p className="text-sm text-text-tertiary mt-3">
+            <p className="text-sm font-medium text-slate-500 mt-3">
               Found {filteredApps.length} application{filteredApps.length !== 1 ? 's' : ''}
             </p>
           )}
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-auto">
           {filteredApps.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="p-4 rounded-full bg-surface mb-4">
-                <Search className="w-8 h-8 text-text-tertiary" />
+              <div className="p-4 rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 mb-4 backdrop-blur-xl">
+                <Search className="w-8 h-8 text-slate-400" />
               </div>
-              <h3 className="text-lg font-semibold text-text-primary mb-1">
+              <h3 className="text-lg font-bold text-slate-950 mb-1">
                 No applications found
               </h3>
-              <p className="text-sm text-text-secondary">
+              <p className="text-sm font-medium text-slate-600">
                 Try adjusting your search query
               </p>
             </div>
@@ -709,8 +828,8 @@ export function UninstallPage() {
                 return (
                   <Card
                     key={originalIndex}
-                    className={`p-4 cursor-pointer transition-all ${
-                      selectedApps.has(originalIndex) ? 'ring-2 ring-accent-primary' : ''
+                    className={`${LIST_CARD} cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 ${
+                      selectedApps.has(originalIndex) ? 'ring-2 ring-rose-400 bg-white/55' : ''
                     }`}
                     onClick={() => toggleApp(originalIndex)}
                   >
@@ -719,22 +838,22 @@ export function UninstallPage() {
                         type="checkbox"
                         checked={selectedApps.has(originalIndex)}
                         onChange={() => toggleApp(originalIndex)}
-                        className="w-5 h-5"
+                        className="sr-only"
                         onClick={(e) => e.stopPropagation()}
                       />
                       <AppIcon icon={appIcons[app.path]} />
                       <div className="flex-1">
-                        <div className="font-semibold text-text-primary">{app.name}</div>
-                        <div className="text-sm text-text-tertiary">{app.path}</div>
+                        <div className="font-bold text-slate-950">{app.name}</div>
+                        <div className="text-sm font-medium text-slate-500 truncate">{app.path}</div>
                       </div>
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                         app.source === 'Homebrew' 
-                          ? 'bg-accent-secondary/10 text-accent-secondary'
-                          : 'bg-surface text-text-secondary'
+                          ? 'bg-red-500/10 text-red-500'
+                          : 'bg-white/45 text-slate-600'
                       }`}>
                         {app.source}
                       </span>
-                      <span className="text-sm font-medium text-text-secondary min-w-[80px] text-right">
+                      <span className="text-sm font-bold text-slate-600 min-w-[80px] text-right">
                         {app.size}
                       </span>
                     </div>
@@ -744,6 +863,7 @@ export function UninstallPage() {
             </div>
           )}
         </div>
+        </div>
       </div>
     );
   }
@@ -752,22 +872,24 @@ export function UninstallPage() {
     const parsedDryRun = parseDryRunOutput(dryRunOutput);
     const isAnalyzing = dryRunOutput.length === 0 || !parsedDryRun.summary;
     
-    const selectedAppsArray = Array.from(selectedApps);
+    const selectedAppsArray = sortAppIndexesBySize(Array.from(selectedApps));
     const hasMoreApps = selectedAppsArray.length > 3;
     const displayedApps = showAllApps ? selectedAppsArray : selectedAppsArray.slice(0, 3);
 
     return (
-      <div className="h-full flex flex-col">
-        <div className="p-6 border-b border-surface">
+      <div className={UNINSTALL_SHELL}>
+        <div className={UNINSTALL_ACCENT_BG} />
+        <div className="relative flex h-full min-h-0 flex-col gap-2">
+        <div className="px-4 pb-4 pt-3">
           <div className="flex items-start gap-4 mb-4">
-            <div className="p-2 rounded-lg bg-accent-warning/10">
-              <AlertTriangle className="w-6 h-6 text-accent-warning" />
+            <div className="p-3 rounded-2xl bg-amber-100/40">
+              <AlertTriangle className="w-6 h-6 text-amber-500" />
             </div>
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-text-primary mb-1">
+              <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
                 Confirm Uninstallation
               </h2>
-              <p className="text-text-secondary mb-4">
+              <p className="font-medium text-slate-600 mb-4">
                 The following applications and their associated files will be removed:
               </p>
               
@@ -779,16 +901,16 @@ export function UninstallPage() {
                     return (
                       <div 
                         key={index} 
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-surface-hover transition-all hover:border-accent-primary/30 hover:shadow-sm"
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-white/60 bg-white/40 shadow-inner shadow-white/30 backdrop-blur-xl transition-all hover:bg-white/55"
                       >
-                        <Package className="w-4 h-4 text-accent-primary flex-shrink-0" />
-                        <span className="font-medium text-text-primary text-sm">{app.name}</span>
-                        <span className="text-xs text-text-tertiary">•</span>
-                        <span className="text-xs text-text-tertiary">{app.size}</span>
+                        <AppIcon icon={appIcons[app.path]} size="sm" />
+                        <span className="font-semibold text-slate-950 text-sm">{app.name}</span>
+                        <span className="text-xs text-slate-400">•</span>
+                        <span className="text-xs font-medium text-slate-500">{app.size}</span>
                         {app.source === 'Homebrew' && (
                           <>
-                            <span className="text-xs text-text-tertiary">•</span>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-accent-secondary/10 text-accent-secondary font-medium">
+                            <span className="text-xs text-slate-400">•</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 font-semibold">
                               Brew
                             </span>
                           </>
@@ -801,7 +923,7 @@ export function UninstallPage() {
                 {hasMoreApps && (
                   <button
                     onClick={() => setShowAllApps(!showAllApps)}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-accent-primary hover:bg-accent-primary/5 transition-colors"
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors"
                   >
                     {showAllApps ? (
                       <>
@@ -825,14 +947,14 @@ export function UninstallPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-hidden">
           <div className="mb-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-text-primary">
+              <h3 className="font-bold text-slate-950">
                 {isAnalyzing ? 'Analyzing files...' : 'Files to be removed'}
               </h3>
               {isAnalyzing && (
-                <div className="flex items-center gap-2 text-sm text-text-secondary">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
                   <Loader className="w-4 h-4 animate-spin" />
                   <span>Scanning...</span>
                 </div>
@@ -841,94 +963,151 @@ export function UninstallPage() {
             
             {isAnalyzing && (
               <div className="space-y-2">
-                <div className="h-2 bg-surface rounded-full overflow-hidden">
+                <div className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40">
                   <div 
-                    className="h-full bg-gradient-to-r from-accent-primary to-accent-secondary transition-all duration-300 ease-out"
+                    className="h-full bg-gradient-to-r from-rose-400 to-red-500 transition-all duration-300 ease-out"
                     style={{ width: `${analysisProgress}%` }}
                   />
                 </div>
-                <div className="flex items-center justify-between text-xs text-text-tertiary">
+                <div className="flex items-center justify-between text-xs font-medium text-slate-500">
                   <span>Scanning application files and dependencies...</span>
                   <span>{Math.round(analysisProgress)}%</span>
                 </div>
               </div>
             )}
-          </div>
-
-          <div ref={dryRunListRef} className="space-y-4 max-h-[400px] overflow-auto">
-            {parsedDryRun.apps.map((app, appIndex) => (
-              <Card key={appIndex} className="p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-accent-primary/10">
-                    <Package className="w-5 h-5 text-accent-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-text-primary">{app.name}</div>
-                    <div className="text-sm text-text-tertiary">{app.size}</div>
-                  </div>
-                  <CheckCircle className="w-5 h-5 text-accent-success" />
-                </div>
-                
-                {app.files.length > 0 && (
-                  <div className="space-y-1 ml-11">
-                    {app.files.slice(0, 5).map((file, fileIndex) => (
-                      <div 
-                        key={fileIndex} 
-                        className={`text-sm flex items-center gap-2 ${
-                          file.isSystem ? 'text-accent-warning' : 'text-text-tertiary'
-                        }`}
-                      >
-                        {file.isSystem ? (
-                          <>
-                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                            <span className="font-mono text-xs truncate">{file.path}</span>
-                            <span className="text-xs px-2 py-0.5 rounded bg-accent-warning/10">System</span>
-                          </>
-                        ) : (
-                          <>
-                            <Check className="w-3 h-3 flex-shrink-0" />
-                            <span className="font-mono text-xs truncate">
-                              {file.path.replace(/^\/Users\/[^\/]+/, '~')}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                    {app.files.length > 5 && (
-                      <div className="text-xs text-text-tertiary ml-5">
-                        + {app.files.length - 5} more files
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Card>
-            ))}
-
             {parsedDryRun.summary && (
-              <Card className="p-4  border-accent-primary/20">
+              <Card className={`${LIST_CARD} border-rose-200/60`}>
                 <div className="flex items-center gap-3">
-                  <Info className="w-5 h-5 text-accent-primary" />
-                  <span className="text-sm text-text-secondary">{parsedDryRun.summary}</span>
+                  <Info className="w-5 h-5 text-rose-500" />
+                  <span className="text-sm font-medium text-slate-600">{parsedDryRun.summary}</span>
                 </div>
               </Card>
             )}
           </div>
+
+          <div ref={dryRunListRef} className="space-y-4 max-h-full overflow-auto pb-[15rem]">
+            {parsedDryRun.apps.map((app, appIndex) => {
+              const selectedApp = getAppByName(app.name);
+              return (
+                <Card key={appIndex} className={LIST_CARD}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <AppIcon icon={selectedApp ? appIcons[selectedApp.path] : undefined} />
+                    <div className="flex-1">
+                      <div className="font-bold text-slate-950">{app.name}</div>
+                      <div className="text-sm font-medium text-slate-500">{app.size}</div>
+                    </div>
+                    <CheckCircle className="w-5 h-5 text-accent-success" />
+                  </div>
+
+                  {app.files.length > 0 && (
+                    <div className="space-y-1 ml-11">
+                      {app.files.slice(0, 5).map((file, fileIndex) => (
+                        <div 
+                          key={fileIndex} 
+                          className={`text-sm flex items-center gap-2 ${
+                            file.isSystem ? 'text-amber-500' : 'text-slate-500'
+                          }`}
+                        >
+                          {file.isSystem ? (
+                            <>
+                              <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                              <span className="font-mono text-xs truncate">{file.path}</span>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 font-semibold">System</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-3 h-3 flex-shrink-0" />
+                              <span className="font-mono text-xs truncate">
+                                {file.path.replace(/^\/Users\/[^\/]+/, '~')}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                      {app.files.length > 5 && (
+                        <div className="text-xs font-medium text-slate-500 ml-5">
+                          + {app.files.length - 5} more files
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+
+            
+          </div>
         </div>
 
-        <div className="p-6 border-t border-surface flex items-center justify-between">
-          <Button variant="secondary" onClick={cancelConfirmation} className="gap-2">
+        <div className="flex items-center justify-between px-4 py-4">
+          <Button variant="ghost" onClick={cancelConfirmation} className="gap-2 rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500">
             <X className="w-4 h-4" />
             Cancel
           </Button>
           <Button 
             variant="danger" 
-            onClick={executeUninstall} 
+            onClick={requestExecuteUninstall} 
             disabled={isAnalyzing}
-            className="gap-2"
+            className="gap-2 rounded-full bg-rose-500 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600"
           >
             <Trash2 className="w-4 h-4" />
             Uninstall {selectedApps.size} App{selectedApps.size > 1 ? 's' : ''}
           </Button>
+        </div>
+
+        {showFinalConfirmation && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+            <Card className="w-full max-w-lg rounded-[2rem] border border-white/60 bg-white/90 p-6 shadow-[0_36px_120px_rgba(15,23,42,0.32),0_16px_48px_rgba(244,63,94,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)]">
+              <div className="flex items-start gap-4">
+                <div className="rounded-2xl border border-rose-200/70 bg-rose-100/40 p-3 shadow-[0_14px_32px_rgba(244,63,94,0.16)]">
+                  <AlertTriangle className="h-6 w-6 text-rose-500" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-2xl font-black tracking-[-0.04em] text-slate-950">
+                    Are you sure?
+                  </h3>
+                  <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                    Do you really want to do this? This action is irreversible and the selected applications and related files will be removed.
+                  </p>
+                </div>
+              </div>
+
+              <label className="mt-6 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/60 bg-white/45 px-4 py-3 shadow-inner shadow-white/30">
+                <input
+                  type="checkbox"
+                  checked={dontShowFinalConfirmationAgain}
+                  onChange={(event) => setDontShowFinalConfirmationAgain(event.target.checked)}
+                  className="sr-only"
+                />
+                <span className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
+                  dontShowFinalConfirmationAgain
+                    ? 'border-rose-500 bg-rose-500 text-white'
+                    : 'border-slate-300 bg-white/70 text-transparent'
+                }`}>
+                  <Check className="h-3.5 w-3.5" />
+                </span>
+                <span className="text-sm font-semibold text-slate-700">Don't show again</span>
+              </label>
+
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowFinalConfirmation(false)}
+                  className="rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={confirmExecuteUninstall}
+                  className="rounded-full bg-rose-500 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600"
+                >
+                  Uninstall
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
         </div>
       </div>
     );
@@ -939,55 +1118,65 @@ export function UninstallPage() {
     const { apps: executingApps, summary, progress } = parsedExecute;
 
     return (
-      <div className="h-full flex flex-col">
-        <div className="p-6 border-b border-surface">
-          <h2 className="text-2xl font-bold text-text-primary mb-1">
+      <div className={UNINSTALL_SHELL}>
+        <div className={UNINSTALL_ACCENT_BG} />
+        <div className="relative flex h-full min-h-0 flex-col gap-2">
+        <div className="px-4 pb-4 pt-3">
+          <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
             Uninstalling Applications
           </h2>
-          <p className="text-text-secondary mb-4">
+          <p className="font-medium text-slate-600 mb-4">
             Removing selected applications and their files...
           </p>
           
           {progress.total > 0 && (
             <div className="mb-4">
-              <div className="flex items-center justify-between text-sm text-text-secondary mb-2">
+              <div className="flex items-center justify-between text-sm font-medium text-slate-600 mb-2">
                 <span>Progress</span>
                 <span>{progress.current} of {progress.total}</span>
               </div>
-              <div className="h-2 bg-surface rounded-full overflow-hidden">
+              <div className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40">
                 <div 
-                  className="h-full bg-accent-primary transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-rose-400 to-red-500 transition-all duration-300"
                   style={{ width: `${(progress.current / progress.total) * 100}%` }}
                 />
               </div>
             </div>
           )}
 
-          <Card className="p-3 flex items-center gap-3 bg-accent-warning/10">
-            <Info className="w-5 h-5 text-accent-warning" />
-            <span className="text-sm text-text-secondary">
+          <div className="flex items-center gap-3 py-2">
+            <Info className="w-5 h-5 text-amber-500" />
+            <span className="text-sm font-medium text-slate-600">
               Do not close this window until the process completes
             </span>
-          </Card>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-auto">
           <div ref={executeListRef} className="space-y-4">
+            <Card className={`${LIST_CARD} border-rose-200/60 text-center`}>
+              <ShredderAnimation />
+              <div className="text-lg font-black tracking-[-0.03em] text-slate-950">Removing files</div>
+              <div className="mt-1 text-sm font-medium text-slate-500">
+                Mole is shredding app files and cleaning related leftovers.
+              </div>
+            </Card>
+
             {executingApps.map((app, appIndex) => (
-              <Card key={appIndex} className={`p-4 ${app.completed ? 'border-accent-success/30' : ''}`}>
+              <Card key={appIndex} className={`${LIST_CARD} ${app.completed ? 'border-emerald-300/50' : ''}`}>
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${
-                    app.completed ? 'bg-accent-success/10' : 'bg-accent-primary/10'
+                  <div className={`p-2 rounded-2xl border backdrop-blur-xl ${
+                    app.completed ? 'border-emerald-200/70 bg-emerald-100/35' : 'border-rose-200/70 bg-rose-100/35'
                   }`}>
                     {app.completed ? (
-                      <CheckCircle className="w-5 h-5 text-accent-success" />
+                      <CheckCircle className="w-5 h-5 text-emerald-500" />
                     ) : (
-                      <Loader className="w-5 h-5 text-accent-primary animate-spin" />
+                      <Loader className="w-5 h-5 text-rose-500 animate-spin" />
                     )}
                   </div>
                   <div className="flex-1">
-                    <div className="font-semibold text-text-primary">{app.name}</div>
-                    <div className="text-sm text-text-tertiary">
+                    <div className="font-bold text-slate-950">{app.name}</div>
+                    <div className="text-sm font-medium text-slate-500">
                       {app.completed ? 'Completed' : 'Removing files...'}
                       {app.progress && ` (${app.progress})`}
                     </div>
@@ -997,15 +1186,15 @@ export function UninstallPage() {
                 {app.files.length > 0 && (
                   <div className="space-y-1 ml-11">
                     {app.files.slice(-5).map((file, fileIndex) => (
-                      <div key={fileIndex} className="text-sm flex items-center gap-2 text-text-tertiary">
-                        <Check className="w-3 h-3 flex-shrink-0 text-accent-success" />
+                      <div key={fileIndex} className="text-sm flex items-center gap-2 text-slate-500">
+                        <Check className="w-3 h-3 flex-shrink-0 text-emerald-500" />
                         <span className="font-mono text-xs truncate">
                           {file.replace(/^\/Users\/[^\/]+/, '~')}
                         </span>
                       </div>
                     ))}
                     {app.files.length > 5 && (
-                      <div className="text-xs text-text-tertiary ml-5">
+                      <div className="text-xs font-medium text-slate-500 ml-5">
                         {app.files.length} files removed
                       </div>
                     )}
@@ -1015,57 +1204,79 @@ export function UninstallPage() {
             ))}
 
             {summary && (
-              <Card className="p-4 bg-accent-success/5 border-accent-success/20">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <CheckCircle className="w-5 h-5 text-emerald-500" />
                 <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-accent-success" />
                   <div>
-                    <div className="font-semibold text-text-primary mb-1">Uninstall Complete</div>
-                    <div className="text-sm text-text-secondary">{summary}</div>
+                    <div className="font-bold text-slate-950 mb-1">Uninstall Complete</div>
+                    <div className="text-sm font-medium text-slate-600">{sanitizeCliSummary(summary)}</div>
                   </div>
                 </div>
-              </Card>
+              </div>
             )}
           </div>
+        </div>
         </div>
       </div>
     );
   }
 
   if (stage === 'results') {
+    const resultOutput = result ? (result.stdout || result.stderr) : '';
+    const parsedResult = parseExecuteOutput(getCommandOutputLines(resultOutput));
+    const resultSummary = result?.ok
+      ? 'Selected applications have been successfully removed.'
+      : sanitizeCliSummary(resultOutput) || 'An error occurred during uninstallation';
+
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8">
-        <div className="text-center space-y-6 max-w-2xl">
-          <div className={`inline-flex p-6 rounded-full ${
-            result?.ok ? 'bg-accent-success/10' : 'bg-accent-danger/10'
+      <div className={UNINSTALL_SHELL}>
+        <div className={UNINSTALL_ACCENT_BG} />
+        <div className="relative flex h-full items-center justify-center">
+        <div className="w-full max-w-2xl p-8 text-center">
+          <div className="space-y-6">
+          <div className={`inline-flex rounded-full border p-6 shadow-[0_18px_48px_rgba(15,23,42,0.10)] backdrop-blur-xl ${
+            result?.ok ? 'border-emerald-200/70 bg-emerald-100/35' : 'border-red-200/70 bg-red-100/35'
           }`}>
             {result?.ok ? (
-              <CheckCircle className="w-12 h-12 text-accent-success" />
+              <CheckCircle className="w-12 h-12 text-emerald-500" />
             ) : (
-              <AlertCircle className="w-12 h-12 text-accent-danger" />
+              <AlertCircle className="w-12 h-12 text-red-500" />
             )}
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-text-primary mb-2">
+            <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-2">
               {result?.ok ? 'Uninstall Complete' : 'Uninstall Failed'}
             </h2>
-            <p className="text-text-secondary">
-              {result?.ok 
-                ? 'Applications have been successfully removed'
-                : 'An error occurred during uninstallation'
-              }
+            <p className="font-medium text-slate-600">
+              {resultSummary}
             </p>
           </div>
-          {result && (
-            <Card className="p-4 text-left max-h-[300px] overflow-auto">
-              <pre className="text-sm font-mono text-text-secondary whitespace-pre-wrap">
-                {result.stdout || result.stderr}
-              </pre>
-            </Card>
+          {result?.ok && parsedResult.apps.length > 0 && (
+            <div className="mx-auto max-h-[300px] max-w-xl space-y-2 overflow-auto text-left">
+              {parsedResult.apps.map((app, index) => (
+                <div key={`${app.name}-${index}`} className="flex items-start gap-3 px-2 py-2">
+                  <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-950">{app.name}</div>
+                    <div className="text-sm font-medium text-slate-500">
+                      {app.files.length > 0 ? `${app.files.length} file${app.files.length === 1 ? '' : 's'} removed` : 'Removed'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-          <Button onClick={reset} className="gap-2">
+          {result && !result.ok && (
+            <pre className="mx-auto max-h-[300px] max-w-xl overflow-auto whitespace-pre-wrap text-left font-mono text-sm text-slate-600">
+              {resultSummary}
+            </pre>
+          )}
+          <Button onClick={reset} className="gap-2 rounded-full bg-rose-500 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600">
             <Check className="w-4 h-4" />
             Done
           </Button>
+          </div>
+        </div>
         </div>
       </div>
     );
@@ -1073,22 +1284,28 @@ export function UninstallPage() {
 
   if (stage === 'error') {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8">
-        <div className="text-center space-y-6 max-w-2xl">
-          <div className="inline-flex p-6 rounded-full bg-accent-danger/10">
-            <AlertCircle className="w-12 h-12 text-accent-danger" />
+      <div className={UNINSTALL_SHELL}>
+        <div className={UNINSTALL_ACCENT_BG} />
+        <div className="relative flex h-full items-center justify-center">
+        <Card className={`w-full max-w-2xl overflow-hidden rounded-[2rem] p-8 text-center ${GLASS_CARD}`}>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(239,68,68,0.18),transparent_42%)]" />
+          <div className="relative space-y-6">
+          <div className="inline-flex rounded-full border border-red-200/70 bg-red-100/35 p-6 shadow-[0_18px_48px_rgba(239,68,68,0.16)] backdrop-blur-xl">
+            <AlertCircle className="w-12 h-12 text-red-500" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-text-primary mb-2">
+            <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-2">
               {error?.title || 'Error'}
             </h2>
-            <p className="text-text-secondary">
+            <p className="font-medium text-slate-600">
               {error?.message || 'An unknown error occurred'}
             </p>
           </div>
-          <Button onClick={reset}>
+          <Button onClick={reset} className="rounded-full bg-rose-500 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600">
             Try Again
           </Button>
+          </div>
+        </Card>
         </div>
       </div>
     );

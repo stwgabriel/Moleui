@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.41.0] - 2026-05-17
+
+### Added
+- Added right-click context menu to Analyze page items with Reveal in Finder and Delete actions.
+- Added IPC handlers for `open-path-in-finder` and `delete-path` with safe-path validation and trash-based deletion.
+- Added dry-run preview parsing and rewrite logic to Optimize page for human-friendly action summaries.
+- Added new IPC bridges (`copyText`, `revealPath`, `openPathInFinder`, `deletePath`, `openActivityMonitor`, `signalProcess`) in preload.
+
+### Changed
+- Redesigned Clean page with glassmorphic soft-card layout, accent radial backgrounds, and muted pill styling.
+- Redesigned Uninstall page with glass card aesthetics, pill-shaped search input, multi-select toolbar, and memoized icon rendering.
+- Refined Optimize page timeline with parsed section/item structure and preview-vs-main output routing.
+- Lightened card shadows on StartScreen and MyMac action cards for a softer visual tone.
+- Updated GitHub screenshots for Analyze, Clean, MyMac, Optimize, and Uninstall pages.
+- Suppressed noisy `status --json` success logs in preload CLI logger.
+
+### Fixed
+- Fixed batch uninstall to skip interactive file-selection prompts when running with `--yes` from the desktop app.
+
 ## [1.40.0] - 2026-05-15
 
 ### Changed

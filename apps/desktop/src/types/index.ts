@@ -13,6 +13,8 @@ export interface MoleDesktopAPI {
   openExternal: (url: string) => Promise<{ ok: boolean; message?: string }>;
   copyText: (text: string) => Promise<{ ok: boolean }>;
   revealPath: (commandPath: string) => Promise<{ ok: boolean; message?: string }>;
+  openPathInFinder: (path: string) => Promise<{ ok: boolean; message?: string }>;
+  deletePath: (path: string) => Promise<{ ok: boolean; message?: string }>;
   openActivityMonitor: () => Promise<{ ok: boolean; message?: string }>;
   signalProcess: (pid: number, signal: 'SIGTERM' | 'SIGKILL') => Promise<{ ok: boolean; message?: string }>;
   runStatus: () => Promise<MoleResult>;

@@ -465,7 +465,8 @@ batch_uninstall_applications() {
     done
     if [[ -t 1 ]]; then stop_inline_spinner; fi
 
-    # Interactive file selection before confirmation.
+    # Interactive file selection before confirmation. --yes is used by the
+    # desktop app and must stay fully non-interactive.
     local -a _new_app_details=()
     local -a _new_selected_apps=()
     local _new_total_estimated_size=0
@@ -498,9 +499,11 @@ batch_uninstall_applications() {
 
         MOLE_SFR_USER_FILES="$_fs_all_user"
         MOLE_SFR_SYSTEM_FILES="$_fs_sys"
-        if ! select_files_for_removal "$_fs_an"; then
-            echo -e "${GRAY}Skipped ${_fs_an}${NC}"
-            continue
+        if [[ "${auto_confirm:-0}" -eq 0 ]]; then
+            if ! select_files_for_removal "$_fs_an"; then
+                echo -e "${GRAY}Skipped ${_fs_an}${NC}"
+                continue
+            fi
         fi
         _fs_rel="${MOLE_SFR_USER_FILES}"
         _fs_sys="${MOLE_SFR_SYSTEM_FILES}"

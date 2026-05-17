@@ -15,6 +15,8 @@ function logCLI(command, args = []) {
 
 function logCLIResult(command, result) {
   const ok = result?.ok;
+  if (command === "status --json" && ok) return;
+
   const style = ok
     ? "color: #34d399; font-weight: 600;"
     : "color: #f87171; font-weight: 600;";
@@ -54,6 +56,12 @@ contextBridge.exposeInMainWorld("moleDesktop", {
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
   runStatus: () => invokeWithLog("mole:status", "status --json"),
   openExternal: (url) => ipcRenderer.invoke("mole:open-external", url),
+  copyText: (text) => ipcRenderer.invoke("mole:copy-text", text),
+  revealPath: (commandPath) => ipcRenderer.invoke("mole:reveal-path", commandPath),
+  openPathInFinder: (path) => ipcRenderer.invoke("mole:open-path-in-finder", path),
+  deletePath: (path) => ipcRenderer.invoke("mole:delete-path", path),
+  openActivityMonitor: () => ipcRenderer.invoke("mole:open-activity-monitor"),
+  signalProcess: (pid, signal) => ipcRenderer.invoke("mole:signal-process", pid, signal),
 
   // Clean command
   clean: {

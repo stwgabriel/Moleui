@@ -209,10 +209,10 @@ function runMole(args, options = {}) {
 
     const timeout = options.timeoutMs
       ? setTimeout(() => {
-          killed = true;
-          stderr += `\nProcess timed out after ${options.timeoutMs}ms`;
-          killChild();
-        }, options.timeoutMs)
+        killed = true;
+        stderr += `\nProcess timed out after ${options.timeoutMs}ms`;
+        killChild();
+      }, options.timeoutMs)
       : null;
 
     child.__killMoleProcess = killChild;
@@ -220,7 +220,7 @@ function runMole(args, options = {}) {
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString();
       stdout += text;
-      
+
       // Stream output if callback provided
       if (options.onStdout) {
         options.onStdout(text);
@@ -230,7 +230,7 @@ function runMole(args, options = {}) {
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
       stderr += text;
-      
+
       // Stream error output if callback provided
       if (options.onStderr) {
         options.onStderr(text);
@@ -310,6 +310,14 @@ function existingProcessPath(commandPath) {
   return "";
 }
 
+function existingFileActionPath(inputPath) {
+  const filePath = normalizeAnalyzePath(inputPath);
+  if (!filePath.startsWith("/") || !fs.existsSync(filePath)) {
+    return "";
+  }
+  return filePath;
+}
+
 let splashWindow;
 
 function createSplashWindow() {
@@ -376,7 +384,7 @@ function createWindow() {
     }
     window.show();
   });
-  
+
   return window;
 }
 
@@ -474,7 +482,7 @@ ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
       if (cleanSection) args.push("--section", cleanSection);
     }
   }
-  
+
   return runMole(args, {
     processId: "clean",
     onStdout: (text) => {
@@ -503,7 +511,7 @@ ipcMain.handle("mole:clean:kill", async () => {
 ipcMain.handle("mole:optimize:execute", async (event, options = {}) => {
   const args = ["optimize"];
   if (options.dryRun) args.push("--dry-run");
-  
+
   return runMole(args, {
     processId: "optimize",
     onStdout: (text) => {
@@ -532,7 +540,7 @@ ipcMain.handle("mole:optimize:kill", async () => {
 ipcMain.handle("mole:analyze:execute", async (event, path = "/") => {
   const scanPath = normalizeAnalyzePath(path);
   const args = ["analyze", "--json", scanPath];
-  
+
   return runMole(args, {
     processId: "analyze",
     onStdout: (text) => {
@@ -589,6 +597,34 @@ ipcMain.handle("mole:reveal-path", async (_event, commandPath) => {
   }
   shell.showItemInFolder(processPath);
   return { ok: true };
+});
+
+ipcMain.handle("mole:open-path-in-finder", async (_event, inputPath) => {
+  const filePath = existingFileActionPath(inputPath);
+  if (!filePath) {
+    return { ok: false, message: "Path is not available" };
+  }
+  shell.showItemInFolder(filePath);
+  return { ok: true };
+});
+
+ipcMain.handle("mole:delete-path", async (_event, inputPath) => {
+  const filePath = existingFileActionPath(inputPath);
+  if (!filePath) {
+    return { ok: false, message: "Path is not available" };
+  }
+
+  const protectedPaths = new Set(["/", app.getPath("home")]);
+  if (protectedPaths.has(filePath)) {
+    return { ok: false, message: "This location cannot be deleted" };
+  }
+
+  try {
+    await shell.trashItem(filePath);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: error.message };
+  }
 });
 
 ipcMain.handle("mole:open-activity-monitor", async () => {

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, type MouseEvent } from 'react';
 import {
   HardDrive, FolderOpen, File, BarChart3, Search,
   RefreshCw, X, ChevronRight, ChevronUp, Home, Download,
-  AlertCircle, ArrowLeft, Folder
+  AlertCircle, ArrowLeft, Folder, Trash2, ExternalLink
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,6 +32,19 @@ interface AnalyzeLargeFile {
   name: string;
   path: string;
   size: number;
+}
+
+interface FileActionItem {
+  name: string;
+  path: string;
+  size: number;
+  is_dir?: boolean;
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  item: FileActionItem;
 }
 
 interface AnalyzeResult {
@@ -192,6 +205,9 @@ export function AnalyzePage() {
   const resultCacheRef = useRef<Map<string, AnalyzeResult>>(new Map());
   // Navigation history stack for back-navigation
   const [navHistory, setNavHistory] = useState<string[]>([]);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<FileActionItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -209,6 +225,25 @@ export function AnalyzePage() {
       window.moleDesktop?.analyze?.removeListeners();
     };
   }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const closeContextMenu = () => setContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeContextMenu();
+    };
+
+    window.addEventListener('click', closeContextMenu);
+    window.addEventListener('blur', closeContextMenu);
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      window.removeEventListener('click', closeContextMenu);
+      window.removeEventListener('blur', closeContextMenu);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [contextMenu]);
 
   const startScan = async (path?: string, { pushHistory = true, skipCache = false }: { pushHistory?: boolean; skipCache?: boolean } = {}) => {
     const targetPath = path ?? pathForAnalyzeMode(selectedMode, pathInput);
@@ -346,6 +381,71 @@ export function AnalyzePage() {
     setSelectedMode(mode);
     setScanPath(nextPath);
     setPathInput(nextPath);
+  };
+
+  const openItemContextMenu = (event: MouseEvent, item: FileActionItem & { isOther?: boolean }) => {
+    if (item.isOther) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const menuWidth = 220;
+    const menuHeight = 110;
+    setContextMenu({
+      x: Math.min(event.clientX, Math.max(12, window.innerWidth - menuWidth)),
+      y: Math.min(event.clientY, Math.max(12, window.innerHeight - menuHeight)),
+      item: {
+        name: item.name,
+        path: item.path,
+        size: item.size,
+        is_dir: item.is_dir,
+      },
+    });
+  };
+
+  const requestDelete = (item: FileActionItem) => {
+    setContextMenu(null);
+    setPendingDelete(item);
+  };
+
+  const openInFinder = async (item: FileActionItem) => {
+    setContextMenu(null);
+    const res = await window.moleDesktop.openPathInFinder(item.path);
+    if (!res.ok) {
+      toast('Could not open Finder', {
+        description: res.message || item.path,
+        icon: <AlertCircle className="w-4 h-4 text-accent-danger" />,
+      });
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+
+    setIsDeleting(true);
+    const deletedItem = pendingDelete;
+
+    try {
+      const res = await window.moleDesktop.deletePath(deletedItem.path);
+      if (!res.ok) {
+        toast('Delete failed', {
+          description: res.message || deletedItem.path,
+          icon: <AlertCircle className="w-4 h-4 text-accent-danger" />,
+        });
+        return;
+      }
+
+      toast(`${deletedItem.is_dir ? 'Folder' : 'File'} moved to Trash`, {
+        description: deletedItem.path,
+        icon: <Trash2 className="w-4 h-4 text-accent-danger" />,
+      });
+      setPendingDelete(null);
+      resultCacheRef.current.clear();
+      if (result?.path) {
+        await startScan(result.path, { pushHistory: false, skipCache: true });
+      }
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // ── Idle / Start Screen ──────────────────────────────────────────────────
@@ -571,14 +671,15 @@ export function AnalyzePage() {
                     <button
                       key={entry.path}
                       type="button"
-                      disabled={!entry.is_dir || entry.isOther}
+                      aria-disabled={!entry.is_dir || entry.isOther}
+                      onContextMenu={(event) => openItemContextMenu(event, entry)}
                       onClick={() => {
                         if (entry.is_dir && !entry.isOther) {
                           setScanPath(entry.path);
                           startScan(entry.path);
                         }
                       }}
-                      className="group flex w-full items-center gap-3 rounded-2xl px-2 py-3 text-left transition hover:bg-white/35 disabled:cursor-default disabled:hover:bg-transparent"
+                      className={`group flex w-full items-center gap-3 rounded-2xl px-2 py-3 text-left transition hover:bg-white/35 ${!entry.is_dir || entry.isOther ? 'cursor-default' : ''}`}
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/60 bg-white/35 shadow-inner shadow-white/30" style={{ color: entry.color }}>
                         {entry.is_dir ? <Folder className="h-4 w-4" /> : <File className="h-4 w-4" />}
@@ -606,6 +707,15 @@ export function AnalyzePage() {
                             <File className="h-4 w-4 shrink-0 text-rose-500" />
                             <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">{file.name}</span>
                             <span className="font-mono text-xs font-black text-slate-500">#{index + 1}</span>
+                            <button
+                              type="button"
+                              onClick={() => requestDelete({ ...file, is_dir: false })}
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-rose-500 transition hover:bg-rose-500/10 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                              title={`Delete ${file.name}`}
+                              aria-label={`Delete ${file.name}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                           <div className="mt-1 font-mono text-xs font-bold text-slate-500">{formatBytes(file.size)}</div>
                         </div>
@@ -678,14 +788,15 @@ export function AnalyzePage() {
                       <button
                         key={rect.path}
                         type="button"
-                        disabled={!rect.is_dir || rect.isOther}
+                        aria-disabled={!rect.is_dir || rect.isOther}
+                        onContextMenu={(event) => openItemContextMenu(event, rect)}
                         onClick={() => {
                           if (rect.is_dir && !rect.isOther) {
                             setScanPath(rect.path);
                             startScan(rect.path);
                           }
                         }}
-                        className="group absolute overflow-hidden rounded-lg border border-white/35 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.36),0_12px_36px_rgba(15,23,42,0.10)] transition duration-300 hover:z-10 hover:scale-[1.01] hover:shadow-[0_20px_50px_rgba(15,23,42,0.20)] disabled:cursor-default disabled:hover:scale-100"
+                        className={`group absolute overflow-hidden rounded-lg border border-white/35 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.36),0_12px_36px_rgba(15,23,42,0.10)] transition duration-300 hover:z-10 hover:scale-[1.01] hover:shadow-[0_20px_50px_rgba(15,23,42,0.20)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
                         style={{
                           left: `${rect.x}%`,
                           top: `${rect.y}%`,
@@ -696,6 +807,11 @@ export function AnalyzePage() {
                         title={`${rect.name} - ${formatBytes(rect.size)} - ${rect.percentage.toFixed(1)}%`}
                       >
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_20%,rgba(255,255,255,0.28),transparent_38%)] opacity-80" />
+                        {!showLargeLabel && (
+                          <div className="absolute inset-x-1 top-1 z-[1] truncate rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-black leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
+                            {rect.name}
+                          </div>
+                        )}
                         {showDetails && (
                           <div className="relative flex h-full flex-col items-center justify-center text-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
                             {showLargeLabel && (
@@ -715,6 +831,63 @@ export function AnalyzePage() {
             </div>
           </Card>
         </div>
+
+        {contextMenu && (
+          <div
+            className="fixed z-50 w-56 overflow-hidden rounded-2xl border border-white/60 bg-white/90 p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)] backdrop-blur-2xl"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => void openInFinder(contextMenu.item)}
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-slate-700 transition hover:bg-slate-900/5"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open in Finder
+            </button>
+            <button
+              type="button"
+              onClick={() => requestDelete(contextMenu.item)}
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-rose-600 transition hover:bg-rose-500/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete {contextMenu.item.is_dir ? 'Folder' : 'File'}
+            </button>
+          </div>
+        )}
+
+        {pendingDelete && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-[1.75rem] border border-white/60 bg-white/90 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.24)] backdrop-blur-2xl">
+              <div className="flex items-start gap-4">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600">
+                  <Trash2 className="h-6 w-6" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-xl font-black text-slate-950">Confirm deletion</h3>
+                  <p className="mt-2 text-sm font-semibold text-slate-600">
+                    Move this {pendingDelete.is_dir ? 'folder' : 'file'} to Trash? This action requires confirmation every time.
+                  </p>
+                  <div className="mt-4 rounded-2xl border border-slate-900/10 bg-white/65 p-3">
+                    <div className="truncate text-sm font-black text-slate-900">{pendingDelete.name}</div>
+                    <div className="mt-1 truncate font-mono text-xs font-bold text-slate-500">{pendingDelete.path}</div>
+                    <div className="mt-2 font-mono text-xs font-black text-rose-500">{formatBytes(pendingDelete.size)}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button variant="secondary" onClick={() => setPendingDelete(null)} disabled={isDeleting}>
+                  Cancel
+                </Button>
+                <Button variant="danger" onClick={() => void confirmDelete()} disabled={isDeleting} className="gap-2">
+                  <Trash2 className="h-4 w-4" />
+                  {isDeleting ? 'Deleting...' : 'Move to Trash'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

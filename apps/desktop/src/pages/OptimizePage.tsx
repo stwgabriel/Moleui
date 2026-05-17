@@ -25,6 +25,101 @@ interface TimelineStage {
   endTime?: number;
 }
 
+type TimelineTarget = 'main' | 'preview';
+
+type ParsedOptimizeLine =
+  | { kind: 'section'; text: string }
+  | { kind: 'item'; text: string };
+
+const OPTIMIZE_ITEM_ICON_PATTERN = /^[✓✔→◎○ℹ-]\s*/;
+
+function removeOptimizeItemIcon(line: string) {
+  return line.replace(OPTIMIZE_ITEM_ICON_PATTERN, '').trim();
+}
+
+function isOptimizeSummaryLine(line: string) {
+  const message = removeOptimizeItemIcon(line);
+
+  return (
+    line === 'Optimize' ||
+    /^=+$/.test(line) ||
+    /^⚙\s+System\b/i.test(line) ||
+    /^Active Whitelist:/i.test(message) ||
+    /^(DRY RUN MODE|Dry Run Complete|Optimization Complete)\b/i.test(message) ||
+    /^(Would apply|Run without|Applied|System fully optimized)/i.test(message)
+  );
+}
+
+function rewritePreviewItem(line: string) {
+  const iconMatch = line.match(/^([✓✔→◎○ℹ-])\s*(.+?)$/);
+  const icon = iconMatch?.[1];
+  const message = removeOptimizeItemIcon(line);
+  if (!message) return '';
+
+  if (icon === '◎') return `Needs attention: ${message}`;
+  if (icon === '○' || icon === 'ℹ' || icon === '-') return message;
+
+  if (/\b(already|skipped|unavailable|not found|disabled|valid|optimal|healthy)\b/i.test(message)) {
+    return message;
+  }
+
+  const rewriteRules: Array<[RegExp, string]> = [
+    [/^(.+?) flushed$/i, 'flush'],
+    [/^(.+?) refreshed$/i, 'refresh'],
+    [/^(.+?) verified$/i, 'verify'],
+    [/^(.+?) rebuilt$/i, 'rebuild'],
+    [/^(.+?) optimized$/i, 'optimize'],
+    [/^(.+?) repaired$/i, 'repair'],
+    [/^(.+?) restarted$/i, 'restart'],
+    [/^(.+?) released$/i, 'release'],
+    [/^(.+?) improved$/i, 'improve'],
+    [/^(.+?) cleared$/i, 'clear'],
+    [/^(.+?) cleaned$/i, 'clean'],
+    [/^(.+?) started$/i, 'start'],
+  ];
+
+  for (const [pattern, verb] of rewriteRules) {
+    const match = message.match(pattern);
+    if (match?.[1]) return `Would ${verb} ${match[1]}`;
+  }
+
+  const actionMatch = message.match(/^(Optimized|Repaired|Cleaned|Cleared|Rebuilt|Refreshed|Restarted|Released|Verified)\s+(.+)$/i);
+  if (actionMatch?.[1] && actionMatch[2]) {
+    const verbByPastTense: Record<string, string> = {
+      optimized: 'optimize',
+      repaired: 'repair',
+      cleaned: 'clean',
+      cleared: 'clear',
+      rebuilt: 'rebuild',
+      refreshed: 'refresh',
+      restarted: 'restart',
+      released: 'release',
+      verified: 'verify',
+    };
+    const verb = verbByPastTense[actionMatch[1].toLowerCase()] ?? actionMatch[1].toLowerCase();
+    return `Would ${verb} ${actionMatch[2]}`;
+  }
+
+  return `Would ${message.charAt(0).toLowerCase()}${message.slice(1)}`;
+}
+
+function parseOptimizeLine(rawLine: string, target: TimelineTarget): ParsedOptimizeLine | null {
+  const line = stripAnsi(rawLine).trim();
+  if (!line || isOptimizeSummaryLine(line)) return null;
+
+  const sectionMatch = line.match(/^[➤▸]\s+(.+?)$/);
+  if (sectionMatch?.[1]) {
+    return { kind: 'section', text: sectionMatch[1].trim() };
+  }
+
+  if (OPTIMIZE_ITEM_ICON_PATTERN.test(line)) {
+    const text = target === 'preview' ? rewritePreviewItem(line) : removeOptimizeItemIcon(line);
+    return text ? { kind: 'item', text } : null;
+  }
+
+  return null;
+}
+
 const config: PageConfig = {
   title: 'Optimize performance',
   description: "Fine-tune your Mac's performance with system optimization and maintenance tasks.",
@@ -93,17 +188,17 @@ export function OptimizePage() {
     }
   };
 
-  const parseTimelineFromLog = (
-    text: string,
-    target: 'main' | 'preview' = 'main'
+  const parseTimelineLine = (
+    line: string,
+    target: TimelineTarget = 'main'
   ) => {
-    const cleanText = stripAnsi(text).trim();
+    const parsedLine = parseOptimizeLine(line, target);
+    if (!parsedLine) return;
+
     const setter = target === 'preview' ? setPreviewTimeline : setTimeline;
 
-    // Detect section headers (→ or ▸)
-    const sectionMatch = cleanText.match(/[→▸]\s+(.+?)$/);
-    if (sectionMatch) {
-      const sectionName = sectionMatch[1].trim();
+    if (parsedLine.kind === 'section') {
+      const sectionName = parsedLine.text;
       setter((prev) => {
         const updated = prev.map((s) =>
           s.status === 'active' ? { ...s, status: 'complete' as const, endTime: Date.now() } : s
@@ -115,27 +210,35 @@ export function OptimizePage() {
         }
         return [
           ...updated,
-          { id: `stage-${Date.now()}`, name: sectionName, status: 'active', items: [], startTime: Date.now() },
+          { id: `stage-${Date.now()}-${sectionName}`, name: sectionName, status: 'active', items: [], startTime: Date.now() },
         ];
       });
       return;
     }
 
-    // Detect completed / dry-run items
-    if (cleanText.includes('✓') || cleanText.includes('✔') || cleanText.includes('🔍')) {
-      setter((prev) => {
-        const activeIndex = prev.findIndex((s) => s.status === 'active');
-        if (activeIndex >= 0) {
-          const updated = [...prev];
-          updated[activeIndex] = {
-            ...updated[activeIndex],
-            items: [...updated[activeIndex].items, cleanText],
-          };
-          return updated;
-        }
-        return prev;
-      });
-    }
+    setter((prev) => {
+      const activeIndex = prev.findIndex((s) => s.status === 'active');
+      if (activeIndex >= 0) {
+        const updated = [...prev];
+        updated[activeIndex] = {
+          ...updated[activeIndex],
+          items: [...updated[activeIndex].items, parsedLine.text],
+        };
+        return updated;
+      }
+      return prev;
+    });
+  };
+
+  const parseTimelineFromLog = (
+    text: string,
+    target: TimelineTarget = 'main'
+  ) => {
+    stripAnsi(text)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((line) => parseTimelineLine(line, target));
   };
 
   const stopProcess = async (context: 'preview' | 'main') => {

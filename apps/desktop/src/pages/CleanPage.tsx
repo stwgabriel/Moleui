@@ -18,7 +18,6 @@ import type { LucideIcon } from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Spinner } from '@/components/ui/Spinner';
 import { formatBytes, stripAnsi, parseSizeToBytes } from '@/utils/format';
 import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig, CleanCategory } from '@/types';
@@ -166,6 +165,11 @@ const CLEAN_SECTIONS: CleanSectionMeta[] = [
 
 const SECTION_NAMES = new Set(CLEAN_SECTIONS.map((section) => section.section));
 const HINT_ONLY_SECTIONS = new Set(['Large files', 'System Data clues', 'Project artifacts']);
+const SOFT_CARD = 'rounded-[1.75rem] border border-white/55 bg-white/35 backdrop-blur-2xl';
+const CLEAN_SHELL = 'relative h-full min-h-0 overflow-hidden p-2';
+const CLEAN_ACCENT_BG = 'pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_88%_16%,rgba(59,130,246,0.16),transparent_34%),radial-gradient(circle_at_16%_88%,rgba(109,93,252,0.12),transparent_38%)]';
+const LIST_CARD = `relative overflow-hidden rounded-[1.5rem] p-4 ${SOFT_CARD}`;
+const MUTED_PILL = 'rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 backdrop-blur-xl';
 
 const config: PageConfig = {
   title: 'Cleanup',
@@ -616,12 +620,11 @@ export function CleanPage() {
   const renderTimeline = (title: string, Icon: LucideIcon, emptyText: string, activeText: string, sizeClass: string) => (
     <Card
       ref={timelineScrollRef}
-      variant="glass"
-      className="h-full p-6 overflow-y-auto custom-scrollbar"
+      className={`${LIST_CARD} h-full overflow-y-auto custom-scrollbar`}
       onScroll={handleTimelineScroll}
     >
-      <h3 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
-        <Icon className="w-4 h-4" />
+      <h3 className="mb-4 flex items-center gap-2 text-sm font-bold text-slate-950">
+        <Icon className="w-4 h-4 text-blue-500" />
         {title}
       </h3>
       <div className="space-y-4">
@@ -632,29 +635,29 @@ export function CleanPage() {
           return (
             <div key={timelineStage.id} className="relative">
               {index < timeline.length - 1 && (
-                <div className="absolute left-4 top-10 bottom-0 w-0.5 bg-gradient-to-b from-accent-primary/30 to-transparent" />
+                <div className="absolute left-4 bottom-0 top-10 w-0.5 bg-gradient-to-b from-blue-400/35 to-transparent" />
               )}
 
               <div className="flex gap-3">
                 <div className="relative z-10">
                   {timelineStage.status === 'active' && (
-                    <div className="w-8 h-8 rounded-full bg-accent-primary/20 flex items-center justify-center">
-                      <Loader2 className="w-4 h-4 text-accent-primary animate-spin" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-blue-200/70 bg-blue-100/35 shadow-[0_10px_24px_rgba(59,130,246,0.14)] backdrop-blur-xl">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
                     </div>
                   )}
                   {timelineStage.status === 'complete' && (
-                    <div className="w-8 h-8 rounded-full bg-accent-success/20 flex items-center justify-center">
-                      <CheckCircle2 className="w-4 h-4 text-accent-success" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-100/35 shadow-[0_10px_24px_rgba(16,185,129,0.14)] backdrop-blur-xl">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                     </div>
                   )}
                   {timelineStage.status === 'error' && (
-                    <div className="w-8 h-8 rounded-full bg-accent-danger/20 flex items-center justify-center">
-                      <AlertCircle className="w-4 h-4 text-accent-danger" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-red-200/70 bg-red-100/35 shadow-[0_10px_24px_rgba(239,68,68,0.14)] backdrop-blur-xl">
+                      <AlertCircle className="w-4 h-4 text-red-500" />
                     </div>
                   )}
                   {timelineStage.status === 'pending' && (
-                    <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center">
-                      <Clock className="w-4 h-4 text-text-tertiary" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 backdrop-blur-xl">
+                      <Clock className="w-4 h-4 text-slate-400" />
                     </div>
                   )}
                 </div>
@@ -663,30 +666,30 @@ export function CleanPage() {
                   <button
                     type="button"
                     onClick={() => toggleExpandedSection(timelineStage.name)}
-                    className="w-full flex items-center justify-between gap-3 text-left"
+                    className="flex w-full items-center justify-between gap-3 text-left"
                   >
                     <span className="flex items-center gap-2 min-w-0">
                       {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-text-tertiary shrink-0" />
+                        <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                       ) : (
-                        <ChevronRight className="w-4 h-4 text-text-tertiary shrink-0" />
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                       )}
-                      <span className="font-semibold text-text-primary truncate">{timelineStage.name}</span>
+                      <span className="truncate font-bold text-slate-950">{timelineStage.name}</span>
                     </span>
                     {timelineStage.size && timelineStage.size > 0 && (
-                      <span className={`text-xs shrink-0 ${sizeClass}`}>{formatBytes(timelineStage.size)}</span>
+                      <span className={`shrink-0 text-xs font-bold ${sizeClass}`}>{formatBytes(timelineStage.size)}</span>
                     )}
                   </button>
 
                   {timelineStage.items.length > 0 && (
                     <div className="space-y-1 mt-2 pl-6">
                       {visibleItems.map((item, itemIndex) => (
-                        <div key={`${item}-${itemIndex}`} className="text-xs text-text-secondary break-words">
+                        <div key={`${item}-${itemIndex}`} className="break-words text-xs font-medium text-slate-500">
                           {item}
                         </div>
                       ))}
                       {!isExpanded && timelineStage.items.length > 3 && (
-                        <div className="text-xs text-text-tertiary italic">
+                        <div className="text-xs font-medium italic text-slate-400">
                           +{timelineStage.items.length - 3} more items
                         </div>
                       )}
@@ -694,11 +697,11 @@ export function CleanPage() {
                   )}
 
                   {timelineStage.status === 'active' && timelineStage.items.length === 0 && (
-                    <div className="text-xs text-text-tertiary italic pl-6 mt-2">{activeText}</div>
+                    <div className="mt-2 pl-6 text-xs font-medium italic text-slate-400">{activeText}</div>
                   )}
 
                   {timelineStage.startTime && timelineStage.endTime && (
-                    <div className="text-xs text-text-tertiary mt-1 pl-6">
+                    <div className="mt-1 pl-6 text-xs font-medium text-slate-400">
                       Completed in {((timelineStage.endTime - timelineStage.startTime) / 1000).toFixed(1)}s
                     </div>
                   )}
@@ -709,9 +712,9 @@ export function CleanPage() {
         })}
 
         {timeline.length === 0 && (
-          <div className="text-center text-text-tertiary py-8">
-            <Icon className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">{emptyText}</p>
+          <div className="py-8 text-center text-slate-400">
+            <Icon className="mx-auto mb-2 h-8 w-8 opacity-50" />
+            <p className="text-sm font-medium">{emptyText}</p>
           </div>
         )}
       </div>
@@ -724,185 +727,207 @@ export function CleanPage() {
 
   if (stage === 'scanning') {
     return (
-      <div className="h-full flex flex-col p-8">
-        <div className="mb-6 text-center">
-          <div className="flex justify-center mb-4">
-            <div className="relative">
-              <Spinner size="lg" />
-              <Search className="absolute inset-0 m-auto w-6 h-6 text-accent-primary" />
+      <div className={CLEAN_SHELL}>
+        <div className={CLEAN_ACCENT_BG} />
+        <div className="relative flex h-full min-h-0 flex-col gap-2">
+          <div className="px-4 pb-4 pt-3 text-center">
+            <div className="mb-4 inline-flex rounded-full border border-blue-200/70 bg-blue-100/35 p-6 shadow-[0_18px_48px_rgba(59,130,246,0.18)] backdrop-blur-xl">
+              <Search className="h-12 w-12 animate-pulse text-blue-500" />
             </div>
+            <h2 className="mb-2 text-3xl font-black tracking-[-0.045em] text-slate-950">Scanning System...</h2>
+            <p className="font-medium text-slate-600">Analyzing cleanup sections and collecting details</p>
           </div>
-          <h2 className="text-2xl font-semibold text-text-primary">Scanning System...</h2>
-          <p className="text-text-secondary">Analyzing cleanup sections and collecting details</p>
-        </div>
 
-        <div className="flex-1 overflow-hidden mb-6">
-          {renderTimeline('Scan Progress', Clock, 'Initializing scan...', 'Scanning...', 'text-accent-primary')}
-        </div>
+          <div className="min-h-0 flex-1 rounded-[1.75rem] p-2">
+            {renderTimeline('Scan Progress', Clock, 'Initializing scan...', 'Scanning...', 'text-blue-500')}
+          </div>
 
-        <Button variant="secondary" icon={X} onClick={stopScan}>
-          Stop Scan
-        </Button>
+          <div className="flex justify-center px-4 py-4">
+            <Button variant="secondary" icon={X} onClick={stopScan} className="rounded-full bg-white/45 px-5 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60">
+              Stop Scan
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (stage === 'results') {
     return (
-      <div className="h-full flex flex-col p-8 overflow-hidden">
-        <div className="mb-6">
-          <h2 className="text-3xl font-bold text-text-primary mb-2">Scan Results</h2>
-          <p className="text-text-secondary">
-            Found {formatBytes(totalSize)} of cleanable data. Selected {formatBytes(selectedSize)}.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <Card variant="glass" className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-accent-primary/12 flex items-center justify-center">
-                <Sparkles className="w-6 h-6 text-accent-primary" />
+      <div className={CLEAN_SHELL}>
+        <div className={CLEAN_ACCENT_BG} />
+        <div className="relative flex h-full min-h-0 flex-col gap-2">
+          <div className="px-4 pb-4 pt-3">
+            <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <h2 className="mb-1 text-3xl font-black tracking-[-0.045em] text-slate-950">Scan Results</h2>
+                <p className="text-sm font-semibold text-slate-500">
+                  Found {formatBytes(totalSize)} of cleanable data. Selected {formatBytes(selectedSize)}.
+                </p>
               </div>
-              <div>
-                <div className="text-2xl font-bold text-text-primary">{formatBytes(selectedSize)}</div>
-                <div className="text-sm text-text-secondary">Selected to Clean</div>
+              <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                <Button
+                  variant="ghost"
+                  icon={ArrowLeft}
+                  onClick={reset}
+                  size="sm"
+                  className="rounded-full px-3 text-slate-500 hover:bg-red-500/10 hover:text-red-500"
+                >
+                  Back
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={selectAllCleanable}
+                  size="sm"
+                  className="rounded-full bg-white/45 px-4 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60"
+                >
+                  Select All
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={clearSelection}
+                  size="sm"
+                  className="rounded-full bg-white/45 px-4 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60"
+                >
+                  Clear
+                </Button>
+                <Button
+                  icon={Trash2}
+                  onClick={startCleaning}
+                  size="sm"
+                  className="rounded-full bg-blue-500 px-5 shadow-[0_18px_40px_rgba(59,130,246,0.24)] hover:bg-blue-600"
+                  disabled={selectedSize === 0}
+                >
+                  Clean Selected
+                </Button>
               </div>
             </div>
-          </Card>
 
-          <Card variant="glass" className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-accent-secondary/12 flex items-center justify-center">
-                <Trash2 className="w-6 h-6 text-accent-secondary" />
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-text-primary">{selectedCategories.length}</div>
-                <div className="text-sm text-text-secondary">Sections Selected</div>
-              </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Card className={`${LIST_CARD} border-blue-200/60`}>
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-200/70 bg-blue-100/35 shadow-[0_12px_30px_rgba(59,130,246,0.14)] backdrop-blur-xl">
+                    <Sparkles className="h-6 w-6 text-blue-500" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-black tracking-[-0.035em] text-slate-950">{formatBytes(selectedSize)}</div>
+                    <div className="text-sm font-medium text-slate-500">Selected to Clean</div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className={LIST_CARD}>
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-200/70 bg-violet-100/35 shadow-[0_12px_30px_rgba(109,93,252,0.14)] backdrop-blur-xl">
+                    <Trash2 className="h-6 w-6 text-violet-500" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-black tracking-[-0.035em] text-slate-950">{selectedCategories.length}</div>
+                    <div className="text-sm font-medium text-slate-500">Sections Selected</div>
+                  </div>
+                </div>
+              </Card>
             </div>
-          </Card>
-        </div>
+          </div>
 
-        <div className="flex items-center justify-between gap-4 mb-3">
-          <div className="text-sm font-semibold text-text-primary">Cleanup Sections</div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-surface-hover">
-              <ArrowUpDown className="w-4 h-4 text-text-tertiary" />
+          <div className="flex items-center justify-between gap-4 px-4 pb-2">
+            <div className="text-sm font-bold text-slate-950">Cleanup Sections</div>
+            <div className={`flex items-center gap-2 px-4 py-3 ${MUTED_PILL}`}>
+              <ArrowUpDown className="h-4 w-4 text-slate-400" />
               <select
                 value={sortBy}
                 onChange={(event) => setSortBy(event.target.value as 'size' | 'name')}
-                className="bg-transparent text-sm text-text-primary focus:outline-none cursor-pointer"
+                className="cursor-pointer bg-transparent text-sm font-semibold text-slate-700 focus:outline-none"
                 aria-label="Sort cleanup sections"
               >
                 <option value="size">Sort by Size</option>
                 <option value="name">Sort by Name</option>
               </select>
             </div>
-            <Button variant="ghost" size="sm" onClick={selectAllCleanable}>
-              Select All
-            </Button>
-            <Button variant="ghost" size="sm" onClick={clearSelection}>
-              Clear
-            </Button>
           </div>
-        </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 mb-6 px-2 py-1">
-          {sortedCategories.map((category) => {
-            const meta = getSectionMeta(category.section);
-            const isSelected = selectedSections.includes(category.section);
-            const isExpanded = expandedSections.includes(category.section);
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-[1.75rem] p-2 custom-scrollbar">
+            <div className="space-y-2">
+              {sortedCategories.map((category) => {
+                const meta = getSectionMeta(category.section);
+                const isSelected = selectedSections.includes(category.section);
+                const isExpanded = expandedSections.includes(category.section);
 
-            return (
-              <Card
-                key={category.section}
-                variant="glass"
-                hover={category.cleanable}
-                className={`p-4 ${!category.cleanable ? 'opacity-75' : ''}`}
-                onClick={() => toggleSelectedSection(category)}
-              >
-                <div className="flex items-start gap-4">
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    disabled={!category.cleanable}
-                    onChange={() => toggleSelectedSection(category)}
-                    onClick={(event) => event.stopPropagation()}
-                    className="mt-3 h-4 w-4 accent-accent-primary disabled:opacity-40"
-                    aria-label={`Select ${category.name}`}
-                  />
-                  <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: `${category.color}20`, color: category.color }}
+                return (
+                  <Card
+                    key={category.section}
+                    className={`${LIST_CARD} cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 ${
+                      isSelected ? 'bg-white/55 ring-2 ring-blue-400' : ''
+                    } ${!category.cleanable ? 'cursor-default opacity-70 hover:translate-y-0' : ''}`}
+                    onClick={() => toggleSelectedSection(category)}
                   >
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-text-primary">{category.name}</h3>
-                        <p className="text-sm text-text-secondary">
-                          {category.cleanable
-                            ? `${category.fileCount} items - ${formatBytes(category.size)}`
-                            : category.scanned
-                              ? 'No cleanable data found'
-                              : 'Not scanned'}
-                        </p>
+                    <div className="flex items-start gap-4">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={!category.cleanable}
+                        onChange={() => toggleSelectedSection(category)}
+                        onClick={(event) => event.stopPropagation()}
+                        className="sr-only"
+                        aria-label={`Select ${category.name}`}
+                      />
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-[0_10px_24px_rgba(15,23,42,0.10)] backdrop-blur-xl"
+                        style={{ backgroundColor: `${category.color}20`, color: category.color }}
+                      >
+                        <Sparkles className="h-5 w-5" />
                       </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-lg font-semibold text-text-primary">{formatBytes(category.size)}</div>
-                        <div
-                          className={`text-xs ${
-                            category.cleanable ? 'text-accent-success' : 'text-text-tertiary'
-                          }`}
-                        >
-                          {category.cleanable ? 'Cleanable' : 'Not cleanable'}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-slate-950">{category.name}</h3>
+                            <p className="truncate text-sm font-medium text-slate-500">
+                              {category.cleanable
+                                ? `${category.fileCount} items - ${formatBytes(category.size)}`
+                                : category.scanned
+                                  ? 'No cleanable data found'
+                                  : 'Not scanned'}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="text-lg font-black tracking-[-0.03em] text-slate-950">{formatBytes(category.size)}</div>
+                            <div className={`text-xs font-bold ${category.cleanable ? 'text-emerald-500' : 'text-slate-400'}`}>
+                              {category.cleanable ? 'Cleanable' : 'Not cleanable'}
+                            </div>
+                          </div>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleExpandedSection(category.section);
+                          }}
+                          className="mt-3 inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-slate-500 transition-colors hover:bg-white/45 hover:text-slate-950"
+                        >
+                          {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          Details
+                        </button>
+
+                        {isExpanded && (
+                          <div className="mt-3 rounded-2xl border border-white/60 bg-white/35 p-3 shadow-inner shadow-white/30 backdrop-blur-xl">
+                            <p className="mb-2 text-xs font-semibold text-slate-500">{meta.description}</p>
+                            <div className="max-h-40 space-y-1 overflow-y-auto pr-1 custom-scrollbar">
+                              {category.items.map((item, itemIndex) => (
+                                <div key={`${category.section}-${itemIndex}`} className="break-words text-xs font-medium text-slate-500">
+                                  {item}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleExpandedSection(category.section);
-                      }}
-                      className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-text-secondary hover:text-text-primary"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      )}
-                      Details
-                    </button>
-
-                    {isExpanded && (
-                      <div className="mt-3 rounded-md bg-surface/70 border border-surface-hover p-3">
-                        <p className="text-xs text-text-secondary mb-2">{meta.description}</p>
-                        <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-                          {category.items.map((item, itemIndex) => (
-                            <div key={`${category.section}-${itemIndex}`} className="text-xs text-text-secondary break-words">
-                              {item}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-
-        <div className="flex gap-4">
-          <Button variant="secondary" icon={ArrowLeft} onClick={reset}>
-            Back
-          </Button>
-          <Button icon={Trash2} onClick={startCleaning} className="flex-1" disabled={selectedSize === 0}>
-            Clean Selected
-          </Button>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -912,35 +937,44 @@ export function CleanPage() {
     const progress = selectedSize > 0 ? (cleanedSize / selectedSize) * 100 : 0;
 
     return (
-      <div className="h-full flex flex-col p-8">
-        <div className="mb-6 text-center">
-          <div className="flex justify-center mb-4">
-            <div className="relative">
-              <Spinner size="lg" />
-              <Trash2 className="absolute inset-0 m-auto w-6 h-6 text-accent-primary" />
+      <div className={CLEAN_SHELL}>
+        <div className={CLEAN_ACCENT_BG} />
+        <div className="relative flex h-full min-h-0 flex-col gap-2">
+          <div className="px-4 pb-4 pt-3">
+            <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <h2 className="mb-1 text-3xl font-black tracking-[-0.045em] text-slate-950">Cleaning...</h2>
+                <p className="font-medium text-slate-600">Removing selected cleanup sections and reclaiming space.</p>
+              </div>
+              <div className="flex justify-start lg:justify-end">
+                <Button variant="secondary" icon={X} onClick={stopCleaning} className="rounded-full bg-white/45 px-5 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60">
+                  Stop Cleaning
+                </Button>
+              </div>
             </div>
+
+            <Card className={`${LIST_CARD} border-blue-200/60`}>
+              <div className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-600">
+                <span>{formatBytes(cleanedSize)} of {formatBytes(selectedSize)}</span>
+                <span>{Math.round(Math.min(progress, 100))}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white/45 shadow-inner shadow-white/40">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-400 to-cyan-500 transition-all duration-300"
+                  style={{ width: `${Math.min(progress, 100)}%` }}
+                />
+              </div>
+              <div className="mt-3 flex items-center gap-3 py-1">
+                <Trash2 className="h-5 w-5 text-blue-500" />
+                <span className="text-sm font-medium text-slate-600">Do not close this window until cleanup completes</span>
+              </div>
+            </Card>
           </div>
-          <h2 className="text-2xl font-semibold text-text-primary">Cleaning...</h2>
-          <div className="mt-4 max-w-md mx-auto">
-            <div className="w-full h-2 bg-surface rounded-full overflow-hidden mb-2">
-              <div
-                className="h-full bg-accent-primary rounded-full transition-all duration-300"
-                style={{ width: `${Math.min(progress, 100)}%` }}
-              />
-            </div>
-            <p className="text-sm text-text-tertiary">
-              {formatBytes(cleanedSize)} of {formatBytes(selectedSize)} ({Math.round(Math.min(progress, 100))}%)
-            </p>
+
+          <div className="min-h-0 flex-1 rounded-[1.75rem] p-2">
+            {renderTimeline('Cleanup Progress', Trash2, 'Initializing cleanup...', 'Cleaning...', 'text-emerald-500')}
           </div>
         </div>
-
-        <div className="flex-1 overflow-hidden mb-6">
-          {renderTimeline('Cleanup Progress', Trash2, 'Initializing cleanup...', 'Cleaning...', 'text-accent-success')}
-        </div>
-
-        <Button variant="secondary" icon={X} onClick={stopCleaning}>
-          Stop Cleaning
-        </Button>
       </div>
     );
   }
@@ -949,32 +983,35 @@ export function CleanPage() {
     const totalItems = selectedCategories.reduce((sum, cat) => sum + cat.fileCount, 0);
 
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center space-y-8 max-w-md">
-          <div className="flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-accent-success/12 flex items-center justify-center">
-              <Check className="w-10 h-10 text-accent-success" />
+      <div className={CLEAN_SHELL}>
+        <div className={CLEAN_ACCENT_BG} />
+        <div className="relative flex h-full items-center justify-center">
+          <div className="w-full max-w-2xl p-8 text-center">
+            <div className="space-y-6">
+              <div className="inline-flex rounded-full border border-emerald-200/70 bg-emerald-100/35 p-6 shadow-[0_18px_48px_rgba(16,185,129,0.16)] backdrop-blur-xl">
+                <Check className="h-12 w-12 text-emerald-500" />
+              </div>
+              <div>
+                <h2 className="mb-2 text-3xl font-black tracking-[-0.045em] text-slate-950">Cleaning Complete!</h2>
+                <p className="font-medium text-slate-600">Successfully freed {formatBytes(cleanedSize)}</p>
+              </div>
+
+              <div className="mx-auto grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
+                <Card className={`${LIST_CARD} text-center`}>
+                  <div className="mb-1 text-3xl font-black tracking-[-0.04em] text-emerald-500">{formatBytes(cleanedSize)}</div>
+                  <div className="text-sm font-medium text-slate-500">Space Recovered</div>
+                </Card>
+                <Card className={`${LIST_CARD} text-center`}>
+                  <div className="mb-1 text-3xl font-black tracking-[-0.04em] text-blue-500">{totalItems}</div>
+                  <div className="text-sm font-medium text-slate-500">Items Removed</div>
+                </Card>
+              </div>
+
+              <Button icon={Check} onClick={reset} size="lg" className="rounded-full bg-blue-500 shadow-[0_18px_40px_rgba(59,130,246,0.24)] hover:bg-blue-600">
+                Done
+              </Button>
             </div>
           </div>
-          <div>
-            <h2 className="text-3xl font-bold text-text-primary mb-2">Cleaning Complete!</h2>
-            <p className="text-text-secondary">Successfully freed {formatBytes(cleanedSize)}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Card variant="glass" className="p-6">
-              <div className="text-3xl font-bold text-accent-success mb-1">{formatBytes(cleanedSize)}</div>
-              <div className="text-sm text-text-secondary">Space Recovered</div>
-            </Card>
-            <Card variant="glass" className="p-6">
-              <div className="text-3xl font-bold text-accent-primary mb-1">{totalItems}</div>
-              <div className="text-sm text-text-secondary">Items Removed</div>
-            </Card>
-          </div>
-
-          <Button icon={Check} onClick={reset} size="lg">
-            Done
-          </Button>
         </div>
       </div>
     );

@@ -47,7 +47,7 @@ const myMacCard =
   'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
 
 const myMacActionCard =
-  'group relative flex items-center gap-4 overflow-hidden rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left shadow-[0_20px_60px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45';
+  'group relative flex items-center gap-4 overflow-hidden rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left  backdrop-blur-2xl transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45';
 
 const featureThemes: Record<string, { accent: string; glow: string; footerText: string }> = {
   PackageX: {

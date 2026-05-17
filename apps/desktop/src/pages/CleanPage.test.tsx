@@ -84,6 +84,8 @@ function mockMoleDesktop() {
     openExternal: vi.fn(),
     copyText: vi.fn(),
     revealPath: vi.fn(),
+    openPathInFinder: vi.fn(),
+    deletePath: vi.fn(),
     openActivityMonitor: vi.fn(),
     signalProcess: vi.fn(),
     runStatus: vi.fn(),
