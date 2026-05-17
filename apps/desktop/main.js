@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, shell } from "electron";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -318,6 +318,35 @@ function existingFileActionPath(inputPath) {
   return filePath;
 }
 
+function runAppleScript(script) {
+  return new Promise((resolve) => {
+    execFile("osascript", ["-e", script], (error) => {
+      resolve(error ? { ok: false, message: error.message } : { ok: true });
+    });
+  });
+}
+
+async function openNewFinderWindow(filePath) {
+  if (process.platform !== "darwin") {
+    shell.showItemInFolder(filePath);
+    return { ok: true };
+  }
+
+  const isDirectory = fs.statSync(filePath).isDirectory();
+  const folderPath = isDirectory ? filePath : path.dirname(filePath);
+  const escapedFolderPath = JSON.stringify(folderPath);
+  const escapedFilePath = JSON.stringify(filePath);
+  const script = `
+tell application "Finder"
+  activate
+  set newWindow to make new Finder window to (POSIX file ${escapedFolderPath} as alias)
+  ${isDirectory ? "" : `select (POSIX file ${escapedFilePath} as alias)`}
+end tell
+`;
+
+  return runAppleScript(script);
+}
+
 let splashWindow;
 
 function createSplashWindow() {
@@ -604,8 +633,7 @@ ipcMain.handle("mole:open-path-in-finder", async (_event, inputPath) => {
   if (!filePath) {
     return { ok: false, message: "Path is not available" };
   }
-  shell.showItemInFolder(filePath);
-  return { ok: true };
+  return openNewFinderWindow(filePath);
 });
 
 ipcMain.handle("mole:delete-path", async (_event, inputPath) => {

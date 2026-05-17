@@ -208,6 +208,8 @@ export function AnalyzePage() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [pendingDelete, setPendingDelete] = useState<FileActionItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [inlineScanPath, setInlineScanPath] = useState('');
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
 
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -245,8 +247,18 @@ export function AnalyzePage() {
     };
   }, [contextMenu]);
 
-  const startScan = async (path?: string, { pushHistory = true, skipCache = false }: { pushHistory?: boolean; skipCache?: boolean } = {}) => {
+  const startScan = async (
+    path?: string,
+    {
+      pushHistory = true,
+      skipCache = false,
+      display,
+    }: { pushHistory?: boolean; skipCache?: boolean; display?: 'page' | 'inline' | 'background' } = {},
+  ) => {
     const targetPath = path ?? pathForAnalyzeMode(selectedMode, pathInput);
+    const scanDisplay = display ?? (stage === 'results' && result ? 'inline' : 'page');
+
+    if ((inlineScanPath || isBackgroundRefreshing) && scanDisplay !== 'page') return;
 
     // Push the current result path to navigation history
     if (pushHistory && result?.path && result.path !== targetPath) {
@@ -269,34 +281,47 @@ export function AnalyzePage() {
     setSelectedMode(modeForPath(targetPath));
     setScanPath(targetPath);
     setPathInput(targetPath);
-    setStage('scanning');
-    setView('start'); // not on pick screen anymore
-    setProgress(0);
-    setCurrentFile('');
     setError(null);
+
+    if (scanDisplay === 'page') {
+      setStage('scanning');
+      setView('start'); // not on pick screen anymore
+      setProgress(0);
+      setCurrentFile('');
+    } else if (scanDisplay === 'inline') {
+      setStage('results');
+      setInlineScanPath(targetPath);
+      setProgress(0);
+      setCurrentFile('');
+    } else {
+      setIsBackgroundRefreshing(true);
+    }
 
     let jsonBuffer = '';
 
     window.moleDesktop.analyze.onStdout((text) => {
       jsonBuffer += text;
       const clean = stripAnsi(text).trim();
-      if (clean) setCurrentFile(clean.slice(0, 80));
+      if (scanDisplay !== 'background' && clean) setCurrentFile(clean.slice(0, 80));
     });
 
     window.moleDesktop.analyze.onStderr((text) => {
       console.error('[Analyze stderr]', text);
     });
 
-    // Simulate progress while scanning
-    progressIntervalRef.current = setInterval(() => {
-      setProgress((prev) => (prev < 88 ? prev + Math.random() * 8 : prev));
-    }, 400);
+    if (scanDisplay !== 'background') {
+      // Simulate progress while scanning
+      progressIntervalRef.current = setInterval(() => {
+        setProgress((prev) => (prev < 88 ? prev + Math.random() * 8 : prev));
+      }, 400);
+    }
 
     try {
       const res = await window.moleDesktop.analyze.execute(targetPath);
 
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-      setProgress(100);
+      progressIntervalRef.current = null;
+      if (scanDisplay !== 'background') setProgress(100);
 
       if (res.ok) {
         try {
@@ -306,27 +331,53 @@ export function AnalyzePage() {
           setStage('results');
         } catch (parseErr) {
           console.error('Failed to parse analyze JSON:', parseErr);
-          setError('Failed to parse analysis results. The scan may have returned unexpected output.');
-          setStage('error');
+          if (scanDisplay === 'page') {
+            setError('Failed to parse analysis results. The scan may have returned unexpected output.');
+            setStage('error');
+          } else {
+            toast('Failed to parse analysis results', {
+              description: 'The scan may have returned unexpected output.',
+              icon: <AlertCircle className="w-4 h-4 text-accent-danger" />,
+            });
+          }
         }
       } else if (res.killed) {
-        setStage('idle');
+        if (scanDisplay === 'page') setStage('idle');
       } else {
-        setError(res.stderr || 'Analysis failed with an unknown error.');
-        setStage('error');
+        if (scanDisplay === 'page') {
+          setError(res.stderr || 'Analysis failed with an unknown error.');
+          setStage('error');
+        } else {
+          toast('Analysis failed', {
+            description: res.stderr || 'Analysis failed with an unknown error.',
+            icon: <AlertCircle className="w-4 h-4 text-accent-danger" />,
+          });
+        }
       }
     } catch (err: any) {
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-      setError(err.message || 'An unexpected error occurred.');
-      setStage('error');
+      progressIntervalRef.current = null;
+      if (scanDisplay === 'page') {
+        setError(err.message || 'An unexpected error occurred.');
+        setStage('error');
+      } else {
+        toast('Analysis failed', {
+          description: err.message || 'An unexpected error occurred.',
+          icon: <AlertCircle className="w-4 h-4 text-accent-danger" />,
+        });
+      }
     } finally {
       window.moleDesktop.analyze.removeListeners();
+      if (scanDisplay === 'inline') setInlineScanPath('');
+      if (scanDisplay === 'background') setIsBackgroundRefreshing(false);
     }
   };
 
   const stopScan = async () => {
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     await window.moleDesktop.analyze.kill();
+    setInlineScanPath('');
+    setIsBackgroundRefreshing(false);
     setStage('idle');
     setView('start');
     toast('Analysis cancelled', {
@@ -343,6 +394,8 @@ export function AnalyzePage() {
     setCurrentFile('');
     setError(null);
     setNavHistory([]);
+    setInlineScanPath('');
+    setIsBackgroundRefreshing(false);
   };
 
   // Navigate to parent directory
@@ -598,7 +651,6 @@ export function AnalyzePage() {
     const largeFiles = [...(result.large_files ?? [])].sort((a, b) => b.size - a.size);
     const treemapItems = buildTreemapItems(entries, result.total_size, result.path);
     const treemapRects = createTreemapLayout(treemapItems);
-    const usedPercent = result.total_size > 0 ? Math.min(100, Math.max(0, (sumSizes(entries) / result.total_size) * 100)) : 0;
     const leadingEntries = treemapItems.slice(0, 7);
     const breadcrumbs = buildBreadcrumbs();
     const canGoUp = result.path !== '/';
@@ -649,6 +701,17 @@ export function AnalyzePage() {
                 </div>
               );
             })}
+          </div>
+          <div className="ml-auto shrink-0">
+            <Button
+              aria-label="Rescan storage"
+              title={isBackgroundRefreshing ? 'Refreshing in background' : 'Rescan storage'}
+              disabled={isBackgroundRefreshing || Boolean(inlineScanPath)}
+              onClick={() => void startScan(result.path, { skipCache: true, pushHistory: false, display: 'background' })}
+              className="h-8 rounded-full px-3"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isBackgroundRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </div>
 
@@ -702,7 +765,11 @@ export function AnalyzePage() {
                     <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">Largest Files</div>
                     <div className="space-y-2">
                       {largeFiles.slice(0, 4).map((file, index) => (
-                        <div key={file.path} className="rounded-2xl border border-white/50 bg-white/25 p-3 shadow-inner shadow-white/20">
+                        <div
+                          key={file.path}
+                          onContextMenu={(event) => openItemContextMenu(event, { ...file, is_dir: false })}
+                          className="rounded-2xl border border-white/50 bg-white/25 p-3 shadow-inner shadow-white/20"
+                        >
                           <div className="flex items-center gap-2">
                             <File className="h-4 w-4 shrink-0 text-rose-500" />
                             <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">{file.name}</span>
@@ -747,35 +814,30 @@ export function AnalyzePage() {
           </Card>
 
           <Card className={`min-h-[36rem]  p-4 xl:min-h-0 ${ANALYZE_GLASS_CARD}`}>
-            <div className="flex h-full min-h-0 flex-col gap-4">
-              <div className="flex flex-col gap-4 rounded-[1.5rem]  sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-xl font-black text-slate-950">
-                    <Home className="h-5 w-5" />
-                    <span className="truncate">Storage Map</span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 font-mono text-sm font-bold text-slate-500">
-                    <HardDrive className="h-4 w-4" />
-                    <span className="truncate">{formatBytes(result.total_size)} analyzed</span>
-                    {result.total_files != null && <span>- {result.total_files.toLocaleString()} files</span>}
-                  </div>
-                </div>
-
-                <div className="flex min-w-0 flex-1 items-center gap-3 sm:max-w-md">
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-900/10">
-                    <div className="h-full rounded-full bg-gradient-to-r from-orange-400 via-pink-500 to-violet-500" style={{ width: `${usedPercent}%` }} />
-                  </div>
-                  <span className="whitespace-nowrap font-mono text-sm font-black text-orange-500">
-                    {formatBytes(result.total_size)}
-                  </span>
-                  <Button aria-label="Rescan storage" onClick={() => startScan(scanPath, { skipCache: true, pushHistory: false })} className="h-9 rounded-full px-3">
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
+            <div className="flex h-full min-h-0 flex-col">
               <div className="relative flex-1 min-h-0 rounded-sm space-4">
-                {treemapRects.length === 0 ? (
+                {inlineScanPath ? (
+                  <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-white/45 bg-white/25 p-8 text-center shadow-inner shadow-white/20">
+                    <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-analyze/10">
+                      <Spinner size="lg" />
+                      <Search className="absolute inset-0 m-auto h-5 w-5 text-analyze" />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-950">Scanning folder</h3>
+                    <p className="mt-2 max-w-md truncate font-mono text-sm font-bold text-slate-500">{inlineScanPath}</p>
+                    <div className="mt-6 w-full max-w-sm space-y-2">
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-900/10">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-analyze to-accent-secondary transition-all duration-500 ease-out"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 font-mono text-xs font-bold text-slate-500">
+                        <span className="truncate">{currentFile || 'Scanning...'}</span>
+                        <span className="shrink-0">{Math.round(progress)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : treemapRects.length === 0 ? (
                   <div className="flex h-full flex-col items-center justify-center text-center">
                     <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
                     <p className="font-semibold text-slate-600">No entries found in this location.</p>
