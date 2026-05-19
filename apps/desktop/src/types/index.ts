@@ -48,7 +48,7 @@ export interface MoleDesktopAPI {
     removeListeners: () => void;
   };
   analyze: {
-    execute: (path: string) => Promise<MoleResult>;
+    execute: (path: string, options?: { fresh?: boolean }) => Promise<MoleResult>;
     kill: () => Promise<{ ok: boolean; message: string }>;
     onStdout: (callback: (data: string) => void) => void;
     onStderr: (callback: (data: string) => void) => void;

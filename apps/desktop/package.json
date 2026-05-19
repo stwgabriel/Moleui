@@ -1,17 +1,20 @@
 {
   "name": "@repo/desktop",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Moleui application built with React",
   "main": "main.js",
   "scripts": {
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
     "dev": "node scripts/prepare-runtime.mjs && concurrently \"vite\" \"sleep 2 && electron .\"",
-    "build": "tsc && vite build && cp splash.html dist/ && cp -r public/assets dist/",
+    "build": "tsc && vite build && cp -r public/assets dist/",
     "preview": "vite preview",
     "dist": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip",
     "dist:arm64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --arm64",
     "dist:amd64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --x64",
+    "dist:signed": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip -c.forceCodeSigning=true",
+    "dist:signed:arm64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --arm64 -c.forceCodeSigning=true",
+    "dist:signed:amd64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --x64 -c.forceCodeSigning=true",
     "type-check": "tsc --noEmit",
     "diagnose": "node scripts/diagnose.mjs"
   },
@@ -57,7 +60,6 @@
       "dist/**/*",
       "main.js",
       "preload.js",
-      "splash.html",
       "public/assets/base/**/*",
       "package.json"
     ],
@@ -69,6 +71,7 @@
     ],
     "mac": {
       "category": "public.app-category.utilities",
+      "notarize": true,
       "target": [
         "dmg",
         "zip"

@@ -164,6 +164,24 @@ describe('CleanPage', () => {
     expect(window.moleDesktop.clean.removeListeners).toHaveBeenCalled();
   });
 
+  it('falls back to the start screen for an invalid recovered cleanup stage', () => {
+    localStorage.setItem('mole-clean-stage', JSON.stringify('cleanup'));
+
+    render(<CleanPage />);
+
+    expect(screen.getByRole('button', { name: /start cleaning/i })).toBeInTheDocument();
+  });
+
+  it('ignores corrupt recovered cleanup results instead of crashing', () => {
+    localStorage.setItem('mole-clean-categories', JSON.stringify(null));
+    localStorage.setItem('mole-clean-selected-sections', JSON.stringify(null));
+
+    render(<CleanPage />);
+
+    expect(screen.getByText('Scan Results')).toBeInTheDocument();
+    expect(screen.getByText(/Found 4\.68 GB of cleanable data/)).toBeInTheDocument();
+  });
+
   it('returns to results when stopping a stale cleanup', async () => {
     localStorage.setItem('mole-clean-stage', JSON.stringify('cleaning'));
     vi.mocked(window.moleDesktop.clean.kill).mockResolvedValue({ ok: false } as any);

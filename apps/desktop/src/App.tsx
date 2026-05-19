@@ -1,18 +1,27 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { cn } from '@/utils/cn';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { HomePage } from '@/pages/HomePage';
 import { MyMacPage } from '@/pages/MyMacPage';
-import { CleanPage } from '@/pages/CleanPage';
-import { UninstallPage } from '@/pages/UninstallPage';
-import { OptimizePage } from '@/pages/OptimizePage';
-import { AnalyzePage } from '@/pages/AnalyzePage';
 import { hasSeenHomePage, markHomePageSeen } from '@/utils/storage';
 import type { PageId } from '@/types';
 
 // Page order for determining animation direction
-const PAGE_ORDER: PageId[] = ['home', 'mymac', 'clean', 'uninstall', 'optimize', 'analyze'];
+const PAGE_ORDER: PageId[] = ['home', 'mymac', 'clean', 'optimize', 'uninstall', 'analyze'];
+
+const CleanPage = lazy(() => import('@/pages/CleanPage').then((module) => ({ default: module.CleanPage })));
+const OptimizePage = lazy(() => import('@/pages/OptimizePage').then((module) => ({ default: module.OptimizePage })));
+const UninstallPage = lazy(() => import('@/pages/UninstallPage').then((module) => ({ default: module.UninstallPage })));
+const AnalyzePage = lazy(() => import('@/pages/AnalyzePage').then((module) => ({ default: module.AnalyzePage })));
+
+function PageLoadingFallback() {
+  return (
+    <div className="flex h-full items-center justify-center" role="status" aria-label="Loading page">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-violet-300/30 border-t-violet-600" />
+    </div>
+  );
+}
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageId>('home');
@@ -64,51 +73,26 @@ function App() {
     }
   };
 
-  const renderPage = (pageId: PageId) => {
-    const isActive = pageId === currentPage;
-    const animationClass = isActive
-      ? animationDirection === 'left'
-        ? 'slide-in-right'
-        : 'slide-in-left'
-      : 'opacity-0 pointer-events-none';
-
-    const pageContent = (() => {
-      switch (pageId) {
-        case 'home':
-          return <HomePage onNavigate={handlePageChange} onSkipToHome={() => handlePageChange('mymac')} />;
-        case 'mymac':
-          return <MyMacPage onNavigate={handlePageChange} />;
-        case 'clean':
-          return <CleanPage />;
-        case 'uninstall':
-          return <UninstallPage />;
-        case 'optimize':
-          return <OptimizePage />;
-        case 'analyze':
-          return <AnalyzePage />;
-        default:
-          return <HomePage onNavigate={handlePageChange} onSkipToHome={() => handlePageChange('mymac')} />;
-      }
-    })();
-
-    return (
-      <div
-        key={pageId}
-        aria-hidden={!isActive}
-        className={`absolute inset-0 ${animationClass}`}
-      >
-        {pageContent}
-      </div>
-    );
+  const renderCurrentPage = () => {
+    switch (currentPage) {
+      case 'home':
+        return <HomePage onNavigate={handlePageChange} onSkipToHome={() => handlePageChange('mymac')} />;
+      case 'mymac':
+        return <MyMacPage onNavigate={handlePageChange} />;
+      case 'clean':
+        return <CleanPage />;
+      case 'optimize':
+        return <OptimizePage />;
+      case 'uninstall':
+        return <UninstallPage />;
+      case 'analyze':
+        return <AnalyzePage />;
+      default:
+        return <HomePage onNavigate={handlePageChange} onSkipToHome={() => handlePageChange('mymac')} />;
+    }
   };
 
-  if (!isInitialized) {
-    return (
-      <div className="min-h-screen h-full flex items-center justify-center bg-bg-primary">
-        <div className="w-8 h-8 border-4 border-accent-primary/30 border-t-accent-primary rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const isLoading = !isInitialized;
 
   return (
     <>
@@ -122,10 +106,11 @@ function App() {
         }}
       />
       <div className="window-drag-region" aria-hidden="true" />
-      <div className="h-screen overflow-hidden">
+      <div className="relative h-screen overflow-hidden" aria-busy={isLoading}>
         <div
           className={cn(
-            'h-full w-full overflow-hidden rounded-[1rem] border border-white/55 bg-white/[0.22] shadow-[0_30px_90px_rgba(109,93,252,0.16),inset_0_1px_1px_rgba(255,255,255,0.78)] backdrop-blur-[28px]',
+            'h-full w-full overflow-hidden rounded-[1rem] border border-white/55 bg-white/[0.22] shadow-[0_30px_90px_rgba(109,93,252,0.16),inset_0_1px_1px_rgba(255,255,255,0.78)] backdrop-blur-[28px] transition-opacity duration-300',
+            isLoading && 'pointer-events-none opacity-0',
             currentPage !== 'home' && 'flex'
           )}
         >
@@ -136,9 +121,29 @@ function App() {
             />
           )}
           <main className={cn('relative min-h-0 flex-1 overflow-hidden', currentPage === 'home' && 'h-full')} aria-live="polite">
-            {PAGE_ORDER.map((pageId) => renderPage(pageId))}
+            <div
+              key={currentPage}
+              className={cn(
+                'absolute inset-0',
+                animationDirection === 'left' ? 'slide-in-right' : 'slide-in-left'
+              )}
+            >
+              <Suspense fallback={<PageLoadingFallback />}>
+                {renderCurrentPage()}
+              </Suspense>
+            </div>
           </main>
         </div>
+        {isLoading && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[linear-gradient(135deg,var(--color-bg-primary)_0%,var(--color-bg-secondary)_100%)]" role="status" aria-label="Loading Moleui">
+            <div className="relative flex h-28 w-28 items-center justify-center">
+              <div className="absolute inset-0 rounded-full border-[5px] border-violet-300/30 border-t-violet-600 shadow-[0_0_55px_rgba(109,93,252,0.28)] animate-spin" />
+              <div className="flex h-24 w-24 items-center justify-center rounded-[2rem]">
+                <img src="./assets/images/rounded-logo.png" alt="Moleui" className="h-24 w-24 object-contain" draggable={false} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, shell
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,6 +10,7 @@ const isDev = !app.isPackaged;
 const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-light.png");
 
 app.setName("Moleui Desktop");
+nativeTheme.themeSource = "light";
 
 // Store active processes for cancellation
 const activeProcesses = new Map();
@@ -347,46 +348,13 @@ end tell
   return runAppleScript(script);
 }
 
-let splashWindow;
-
-function createSplashWindow() {
-  splashWindow = new BrowserWindow({
-    width: 400,
-    height: 300,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    icon: appIconPath,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  const logoFile = nativeTheme.shouldUseDarkColors ? "molui-dark.png" : "molui-light.png";
-  const logoPath = isDev
-    ? path.join(__dirname, "public", "assets", "base", logoFile)
-    : path.join(__dirname, "dist", "assets", "base", logoFile);
-  const splashPath = isDev ? "splash.html" : path.join(__dirname, "dist", "splash.html");
-
-  splashWindow.loadFile(splashPath, {
-    query: {
-      logo: pathToFileURL(logoPath).href,
-    },
-  });
-
-  return splashWindow;
-}
-
 function createWindow() {
   const window = new BrowserWindow({
     width: 1280,
     height: 920,
     minWidth: 1280,
     minHeight: 840,
+    show: false,
     titleBarStyle: "hidden",
     trafficLightPosition: {
       x: 18,
@@ -407,10 +375,6 @@ function createWindow() {
   }
 
   window.once("ready-to-show", () => {
-    if (splashWindow) {
-      splashWindow.close();
-      splashWindow = null;
-    }
     window.show();
   });
 
@@ -566,9 +530,10 @@ ipcMain.handle("mole:optimize:kill", async () => {
 });
 
 // Analyze command handlers
-ipcMain.handle("mole:analyze:execute", async (event, path = "/") => {
+ipcMain.handle("mole:analyze:execute", async (event, path = "/", options = {}) => {
   const scanPath = normalizeAnalyzePath(path);
   const args = ["analyze", "--json", scanPath];
+  if (options.fresh) args.splice(2, 0, "--fresh");
 
   return runMole(args, {
     processId: "analyze",
@@ -693,12 +658,10 @@ app.whenReady().then(() => {
     }
   }
 
-  createSplashWindow();
   mainWindow = createWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createSplashWindow();
       mainWindow = createWindow();
     }
   });

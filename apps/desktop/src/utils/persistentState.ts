@@ -1,10 +1,17 @@
 import { useState } from 'react';
 
-export function usePersistentState<T>(key: string, initialValue: T) {
+export function usePersistentState<T>(
+  key: string,
+  initialValue: T,
+  validate?: (value: unknown) => value is T,
+) {
   const [value, setValue] = useState<T>(() => {
     try {
       const stored = localStorage.getItem(key);
-      return stored ? (JSON.parse(stored) as T) : initialValue;
+      if (!stored) return initialValue;
+
+      const parsed = JSON.parse(stored) as unknown;
+      return !validate || validate(parsed) ? (parsed as T) : initialValue;
     } catch (error) {
       console.error(`Failed to read ${key} from localStorage:`, error);
       return initialValue;

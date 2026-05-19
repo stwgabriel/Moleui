@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.41.1] - 2026-05-19
+
+### Added
+- Added fresh Analyze scans for desktop refreshes so cached directory sizes can be bypassed when needed.
+- Added Analyze result sorting by size or last access date, list/map view modes, and disk usage proportion details.
+
+### Changed
+- Improved desktop startup by replacing the separate Electron splash window with an in-app loading overlay and lazy-loaded pages.
+- Refined desktop navigation order, Analyze/Clean/Uninstall layouts, and persisted state handling.
+
+### Fixed
+- Fixed macOS desktop release packaging to require Developer ID signing and notarization.
+- Fixed Homebrew and npm desktop installers to target the packaged `Moleui.app` bundle name.
+
 ## [1.41.0] - 2026-05-17
 
 ### Added

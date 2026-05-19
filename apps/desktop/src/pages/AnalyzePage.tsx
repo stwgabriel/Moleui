@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback, type MouseEvent } from 'react
 import {
   HardDrive, FolderOpen, File, BarChart3, Search,
   RefreshCw, X, ChevronRight, ChevronUp, Home, Download,
-  AlertCircle, ArrowLeft, Folder, Trash2, ExternalLink
+  AlertCircle, ArrowLeft, Folder, Trash2, ExternalLink,
+  Filter, List, LayoutGrid, CalendarDays
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -17,6 +18,8 @@ import type { PageConfig } from '@/types';
 type Stage = 'idle' | 'scanning' | 'results' | 'error';
 type AnalyzeMode = 'disk' | 'home' | 'downloads' | 'custom';
 type QuickAnalyzeMode = Exclude<AnalyzeMode, 'custom'>;
+type ResultsViewMode = 'map' | 'list';
+type EntrySortMode = 'size' | 'date';
 
 interface AnalyzeEntry {
   name: string;
@@ -95,10 +98,15 @@ function sumSizes(items: Array<{ size: number }>) {
   return items.reduce((sum, item) => sum + Math.max(0, item.size), 0);
 }
 
-function buildTreemapItems(entries: AnalyzeEntry[], totalSize: number, resultPath: string): TreemapItem[] {
+function buildTreemapItems(
+  entries: AnalyzeEntry[],
+  totalSize: number,
+  resultPath: string,
+  remainderTotal = totalSize,
+): TreemapItem[] {
   const visibleEntries = entries.filter((entry) => entry.size > 0).slice(0, 12);
   const visibleSize = sumSizes(visibleEntries);
-  const remainder = Math.max(0, totalSize - visibleSize);
+  const remainder = Math.max(0, remainderTotal - visibleSize);
   const items: TreemapItem[] = visibleEntries.map((entry, index) => ({
     ...entry,
     color: TREEMAP_COLORS[index % TREEMAP_COLORS.length],
@@ -165,6 +173,75 @@ function createTreemapLayout(
   ];
 }
 
+function getEntryDateValue(entry: Pick<AnalyzeEntry, 'last_access'>) {
+  if (!entry.last_access) return 0;
+  const value = new Date(entry.last_access).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+
+function formatEntryDate(entry: Pick<AnalyzeEntry, 'last_access'>) {
+  const value = getEntryDateValue(entry);
+  if (!value) return '';
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(value));
+}
+
+function DiskUsageProportionGraph({
+  items,
+  totalSize,
+}: {
+  items: TreemapItem[];
+  totalSize: number;
+}) {
+  const visibleItems = items.filter((item) => item.size > 0).slice(0, 8);
+
+  if (visibleItems.length === 0 || totalSize <= 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/50 bg-white/25 p-3 shadow-inner shadow-white/20">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Disk usage</div>
+        <div className="font-mono text-xs font-black text-slate-500">{formatBytes(totalSize)}</div>
+      </div>
+      <div
+        aria-label="Disk usage proportions"
+        className="flex h-4 overflow-hidden rounded-full bg-slate-900/10"
+      >
+        {visibleItems.map((item) => (
+          <div
+            key={item.path}
+            className="min-w-[3px] border-r border-white/50 last:border-r-0"
+            style={{
+              width: `${Math.max(1, item.percentage)}%`,
+              background: item.color,
+            }}
+            title={`${item.name} - ${formatBytes(item.size)} - ${item.percentage.toFixed(1)}%`}
+          />
+        ))}
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {visibleItems.slice(0, 4).map((item) => (
+          <div key={item.path} className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.color }} />
+              <span className="truncate text-xs font-bold text-slate-700">{item.name}</span>
+            </div>
+            <div className="mt-0.5 font-mono text-[11px] font-black text-slate-500">
+              {item.percentage.toFixed(1)}%
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const config: PageConfig = {
   title: 'Analyze storage',
   description: 'Visualize disk usage and identify large files and folders consuming your storage.',
@@ -210,6 +287,11 @@ export function AnalyzePage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [inlineScanPath, setInlineScanPath] = useState('');
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
+  const [resultsView, setResultsView] = usePersistentState<ResultsViewMode>('mole-analyze-results-view', 'map');
+  const [entrySortMode, setEntrySortMode] = usePersistentState<EntrySortMode>('mole-analyze-entry-sort', 'size');
+  const [showFiles, setShowFiles] = usePersistentState('mole-analyze-show-files', true);
+  const [showFolders, setShowFolders] = usePersistentState('mole-analyze-show-folders', true);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -246,6 +328,25 @@ export function AnalyzePage() {
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!isFilterOpen) return;
+
+    const closeFilter = () => setIsFilterOpen(false);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeFilter();
+    };
+
+    window.addEventListener('click', closeFilter);
+    window.addEventListener('blur', closeFilter);
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      window.removeEventListener('click', closeFilter);
+      window.removeEventListener('blur', closeFilter);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isFilterOpen]);
 
   const startScan = async (
     path?: string,
@@ -317,7 +418,7 @@ export function AnalyzePage() {
     }
 
     try {
-      const res = await window.moleDesktop.analyze.execute(targetPath);
+      const res = await window.moleDesktop.analyze.execute(targetPath, { fresh: skipCache });
 
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
@@ -325,7 +426,7 @@ export function AnalyzePage() {
 
       if (res.ok) {
         try {
-          const parsed: AnalyzeResult = JSON.parse(jsonBuffer || res.stdout);
+          const parsed: AnalyzeResult = JSON.parse(res.stdout || jsonBuffer);
           resultCacheRef.current.set(targetPath, parsed);
           setResult(parsed);
           setStage('results');
@@ -648,8 +749,19 @@ export function AnalyzePage() {
   // ── Results ──────────────────────────────────────────────────────────────
   if (stage === 'results' && result) {
     const entries = [...(result.entries ?? [])].sort((a, b) => b.size - a.size);
-    const largeFiles = [...(result.large_files ?? [])].sort((a, b) => b.size - a.size);
-    const treemapItems = buildTreemapItems(entries, result.total_size, result.path);
+    const filteredEntries = entries.filter((entry) => (entry.is_dir ? showFolders : showFiles));
+    const sortedListEntries = [...filteredEntries].sort((a, b) => {
+      if (entrySortMode === 'date') {
+        return getEntryDateValue(b) - getEntryDateValue(a) || b.size - a.size;
+      }
+
+      return b.size - a.size;
+    });
+    const largeFiles = showFiles
+      ? [...(result.large_files ?? [])].sort((a, b) => b.size - a.size)
+      : [];
+    const filteredSize = sumSizes(filteredEntries);
+    const treemapItems = buildTreemapItems(filteredEntries, result.total_size, result.path, filteredSize);
     const treemapRects = createTreemapLayout(treemapItems);
     const leadingEntries = treemapItems.slice(0, 7);
     const breadcrumbs = buildBreadcrumbs();
@@ -702,16 +814,70 @@ export function AnalyzePage() {
               );
             })}
           </div>
-          <div className="ml-auto shrink-0">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               aria-label="Rescan storage"
               title={isBackgroundRefreshing ? 'Refreshing in background' : 'Rescan storage'}
               disabled={isBackgroundRefreshing || Boolean(inlineScanPath)}
-              onClick={() => void startScan(result.path, { skipCache: true, pushHistory: false, display: 'background' })}
+              onClick={() => {
+                const targetPath = result.path;
+                resultCacheRef.current.clear();
+                setStage('scanning');
+                setView('start');
+                setResult(null);
+                setProgress(0);
+                setCurrentFile('');
+                setError(null);
+                setNavHistory([]);
+                setInlineScanPath('');
+                setIsBackgroundRefreshing(false);
+                void startScan(targetPath, { skipCache: true, pushHistory: false, display: 'page' });
+              }}
               className="h-8 rounded-full px-3"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isBackgroundRefreshing ? 'animate-spin' : ''}`} />
             </Button>
+            <div className="relative">
+              <Button
+                variant="secondary"
+                aria-label="Filter results"
+                title="Filter files and folders"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsFilterOpen((open) => !open);
+                }}
+                className="h-8 rounded-full px-3"
+              >
+                <Filter className="h-3.5 w-3.5" />
+              </Button>
+              {isFilterOpen && (
+                <div
+                  className="absolute right-0 top-10 z-40 w-52 rounded-2xl border border-white/60 bg-white/90 p-2 shadow-[0_18px_50px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-900/5">
+                    <input
+                      type="checkbox"
+                      checked={showFiles}
+                      onChange={(event) => setShowFiles(event.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-accent-primary focus:ring-accent-primary"
+                    />
+                    <File className="h-4 w-4 text-slate-500" />
+                    Files
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-900/5">
+                    <input
+                      type="checkbox"
+                      checked={showFolders}
+                      onChange={(event) => setShowFolders(event.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-accent-primary focus:ring-accent-primary"
+                    />
+                    <Folder className="h-4 w-4 text-slate-500" />
+                    Folders
+                  </label>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -721,7 +887,7 @@ export function AnalyzePage() {
               <div className="flex flex-col items-center text-center">
 
                 <div className="font-mono text-2xl font-black tracking-tight text-slate-950">
-                  {entries.length} items, {formatBytes(result.total_size)}
+                  {filteredEntries.length} of {entries.length} items, {formatBytes(filteredSize)}
                 </div>
                 <div className="mt-2 max-w-full truncate font-mono text-xs font-semibold text-slate-500">
                   {result.path}
@@ -815,6 +981,79 @@ export function AnalyzePage() {
 
           <Card className={`min-h-[36rem]  p-4 xl:min-h-0 ${ANALYZE_GLASS_CARD}`}>
             <div className="flex h-full min-h-0 flex-col">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-black text-slate-950">
+                    {resultsView === 'map' ? 'Storage map' : 'File management'}
+                  </h2>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    {filteredEntries.length} visible items from {formatBytes(result.total_size)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-full border border-white/60 bg-white/35 p-1 shadow-inner shadow-white/20">
+                    <button
+                      type="button"
+                      aria-label="Storage map"
+                      onClick={() => setResultsView('map')}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full transition ${resultsView === 'map'
+                        ? 'bg-slate-950 text-white shadow-md'
+                        : 'text-slate-500 hover:bg-white/50 hover:text-slate-900'
+                        }`}
+                      title="Storage map"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="File management list"
+                      onClick={() => setResultsView('list')}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full transition ${resultsView === 'list'
+                        ? 'bg-slate-950 text-white shadow-md'
+                        : 'text-slate-500 hover:bg-white/50 hover:text-slate-900'
+                        }`}
+                      title="File management list"
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                  </div>
+                  {resultsView === 'list' && (
+                    <div className="flex rounded-full border border-white/60 bg-white/35 p-1 shadow-inner shadow-white/20">
+                      <button
+                        type="button"
+                        aria-label="Sort by size"
+                        onClick={() => setEntrySortMode('size')}
+                        className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-black transition ${entrySortMode === 'size'
+                          ? 'bg-slate-950 text-white shadow-md'
+                          : 'text-slate-500 hover:bg-white/50 hover:text-slate-900'
+                          }`}
+                      >
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        Size
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Sort by date"
+                        onClick={() => setEntrySortMode('date')}
+                        className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-black transition ${entrySortMode === 'date'
+                          ? 'bg-slate-950 text-white shadow-md'
+                          : 'text-slate-500 hover:bg-white/50 hover:text-slate-900'
+                          }`}
+                      >
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        Date
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {resultsView === 'list' && (
+                <div className="mb-4">
+                  <DiskUsageProportionGraph items={treemapItems} totalSize={result.total_size} />
+                </div>
+              )}
+
               <div className="relative flex-1 min-h-0 rounded-sm space-4">
                 {inlineScanPath ? (
                   <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-white/45 bg-white/25 p-8 text-center shadow-inner shadow-white/20">
@@ -837,10 +1076,64 @@ export function AnalyzePage() {
                       </div>
                     </div>
                   </div>
-                ) : treemapRects.length === 0 ? (
+                ) : filteredEntries.length === 0 ? (
                   <div className="flex h-full flex-col items-center justify-center text-center">
                     <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
-                    <p className="font-semibold text-slate-600">No entries found in this location.</p>
+                    <p className="font-semibold text-slate-600">No entries match the current filters.</p>
+                  </div>
+                ) : resultsView === 'list' ? (
+                  <div className="h-full overflow-y-auto pr-1 custom-scrollbar">
+                    <div className="space-y-2">
+                      {sortedListEntries.map((entry) => {
+                        const percentage = result.total_size > 0 ? (entry.size / result.total_size) * 100 : 0;
+                        const entryDate = formatEntryDate(entry);
+                        return (
+                          <button
+                            key={entry.path}
+                            type="button"
+                            data-testid="file-management-row"
+                            aria-disabled={!entry.is_dir}
+                            onContextMenu={(event) => openItemContextMenu(event, entry)}
+                            onClick={() => {
+                              if (entry.is_dir) {
+                                setScanPath(entry.path);
+                                startScan(entry.path);
+                              }
+                            }}
+                            className={`group relative w-full overflow-hidden rounded-2xl border border-white/50 bg-white/30 p-3 text-left shadow-inner shadow-white/20 transition hover:bg-white/45 ${!entry.is_dir ? 'cursor-default' : ''}`}
+                          >
+                            <div
+                              className="absolute inset-y-0 left-0 bg-accent-primary/10"
+                              style={{ width: `${Math.max(1, percentage)}%` }}
+                            />
+                            <div className="relative flex items-center gap-3">
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/60 bg-white/45 text-slate-600 shadow-inner shadow-white/30">
+                                {entry.is_dir ? <Folder className="h-4 w-4" /> : <File className="h-4 w-4" />}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-base font-black text-slate-950">{entry.name}</span>
+                                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs font-bold text-slate-500">
+                                  <span>{formatBytes(entry.size)}</span>
+                                  <span>{percentage.toFixed(1)}% of parent</span>
+                                  {entryDate && <span>{entryDate}</span>}
+                                </span>
+                              </span>
+                              <span className="hidden w-28 shrink-0 sm:block">
+                                <span className="block h-2 overflow-hidden rounded-full bg-slate-900/10">
+                                  <span
+                                    className="block h-full rounded-full bg-slate-950/70"
+                                    style={{ width: `${Math.max(2, percentage)}%` }}
+                                  />
+                                </span>
+                              </span>
+                              {entry.is_dir && (
+                                <ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-700" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 ) : (
                   treemapRects.map((rect) => {

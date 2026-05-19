@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { 
-  CheckCircle, AlertTriangle, Loader, ArrowRight, X, Trash2, Scissors,
+  CheckCircle, AlertTriangle, Loader, ArrowRight, X, Trash2,
   Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, CheckSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -72,20 +72,43 @@ const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; si
   );
 });
 
-function ShredderAnimation() {
+function AppRemovalAnimation({ progressPercent }: { progressPercent: number }) {
   return (
-    <div className="relative mx-auto flex h-32 w-44 items-center justify-center" aria-hidden="true">
-      <div className="absolute top-3 h-16 w-20 animate-bounce rounded-xl border border-rose-200/70 bg-white/70 shadow-[0_14px_36px_rgba(244,63,94,0.14)]" />
-      <Scissors className="absolute top-8 h-7 w-7 -rotate-12 text-rose-500" />
-      <div className="absolute bottom-9 h-5 w-36 rounded-t-2xl border border-slate-200/70 bg-slate-900/85 shadow-[0_14px_30px_rgba(15,23,42,0.18)]" />
-      <div className="absolute bottom-4 flex gap-1">
-        {[0, 1, 2, 3, 4, 5].map(strip => (
+    <div className="relative mx-auto h-44 w-72 overflow-hidden" aria-hidden="true">
+      <div className="absolute left-1/2 top-20 h-12 w-px -translate-x-1/2 bg-gradient-to-b from-rose-300/70 via-rose-300/30 to-transparent" />
+      <div className="absolute left-1/2 top-[4.4rem] h-2 w-2 animate-uninstall-file-dot rounded-full bg-rose-300 shadow-[0_0_16px_rgba(244,63,94,0.35)]" />
+      <div className="absolute left-[46%] top-[4.9rem] h-1.5 w-1.5 animate-uninstall-file-dot rounded-full bg-rose-400 shadow-[0_0_14px_rgba(244,63,94,0.32)] [animation-delay:180ms]" />
+      <div className="absolute left-[54%] top-[5.15rem] h-1.5 w-1.5 animate-uninstall-file-dot rounded-full bg-red-300 shadow-[0_0_14px_rgba(248,113,113,0.32)] [animation-delay:360ms]" />
+
+      <div className="absolute left-1/2 top-2 h-20 w-32 animate-uninstall-app-card rounded-3xl border border-white/70 bg-white/85 p-3 shadow-[0_18px_48px_rgba(244,63,94,0.16)] backdrop-blur-xl">
+        <div className="flex h-full flex-col justify-between">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-rose-200/70 bg-rose-100/50">
+              <Package className="h-4 w-4 text-rose-500" />
+            </div>
+            <div className="min-w-0">
+              <div className="h-1.5 w-10 rounded-full bg-slate-200/80" />
+              <div className="mt-1.5 h-1.5 w-7 rounded-full bg-slate-100" />
+            </div>
+          </div>
+          <div className="h-2 w-20 rounded-full bg-rose-100/80" />
+        </div>
+      </div>
+
+      <div className="absolute bottom-2 left-1/2 h-24 w-24 -translate-x-1/2">
+        <div className="absolute left-1/2 top-2 h-3 w-16 -translate-x-1/2 animate-uninstall-bin-lid rounded-full border border-slate-300/70 bg-slate-800 shadow-[0_12px_22px_rgba(15,23,42,0.16)]" />
+        <div className="absolute bottom-2 left-1/2 h-[4.6rem] w-[4.35rem] -translate-x-1/2 overflow-hidden rounded-b-2xl rounded-t-lg border border-slate-300/70 bg-slate-900/90 shadow-[0_18px_42px_rgba(15,23,42,0.20)]">
           <div
-            key={strip}
-            className="h-9 w-2 animate-pulse rounded-full bg-gradient-to-b from-rose-300 to-rose-500"
-            style={{ animationDelay: `${strip * 90}ms` }}
+            className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-rose-500 via-rose-400 to-rose-200 opacity-90 transition-all duration-500"
+            style={{ height: `${Math.max(12, progressPercent)}%` }}
           />
-        ))}
+          <div className="absolute inset-x-3 top-3 space-y-2">
+            <div className="h-1 rounded-full bg-white/20" />
+            <div className="h-1 rounded-full bg-white/15" />
+            <div className="h-1 rounded-full bg-white/10" />
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-1/2 h-2 w-20 -translate-x-1/2 rounded-full bg-slate-900/10 blur-sm" />
       </div>
     </div>
   );
@@ -528,13 +551,17 @@ export function UninstallPage() {
     return text ? text.split(/\r?\n/).filter(line => line.trim()) : [];
   };
 
+  const getStreamOutputLines = (output: string[]) => {
+    return output.flatMap(chunk => chunk.split(/\r?\n/)).filter(line => line.trim());
+  };
+
   // Parse dry-run output into structured data
   const parseDryRunOutput = (output: string[]) => {
     const apps: Array<{ name: string; size: string; files: Array<{ path: string; isSystem: boolean }> }> = [];
     let currentApp: { name: string; size: string; files: Array<{ path: string; isSystem: boolean }> } | null = null;
     let summary = '';
 
-    output.forEach(line => {
+    getStreamOutputLines(output).forEach(line => {
       const cleanLine = stripAnsi(line).trim();
       if (!cleanLine) return;
 
@@ -588,7 +615,7 @@ export function UninstallPage() {
     let summary = '';
     let currentProgress = { current: 0, total: 0 };
 
-    output.forEach(line => {
+    getStreamOutputLines(output).forEach(line => {
       const cleanLine = stripAnsi(line).trim();
       if (!cleanLine) return;
 
@@ -1116,6 +1143,17 @@ export function UninstallPage() {
   if (stage === 'executing') {
     const parsedExecute = parseExecuteOutput(executeOutput);
     const { apps: executingApps, summary, progress } = parsedExecute;
+    const activeApp = [...executingApps].reverse().find(app => !app.completed) || executingApps[executingApps.length - 1];
+    const selectedAppNames = sortAppIndexesBySize(selectedAppIndexes)
+      .map(index => apps[index]?.name)
+      .filter(Boolean);
+    const progressTotal = progress.total || selectedAppNames.length;
+    const progressCurrent = progress.total
+      ? progress.current
+      : Math.min(executingApps.filter(app => app.completed).length + (activeApp && !summary ? 1 : 0), progressTotal);
+    const progressPercent = progressTotal > 0
+      ? Math.min(100, Math.max(4, (progressCurrent / progressTotal) * 100))
+      : summary ? 100 : 8;
 
     return (
       <div className={UNINSTALL_SHELL}>
@@ -1129,16 +1167,23 @@ export function UninstallPage() {
             Removing selected applications and their files...
           </p>
           
-          {progress.total > 0 && (
+          {progressTotal > 0 && (
             <div className="mb-4">
               <div className="flex items-center justify-between text-sm font-medium text-slate-600 mb-2">
                 <span>Progress</span>
-                <span>{progress.current} of {progress.total}</span>
+                <span>{progressCurrent} of {progressTotal}</span>
               </div>
-              <div className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40">
+              <div
+                className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40"
+                role="progressbar"
+                aria-valuenow={Math.round(progressPercent)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Uninstall progress"
+              >
                 <div 
                   className="h-full bg-gradient-to-r from-rose-400 to-red-500 transition-all duration-300"
-                  style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                  style={{ width: `${progressPercent}%` }}
                 />
               </div>
             </div>
@@ -1154,13 +1199,9 @@ export function UninstallPage() {
 
         <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-auto">
           <div ref={executeListRef} className="space-y-4">
-            <Card className={`${LIST_CARD} border-rose-200/60 text-center`}>
-              <ShredderAnimation />
-              <div className="text-lg font-black tracking-[-0.03em] text-slate-950">Removing files</div>
-              <div className="mt-1 text-sm font-medium text-slate-500">
-                Mole is shredding app files and cleaning related leftovers.
-              </div>
-            </Card>
+            <div className="flex justify-center py-6">
+              <AppRemovalAnimation progressPercent={progressPercent} />
+            </div>
 
             {executingApps.map((app, appIndex) => (
               <Card key={appIndex} className={`${LIST_CARD} ${app.completed ? 'border-emerald-300/50' : ''}`}>

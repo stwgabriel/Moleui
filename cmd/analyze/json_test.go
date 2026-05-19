@@ -26,7 +26,7 @@ func TestPerformScanForJSONIncludesAllEntriesAndLargeFiles(t *testing.T) {
 		t.Fatalf("write huge file: %v", err)
 	}
 
-	result := performScanForJSON(root, false)
+	result := performScanForJSON(root, false, false)
 
 	if result.Overview {
 		t.Fatalf("expected non-overview JSON result")

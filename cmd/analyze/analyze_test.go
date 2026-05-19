@@ -138,7 +138,7 @@ func TestPerformScanForJSONCountsTopLevelFiles(t *testing.T) {
 		t.Fatalf("write nested file: %v", err)
 	}
 
-	result := performScanForJSON(root, false)
+	result := performScanForJSON(root, false, false)
 
 	if result.TotalFiles != 2 {
 		t.Fatalf("expected 2 files in JSON output, got %d", result.TotalFiles)
@@ -445,6 +445,50 @@ func TestScanPathConcurrentUsesChildCacheLargeFiles(t *testing.T) {
 	}
 	if !foundLargeFile {
 		t.Fatalf("expected root large files to include cached child large file")
+	}
+}
+
+func TestScanPathConcurrentAllEntriesFreshBypassesChildCacheLargeFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	root := filepath.Join(home, "root")
+	child := filepath.Join(root, "child")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+
+	staleLargeFile := filepath.Join(child, "stale-large.bin")
+	if err := os.WriteFile(staleLargeFile, []byte(strings.Repeat("x", 2<<20)), 0o644); err != nil {
+		t.Fatalf("write stale large file: %v", err)
+	}
+
+	var childFiles, childDirs, childBytes int64
+	childCurrent := &atomic.Value{}
+	childCurrent.Store("")
+	childResult, err := scanPathConcurrent(child, &childFiles, &childDirs, &childBytes, childCurrent)
+	if err != nil {
+		t.Fatalf("scanPathConcurrent(child): %v", err)
+	}
+	if err := saveCacheToDisk(child, childResult); err != nil {
+		t.Fatalf("saveCacheToDisk(child): %v", err)
+	}
+	if err := os.Remove(staleLargeFile); err != nil {
+		t.Fatalf("remove stale large file: %v", err)
+	}
+
+	var filesScanned, dirsScanned, bytesScanned int64
+	current := &atomic.Value{}
+	current.Store("")
+	result, err := scanPathConcurrentAllEntriesFresh(root, &filesScanned, &dirsScanned, &bytesScanned, current)
+	if err != nil {
+		t.Fatalf("scanPathConcurrentAllEntriesFresh(root): %v", err)
+	}
+
+	for _, file := range result.LargeFiles {
+		if file.Path == staleLargeFile {
+			t.Fatalf("fresh scan should not include stale cached large file: %#v", result.LargeFiles)
+		}
 	}
 }
 

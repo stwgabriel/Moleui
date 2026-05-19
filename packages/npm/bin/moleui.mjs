@@ -17,7 +17,7 @@ const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 const VERSION = pkg.version;
 const DESKTOP_VERSION = pkg.moleuiDesktopVersion || VERSION;
 
-const APP_NAME = "Moleui Desktop.app";
+const APP_NAME = "Moleui.app";
 const APP_PATH = `/Applications/${APP_NAME}`;
 
 function fatal(msg) {

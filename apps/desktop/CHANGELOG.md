@@ -1,5 +1,19 @@
 # Desktop App Changelog
 
+## [0.7.1] - 2026-05-19
+
+### Added
+- Added fresh Analyze refreshes, size/date sorting, list/map views, and disk usage proportion details.
+
+### Changed
+- Replaced the separate Electron splash window with an in-app loading overlay and lazy-loaded page bundles.
+- Refined sidebar ordering and the Clean, Analyze, and Uninstall page layouts.
+- Stopped persisting large uninstall icon payloads in local state.
+
+### Fixed
+- Fixed distributed macOS builds by requiring signed and notarized desktop artifacts.
+- Fixed installer metadata to reference the packaged `Moleui.app` bundle.
+
 ## [0.5.0] - 2026-05-13
 
 ### Added

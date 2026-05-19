@@ -24,6 +24,8 @@ import type { PageConfig, CleanCategory } from '@/types';
 
 type Stage = 'idle' | 'scanning' | 'results' | 'cleaning' | 'complete';
 
+const STAGES: Stage[] = ['idle', 'scanning', 'results', 'cleaning', 'complete'];
+
 interface LogEntry {
   text: string;
   timestamp: number;
@@ -237,16 +239,72 @@ function isSummaryLine(line: string) {
   );
 }
 
+function isStage(value: unknown): value is Stage {
+  return typeof value === 'string' && STAGES.includes(value as Stage);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isSortBy(value: unknown): value is 'size' | 'name' {
+  return value === 'size' || value === 'name';
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isCleanCategory(value: unknown): value is CleanCategory {
+  if (!value || typeof value !== 'object') return false;
+
+  const category = value as Record<string, unknown>;
+  return (
+    typeof category.section === 'string' &&
+    typeof category.name === 'string' &&
+    typeof category.icon === 'string' &&
+    typeof category.color === 'string' &&
+    isFiniteNumber(category.size) &&
+    isFiniteNumber(category.fileCount) &&
+    isStringArray(category.items) &&
+    typeof category.cleanable === 'boolean' &&
+    typeof category.scanned === 'boolean'
+  );
+}
+
+function isCleanCategoryArray(value: unknown): value is CleanCategory[] {
+  return Array.isArray(value) && value.every(isCleanCategory);
+}
+
+function isTimelineStage(value: unknown): value is TimelineStage {
+  if (!value || typeof value !== 'object') return false;
+
+  const timelineStage = value as Record<string, unknown>;
+  return (
+    typeof timelineStage.id === 'string' &&
+    typeof timelineStage.name === 'string' &&
+    ['pending', 'active', 'complete', 'error'].includes(String(timelineStage.status)) &&
+    isStringArray(timelineStage.items) &&
+    (timelineStage.size === undefined || isFiniteNumber(timelineStage.size)) &&
+    (timelineStage.startTime === undefined || isFiniteNumber(timelineStage.startTime)) &&
+    (timelineStage.endTime === undefined || isFiniteNumber(timelineStage.endTime))
+  );
+}
+
+function isTimelineStageArray(value: unknown): value is TimelineStage[] {
+  return Array.isArray(value) && value.every(isTimelineStage);
+}
+
 export function CleanPage() {
-  const [stage, setStage] = usePersistentState<Stage>('mole-clean-stage', 'idle');
-  const [categories, setCategories] = usePersistentState<CleanCategory[]>('mole-clean-categories', []);
-  const [totalSize, setTotalSize] = usePersistentState('mole-clean-total-size', 0);
-  const [cleanedSize, setCleanedSize] = usePersistentState('mole-clean-cleaned-size', 0);
+  const [stage, setStage] = usePersistentState<Stage>('mole-clean-stage', 'idle', isStage);
+  const [categories, setCategories] = usePersistentState<CleanCategory[]>('mole-clean-categories', [], isCleanCategoryArray);
+  const [totalSize, setTotalSize] = usePersistentState('mole-clean-total-size', 0, isFiniteNumber);
+  const [cleanedSize, setCleanedSize] = usePersistentState('mole-clean-cleaned-size', 0, isFiniteNumber);
   const [, setLogs] = usePersistentState<LogEntry[]>('mole-clean-logs', []);
-  const [timeline, setTimeline] = usePersistentState<TimelineStage[]>('mole-clean-timeline', []);
-  const [selectedSections, setSelectedSections] = usePersistentState<string[]>('mole-clean-selected-sections', []);
-  const [expandedSections, setExpandedSections] = usePersistentState<string[]>('mole-clean-expanded-sections', []);
-  const [sortBy, setSortBy] = usePersistentState<'size' | 'name'>('mole-clean-sort-by', 'size');
+  const [timeline, setTimeline] = usePersistentState<TimelineStage[]>('mole-clean-timeline', [], isTimelineStageArray);
+  const [selectedSections, setSelectedSections] = usePersistentState<string[]>('mole-clean-selected-sections', [], isStringArray);
+  const [expandedSections, setExpandedSections] = usePersistentState<string[]>('mole-clean-expanded-sections', [], isStringArray);
+  const [sortBy, setSortBy] = usePersistentState<'size' | 'name'>('mole-clean-sort-by', 'size', isSortBy);
 
   const timelineScrollRef = useRef<HTMLDivElement | null>(null);
   const autoScrollTimelineRef = useRef(true);
@@ -1017,5 +1075,5 @@ export function CleanPage() {
     );
   }
 
-  return null;
+  return <StartScreen config={config} onStart={startScan} variant="feature" />;
 }

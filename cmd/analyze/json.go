@@ -37,8 +37,8 @@ type jsonFileEntry struct {
 	Size int64  `json:"size"`
 }
 
-func runJSONMode(path string, isOverview bool) {
-	result := performScanForJSON(path, isOverview)
+func runJSONMode(path string, isOverview bool, fresh bool) {
+	result := performScanForJSON(path, isOverview, fresh)
 
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -48,19 +48,25 @@ func runJSONMode(path string, isOverview bool) {
 	}
 }
 
-func performScanForJSON(path string, isOverview bool) jsonOutput {
+func performScanForJSON(path string, isOverview bool, fresh bool) jsonOutput {
 	if isOverview {
 		return performOverviewScanForJSON(path)
 	}
-	return performDirectoryScanForJSON(path)
+	return performDirectoryScanForJSON(path, fresh)
 }
 
-func performDirectoryScanForJSON(path string) jsonOutput {
+func performDirectoryScanForJSON(path string, fresh bool) jsonOutput {
 	var filesScanned, dirsScanned, bytesScanned int64
 	currentPath := &atomic.Value{}
 	currentPath.Store("")
 
-	result, err := scanPathConcurrentAllEntries(path, &filesScanned, &dirsScanned, &bytesScanned, currentPath)
+	var result scanResult
+	var err error
+	if fresh {
+		result, err = scanPathConcurrentAllEntriesFresh(path, &filesScanned, &dirsScanned, &bytesScanned, currentPath)
+	} else {
+		result, err = scanPathConcurrentAllEntries(path, &filesScanned, &dirsScanned, &bytesScanned, currentPath)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to scan directory: %v\n", err)
 		os.Exit(1)

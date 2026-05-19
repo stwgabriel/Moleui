@@ -62,11 +62,11 @@ jobs:
         include:
           - os: macos-latest
             arch: arm64
-            dist_script: dist:arm64
+            dist_script: dist:signed:arm64
             artifact_name: desktop-arm64
           - os: macos-latest
             arch: x64
-            dist_script: dist:amd64
+            dist_script: dist:signed:amd64
             artifact_name: desktop-amd64
     steps:
       - name: Checkout code
@@ -100,8 +100,21 @@ jobs:
           echo "desktop_version=$DESKTOP_VERSION" >> $GITHUB_OUTPUT
 
       - name: Build Desktop App
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           cd apps/desktop
+          if [[ -n "${APPLE_API_KEY_CONTENT:-}" ]]; then
+            export APPLE_API_KEY="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "${APPLE_API_KEY_CONTENT}" > "${APPLE_API_KEY}"
+          fi
           bun run ${{ matrix.dist_script }}
 
       - name: Upload desktop artifacts

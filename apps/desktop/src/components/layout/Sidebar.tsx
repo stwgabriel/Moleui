@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import * as Icons from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  Gauge,
+  PackageX,
+  Settings,
+  Sparkles,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { PageId } from '@/types';
 
@@ -10,16 +19,16 @@ interface SidebarProps {
 
 const NAV_ITEMS: Array<{
   page: PageId;
-  icon: keyof typeof Icons;
+  icon: LucideIcon;
   label: string;
   activeClassName: string;
 }> = [
-    { page: 'mymac', icon: 'LayoutGrid', label: 'My Mac', activeClassName: 'text-violet-600' },
-    { page: 'uninstall', icon: 'PackageX', label: 'Uninstall', activeClassName: 'text-violet-600' },
-    { page: 'clean', icon: 'Sparkles', label: 'Cleanup', activeClassName: 'text-violet-600' },
-    { page: 'optimize', icon: 'Gauge', label: 'Performance', activeClassName: 'text-violet-600' },
-    { page: 'analyze', icon: 'Database', label: 'Storage', activeClassName: 'text-violet-600' },
-  ];
+  { page: 'mymac', icon: Activity, label: 'My Mac', activeClassName: 'text-violet-600' },
+  { page: 'clean', icon: Sparkles, label: 'Clean', activeClassName: 'text-violet-600' },
+  { page: 'optimize', icon: Gauge, label: 'Performance', activeClassName: 'text-violet-600' },
+  { page: 'uninstall', icon: PackageX, label: 'Uninstall', activeClassName: 'text-violet-600' },
+  { page: 'analyze', icon: BarChart3, label: 'Analyze', activeClassName: 'text-violet-600' },
+];
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -37,7 +46,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
 
       <nav className="mt-[clamp(1.65rem,4.3vh,3.4rem)] flex flex-1 flex-col items-center gap-[clamp(0.75rem,2.4vh,1.8rem)]">
         {NAV_ITEMS.map(({ page, icon, label, activeClassName }) => {
-          const Icon = Icons[icon] as Icons.LucideIcon;
+          const Icon = icon;
           const isActive = currentPage === page;
 
           return (
@@ -66,7 +75,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           onClick={() => setIsSettingsModalOpen(true)}
           className="group mt-auto flex w-[116px] flex-col items-center justify-center gap-2.5 rounded-[1.35rem] py-[clamp(0.6rem,1.25vh,0.8rem)] text-center text-slate-500 transition-all duration-300 hover:bg-[#f0edff]/80 hover:text-slate-700 active:scale-[0.98]"
         >
-          <Icons.Settings className="h-6 w-6 transition-transform duration-300 group-hover:scale-105" strokeWidth={1.9} aria-hidden="true" />
+          <Settings className="h-6 w-6 transition-transform duration-300 group-hover:scale-105" strokeWidth={1.9} aria-hidden="true" />
           <span className="text-[0.95rem] font-semibold leading-none tracking-[-0.02em]">Settings</span>
         </button>
       </nav>
@@ -81,7 +90,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                 aria-label="Close settings"
                 onClick={() => setIsSettingsModalOpen(false)}
               >
-                <Icons.X className="h-5 w-5" aria-hidden="true" />
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
             <div className="mt-8 min-h-32 rounded-2xl border border-dashed border-slate-300/80 bg-white/20 dark:border-white/14 dark:bg-white/5" />

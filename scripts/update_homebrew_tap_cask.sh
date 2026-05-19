@@ -84,13 +84,13 @@ cask "moleui-desktop" do
   desc "Deep clean and optimize your Mac - Desktop GUI"
   homepage "https://github.com/stwgabriel/moleui"
 
-  app "Moleui Desktop.app"
+  app "Moleui.app"
 
   zap trash: [
-    "~/Library/Application Support/moleui-desktop",
-    "~/Library/Caches/moleui-desktop",
-    "~/Library/Preferences/dev.tw93.moleui.desktop.plist",
-    "~/Library/Saved Application State/dev.tw93.moleui.desktop.savedState",
+    "~/Library/Application Support/Moleui Desktop",
+    "~/Library/Caches/stwgabriel.moleui",
+    "~/Library/Preferences/stwgabriel.moleui.plist",
+    "~/Library/Saved Application State/stwgabriel.moleui.savedState",
   ]
 end
 CASK

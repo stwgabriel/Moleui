@@ -1,12 +1,14 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ============================================================
    THEME — Tailwind v4 CSS-based configuration
-   Colors use inline values; dark mode overrides via @variant
+   Colors use inline values and always render in light mode.
    ============================================================ */
 
 @theme {
-  /* --- Light mode base colors (overridden in dark via CSS vars) --- */
+  /* --- Light mode base colors --- */
   --color-bg-primary: #fff8f5;
   --color-bg-secondary: #eee8ff;
   --color-bg-glass: rgba(255, 248, 245, 0.72);
@@ -67,38 +69,12 @@
 }
 
 /* ============================================================
-   DARK MODE — override theme color tokens
-   ============================================================ */
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg-primary: #141e29;
-    --color-bg-secondary: #202936;
-    --color-bg-glass: rgba(32, 41, 54, 0.72);
-    --color-surface: rgba(32, 41, 54, 0.82);
-    --color-surface-elevated: rgba(41, 51, 66, 0.92);
-    --color-surface-hover: rgba(109, 93, 252, 0.18);
-    --color-text-primary: #fffaf7;
-    --color-text-secondary: #d8d1cf;
-    --color-text-tertiary: #958b9d;
-    --color-accent-primary: #8d7cff;
-    --color-accent-primary-hover: #a99dff;
-    --color-accent-secondary: #ff3b45;
-    --color-accent-success: #ff9a8b;
-    --color-accent-warning: #fbbf24;
-    --color-accent-danger: #f87171;
-    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.6);
-    --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.6), 0 8px 24px rgba(0, 0, 0, 0.7);
-    --shadow-2xl: 0 32px 80px rgba(0, 0, 0, 0.7), 0 12px 32px rgba(0, 0, 0, 0.8);
-    --shadow-accent: 0 8px 24px rgba(141, 124, 255, 0.34), 0 4px 8px rgba(255, 59, 69, 0.18);
-  }
-}
-
-/* ============================================================
    BASE STYLES
    ============================================================ */
+
+:root {
+  color-scheme: light;
+}
 
 *,
 *::before,
@@ -279,6 +255,57 @@ body {
 
 .animate-shake {
   animation: shake 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes uninstall-app-card {
+  0%, 18% {
+    transform: translate3d(-50%, 0, 0) scale(1);
+    opacity: 1;
+  }
+  56% {
+    transform: translate3d(-50%, 50px, 0) scale(0.86);
+    opacity: 1;
+  }
+  78%, 100% {
+    transform: translate3d(-50%, 76px, 0) scale(0.52);
+    opacity: 0;
+  }
+}
+
+.animate-uninstall-app-card {
+  animation: uninstall-app-card 2.7s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+@keyframes uninstall-file-dot {
+  0%, 22% {
+    transform: translate3d(-50%, 0, 0) scale(0.6);
+    opacity: 0;
+  }
+  36% {
+    opacity: 1;
+  }
+  78%, 100% {
+    transform: translate3d(-50%, 56px, 0) scale(1);
+    opacity: 0;
+  }
+}
+
+.animate-uninstall-file-dot {
+  animation: uninstall-file-dot 2.1s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+@keyframes uninstall-bin-lid {
+  0%, 46%, 100% {
+    transform: translateX(-50%) translateY(0) rotate(0deg);
+  }
+  60%, 72% {
+    transform: translateX(-50%) translateY(-5px) rotate(-6deg);
+  }
+}
+
+.animate-uninstall-bin-lid {
+  transform-origin: 20% 50%;
+  animation: uninstall-bin-lid 2.7s cubic-bezier(0.45, 0, 0.2, 1) infinite;
 }
 
 /* Sparkle - Smart Care */

@@ -97,7 +97,7 @@ contextBridge.exposeInMainWorld("moleDesktop", {
 
   // Analyze command
   analyze: {
-    execute: (path) => invokeWithLog("mole:analyze:execute", `analyze ${path} --json`, path),
+    execute: (path, options) => invokeWithLog("mole:analyze:execute", `analyze --json ${options?.fresh ? '--fresh ' : ''}${path}`, path, options),
     kill: () => invokeWithLog("mole:analyze:kill", "analyze:kill"),
     onStdout: (callback) => {
       onStreamWithLog("mole:analyze:stdout", callback);
