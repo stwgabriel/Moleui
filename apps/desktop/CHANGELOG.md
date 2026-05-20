@@ -1,5 +1,19 @@
 # Desktop App Changelog
 
+## [0.9.0] - 2026-05-20
+
+### Added
+- Added per-section cleanup categories for the Clean page so each CLI cleanup area can scan and report independently.
+- Added group-level selection controls for excluding cleanup categories before cleaning.
+- Added battery drain prediction and charging indicators to My Mac.
+
+### Changed
+- Refined the Clean page orbit cards, category rows, responsive sizing, and scan-state presentation.
+- Updated desktop runtime preparation to package purge, installer, Touch ID, and completion commands.
+
+### Fixed
+- Fixed Clean page dry-run parsing for arrow-prefixed items, exit code 2 empty responses, and command failures.
+
 ## [0.8.0] - 2026-05-19
 
 ### Added

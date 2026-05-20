@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.43.0] - 2026-05-20
+
+### Added
+- Added finer-grained desktop cleanup categories for every CLI cleanup section, including installer, project artifact, and purge-driven groups.
+- Added desktop runtime packaging coverage for purge, installer, Touch ID, and completion shell subcommands.
+- Added My Mac battery drain prediction with charging-state handling.
+
+### Changed
+- Refined the desktop Clean page layout, category orbit states, group selection controls, and dry-run result parsing.
+
+### Fixed
+- Fixed desktop clean dry-runs so command failures surface as errors instead of clean categories.
+- Fixed exit code 2 dry-run responses to be treated as empty cleanup groups.
+
 ## [1.42.0] - 2026-05-19
 
 ### Added
