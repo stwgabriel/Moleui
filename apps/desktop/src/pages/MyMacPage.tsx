@@ -186,6 +186,69 @@ function isBatteryDraining(status: string): boolean {
   return status.toLowerCase().includes('discharging');
 }
 
+function isBatteryCharging(status: string): boolean {
+  const statusLower = status.toLowerCase();
+  return !statusLower.includes('discharging') && (statusLower.includes('charging') || statusLower.includes('charged'));
+}
+
+function formatBatteryDuration(milliseconds: number): string {
+  const totalMinutes = Math.max(1, Math.round(milliseconds / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function getBatteryDrainPrediction(metrics: SystemMetrics | null, history: BatteryHistoryPoint[]) {
+  const current = metrics ? makeBatteryHistoryPoint(metrics, Date.now()) : null;
+  if (!current) return { label: 'No battery data', detail: 'Waiting for samples' };
+
+  if (isBatteryCharging(current.status)) {
+    return {
+      label: current.status || 'Charging',
+      detail: 'Prediction paused',
+    };
+  }
+
+  const points = trimHistory([...history, current], MAX_BATTERY_HISTORY).sort((a, b) => a.t - b.t);
+  let lastChargingIndex = -1;
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    if (isBatteryCharging(points[index].status)) {
+      lastChargingIndex = index;
+      break;
+    }
+  }
+  const dischargePoints = points.slice(lastChargingIndex + 1).filter((point) => point.t <= current.t);
+  const baseline = [...dischargePoints].reverse().find((point) => point.t < current.t && point.battery > current.battery) ?? dischargePoints[0];
+
+  if (!baseline || baseline.t >= current.t) {
+    return {
+      label: metrics ? formatBatteryDischargeLabel(metrics.batteries?.[0]) : 'Learning drain',
+      detail: `${history.length} saved`,
+    };
+  }
+
+  const percentDrop = baseline.battery - current.battery;
+  const elapsedMs = current.t - baseline.t;
+  if (percentDrop <= 0 || elapsedMs <= 0) {
+    return {
+      label: metrics ? formatBatteryDischargeLabel(metrics.batteries?.[0]) : 'Learning drain',
+      detail: `${history.length} saved`,
+    };
+  }
+
+  const drainPerHour = percentDrop / (elapsedMs / 3600000);
+  const timeToEmptyMs = (current.battery / drainPerHour) * 3600000;
+
+  return {
+    label: `Predicted ${formatBatteryDuration(timeToEmptyMs)} to 0%`,
+    detail: `${drainPerHour.toFixed(1)}%/hr over ${formatBatteryDuration(elapsedMs)}`,
+  };
+}
+
 function appendBatteryHistory(history: BatteryHistoryPoint[], metrics: SystemMetrics, t: number): BatteryHistoryPoint[] {
   const point = makeBatteryHistoryPoint(metrics, t);
   if (!point) return history;
@@ -457,6 +520,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const batteryPercent = metrics ? getBatteryPercent(metrics) : null;
   const chartHistory = getRenderableHistory(metrics, history);
   const batteryChartHistory = getRenderableBatteryHistory(metrics, batteryHistory);
+  const batteryCharging = battery ? isBatteryCharging(battery.status) : false;
+  const batteryPrediction = getBatteryDrainPrediction(metrics, batteryHistory);
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
@@ -774,7 +839,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                   </div>
                   <div className="min-h-0 flex-1 py-2">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                      <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                         <defs>
                           <linearGradient id="rxGrad" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -813,9 +878,14 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                     <div className="text-xl font-bold text-slate-950">Battery</div>
                     <div className="text-sm font-semibold text-emerald-500">{batteryPercent == null ? '—' : `${batteryPercent.toFixed(0)}%`}</div>
                   </div>
-                  <div className="min-h-0 flex-1 py-2">
+                  <div className="relative min-h-0 flex-1 py-2">
+                    {batteryCharging && (
+                      <div className="pointer-events-none absolute right-2 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-200/80 bg-emerald-100/80 text-emerald-500 shadow-[0_8px_20px_rgba(16,185,129,0.25)] backdrop-blur-xl" aria-label="Battery charging">
+                        <Zap className="h-4 w-4 fill-emerald-400/30" aria-hidden="true" />
+                      </div>
+                    )}
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                      <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                         <defs>
                           <linearGradient id="batteryGrad" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
@@ -848,8 +918,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                     </ResponsiveContainer>
                   </div>
                   <div className="mt-auto grid grid-cols-2 gap-2 text-xs font-medium text-slate-500">
-                    <div className="truncate">{formatBatteryDischargeLabel(battery)}</div>
-                    <div className="truncate text-right">{batteryHistory.length > 0 ? `${batteryHistory.length} saved` : `${battery?.cycle_count ?? '—'} cycles`}</div>
+                    <div className="truncate">{batteryPrediction.label}</div>
+                    <div className="truncate text-right">{batteryPrediction.detail}</div>
                   </div>
                 </div>
               </Card>
