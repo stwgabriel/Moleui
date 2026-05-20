@@ -146,6 +146,17 @@ describe('CleanPage', () => {
     expect(screen.getByRole('button', { name: /start cleaning 1\.5 GB/i })).toBeInTheDocument();
   });
 
+  it('allows cleanup groups to be excluded from cleaning', () => {
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deselect System' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Deselect Application Junk' }));
+
+    expect(screen.getByRole('button', { name: /start cleaning 0 GB/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Select System' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select Application Junk' })).toBeInTheDocument();
+  });
+
   it('scans every cleanup section exposed by the cleanup CLI', async () => {
     localStorage.clear();
     vi.mocked(window.moleDesktop.clean.execute).mockResolvedValue({ ok: true, stdout: '', stderr: '' } as any);
@@ -161,7 +172,123 @@ describe('CleanPage', () => {
       .filter((options) => options.command === 'clean' && options.dryRun);
     const scannedSections = cleanDryRunCalls.flatMap((options) => options.sections ?? []);
 
-    expect(scannedSections).toEqual(expect.arrayContaining(['Large files', 'System Data clues', 'Project artifacts']));
+    expect(scannedSections).toEqual([
+      'System',
+      'User essentials',
+      'App caches',
+      'Browsers',
+      'Cloud & Office',
+      'Developer tools',
+      'Applications',
+      'Virtualization',
+      'Application Support',
+      'App leftovers',
+      'Apple Silicon',
+      'Device backups & firmware',
+      'Time Machine',
+      'Large files',
+      'System Data clues',
+      'Project artifacts',
+    ]);
+  });
+
+  it('surfaces dry-run command failures instead of reporting the category as clean', async () => {
+    localStorage.clear();
+    vi.mocked(window.moleDesktop.clean.execute).mockImplementation(async (options) => {
+      if (options.command === 'installer') {
+        return {
+          ok: false,
+          stdout: '',
+          stderr: '/runtime/bin/installer.sh: No such file or directory',
+          exitCode: 127,
+        } as any;
+      }
+
+      return { ok: true, stdout: '', stderr: '' } as any;
+    });
+
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /scan for junk/i }));
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Installer Files' })).toBeInTheDocument());
+    expect(screen.getByText('/runtime/bin/installer.sh: No such file or directory')).toBeInTheDocument();
+    expect(screen.queryByText('Installer Files 0 GB Clean')).not.toBeInTheDocument();
+  });
+
+  it('keeps cleanable arrow-prefixed dry-run results after the group finishes scanning', async () => {
+    localStorage.clear();
+    vi.mocked(window.moleDesktop.clean.execute).mockImplementation(async (options) => {
+      if (options.command === 'clean' && options.sections?.includes('User essentials')) {
+        return {
+          ok: true,
+          stdout: '➤ User essentials\n  → User app cache 174 items, 3.31GB dry\n',
+          stderr: '',
+          exitCode: 0,
+        } as any;
+      }
+
+      return { ok: true, stdout: '', stderr: '', exitCode: 0 } as any;
+    });
+
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /scan for junk/i }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /start cleaning 3\.3 GB/i })).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'User Essentials' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand User Essentials' }));
+    expect(screen.getByText('User app cache 174 items')).toBeInTheDocument();
+  });
+
+  it('treats dry-run exit code 2 as an empty cleanup group', async () => {
+    localStorage.clear();
+    vi.mocked(window.moleDesktop.clean.execute).mockImplementation(async (options) => {
+      if (options.command === 'purge') {
+        return {
+          ok: false,
+          stdout: 'Great! No old project artifacts to clean',
+          stderr: '',
+          exitCode: 2,
+        } as any;
+      }
+
+      return { ok: true, stdout: '', stderr: '' } as any;
+    });
+
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /scan for junk/i }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /start cleaning 0 GB/i })).toBeDisabled());
+    expect(screen.queryByRole('heading', { name: 'Project Artifacts' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/scan failed/i)).not.toBeInTheDocument();
+  });
+
+  it('shows only the active category row while scanning', () => {
+    localStorage.setItem('mole-clean-stage', JSON.stringify('analyzing'));
+    localStorage.setItem(
+      'mole-clean-groups',
+      JSON.stringify([
+        {
+          ...groups[0],
+          id: 'user',
+          name: 'User Essentials',
+          sections: ['User essentials'],
+          status: 'active',
+          items: [],
+          size: 0,
+          fileCount: 0,
+          selected: false,
+          expanded: true,
+        },
+      ]),
+    );
+
+    render(<CleanPage />);
+
+    expect(screen.getByRole('heading', { name: 'User Essentials' })).toBeInTheDocument();
+    expect(screen.queryByText('Finding more junk')).not.toBeInTheDocument();
   });
 
   it('returns to the start screen when stopping analysis', async () => {

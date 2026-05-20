@@ -70,46 +70,46 @@ const GROUP_ICONS: Record<CleanupGroup['icon'], LucideIcon> = {
 };
 
 const ORBIT_PRESENTATION: Array<{
-  groupId: string;
+  groupIds: string[];
   label: string;
   icon: LucideIcon;
   iconClassName: string;
   positionClassName: string;
 }> = [
   {
-    groupId: 'system',
+    groupIds: ['system', 'user', 'apple-silicon', 'device-backups', 'time-machine', 'large-files', 'system-data'],
     label: 'System Junk',
     icon: FileText,
     iconClassName: 'bg-rose-100 text-rose-500 shadow-rose-200/70',
-    positionClassName: 'left-[39%] top-[3%]',
+    positionClassName: 'left-[40%] top-[-4%]',
   },
   {
-    groupId: 'apps',
-    label: 'Application Junk',
+    groupIds: ['app-caches', 'browsers', 'cloud-office', 'applications', 'app-support', 'app-leftovers'],
+    label: 'Apps Junk',
     icon: Sparkles,
     iconClassName: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
-    positionClassName: 'left-[-4%] top-[36%]',
+    positionClassName: 'left-[calc(-8%+10px)] top-[36%]',
   },
   {
-    groupId: 'developer',
-    label: 'Developer Junk',
+    groupIds: ['developer', 'virtualization'],
+    label: 'Dev Junk',
     icon: FolderDown,
     iconClassName: 'bg-blue-100 text-blue-500 shadow-blue-200/70',
-    positionClassName: 'right-[-4%] top-[36%]',
+    positionClassName: 'right-[calc(-8%+10px)] top-[36%]',
   },
   {
-    groupId: 'projects',
+    groupIds: ['project-hints', 'projects'],
     label: 'Project Artifacts',
     icon: FileText,
     iconClassName: 'bg-orange-100 text-orange-500 shadow-orange-200/70',
-    positionClassName: 'left-[9%] bottom-[8%]',
+    positionClassName: 'left-[12%] bottom-[0%]',
   },
   {
-    groupId: 'installers',
+    groupIds: ['installers'],
     label: 'Installer Files',
     icon: Mail,
     iconClassName: 'bg-green-100 text-green-500 shadow-green-200/70',
-    positionClassName: 'right-[1%] bottom-[8%]',
+    positionClassName: 'right-[8%] bottom-[0%]',
   },
 ];
 
@@ -117,32 +117,162 @@ const GROUP_DEFINITIONS: Omit<CleanupGroup, 'size' | 'fileCount' | 'items' | 'lo
   {
     id: 'system',
     name: 'System Junk',
-    subtitle: 'System caches, user essentials, large files, and storage clues',
+    subtitle: 'Privileged system caches, temporary files, and snapshots',
     command: 'clean',
-    sections: ['System', 'User essentials', 'App caches', 'Apple Silicon', 'Device backups & firmware', 'Time Machine', 'Large files', 'System Data clues'],
+    sections: ['System'],
     color: '#8b5cf6',
     tint: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
     icon: 'system',
   },
   {
-    id: 'apps',
-    name: 'Application Junk',
-    subtitle: 'Browser data, cloud app caches, app support, and leftovers',
+    id: 'user',
+    name: 'User Essentials',
+    subtitle: 'User logs, temporary files, trash, and Finder metadata',
     command: 'clean',
-    sections: ['Browsers', 'Cloud & Office', 'Applications', 'Virtualization', 'Application Support', 'App leftovers'],
+    sections: ['User essentials'],
+    color: '#8b5cf6',
+    tint: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
+    icon: 'system',
+  },
+  {
+    id: 'app-caches',
+    name: 'App Caches',
+    subtitle: 'Standard and sandboxed application caches',
+    command: 'clean',
+    sections: ['App caches'],
+    color: '#3b82f6',
+    tint: 'bg-blue-100 text-blue-500 shadow-blue-200/70',
+    icon: 'apps',
+  },
+  {
+    id: 'browsers',
+    name: 'Browser Data',
+    subtitle: 'Browser caches, temporary browsing data, and web leftovers',
+    command: 'clean',
+    sections: ['Browsers'],
+    color: '#3b82f6',
+    tint: 'bg-blue-100 text-blue-500 shadow-blue-200/70',
+    icon: 'apps',
+  },
+  {
+    id: 'cloud-office',
+    name: 'Cloud & Office',
+    subtitle: 'Cloud sync and office app caches',
+    command: 'clean',
+    sections: ['Cloud & Office'],
     color: '#3b82f6',
     tint: 'bg-blue-100 text-blue-500 shadow-blue-200/70',
     icon: 'apps',
   },
   {
     id: 'developer',
-    name: 'Developer Junk',
-    subtitle: 'Package managers, build caches, simulators, dev tools, and artifact hints',
+    name: 'Dev Junk',
+    subtitle: 'Package managers, build caches, simulators, and dev tools',
     command: 'clean',
-    sections: ['Developer tools', 'Project artifacts'],
+    sections: ['Developer tools'],
     color: '#f97316',
     tint: 'bg-orange-100 text-orange-500 shadow-orange-200/70',
     icon: 'developer',
+  },
+  {
+    id: 'applications',
+    name: 'Apps',
+    subtitle: 'GUI application logs, support caches, and temporary data',
+    command: 'clean',
+    sections: ['Applications'],
+    color: '#3b82f6',
+    tint: 'bg-blue-100 text-blue-500 shadow-blue-200/70',
+    icon: 'apps',
+  },
+  {
+    id: 'virtualization',
+    name: 'Virtualization',
+    subtitle: 'Container, VM, and virtualization tool caches',
+    command: 'clean',
+    sections: ['Virtualization'],
+    color: '#f97316',
+    tint: 'bg-orange-100 text-orange-500 shadow-orange-200/70',
+    icon: 'developer',
+  },
+  {
+    id: 'app-support',
+    name: 'Application Support',
+    subtitle: 'Application support logs and rebuildable support files',
+    command: 'clean',
+    sections: ['Application Support'],
+    color: '#3b82f6',
+    tint: 'bg-blue-100 text-blue-500 shadow-blue-200/70',
+    icon: 'apps',
+  },
+  {
+    id: 'app-leftovers',
+    name: 'App Leftovers',
+    subtitle: 'Orphaned app data, service files, and container stubs',
+    command: 'clean',
+    sections: ['App leftovers'],
+    color: '#3b82f6',
+    tint: 'bg-blue-100 text-blue-500 shadow-blue-200/70',
+    icon: 'apps',
+  },
+  {
+    id: 'apple-silicon',
+    name: 'Apple Silicon',
+    subtitle: 'Apple Silicon update and platform caches',
+    command: 'clean',
+    sections: ['Apple Silicon'],
+    color: '#8b5cf6',
+    tint: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
+    icon: 'system',
+  },
+  {
+    id: 'device-backups',
+    name: 'Device Backups & Firmware',
+    subtitle: 'Device firmware caches and iOS backup checks',
+    command: 'clean',
+    sections: ['Device backups & firmware'],
+    color: '#8b5cf6',
+    tint: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
+    icon: 'system',
+  },
+  {
+    id: 'time-machine',
+    name: 'Time Machine',
+    subtitle: 'Failed backups and local Time Machine cleanup targets',
+    command: 'clean',
+    sections: ['Time Machine'],
+    color: '#8b5cf6',
+    tint: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
+    icon: 'system',
+  },
+  {
+    id: 'large-files',
+    name: 'Large Files',
+    subtitle: 'Large file candidates surfaced for review',
+    command: 'clean',
+    sections: ['Large files'],
+    color: '#8b5cf6',
+    tint: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
+    icon: 'system',
+  },
+  {
+    id: 'system-data',
+    name: 'System Data Clues',
+    subtitle: 'Storage clues and possible system data sources',
+    command: 'clean',
+    sections: ['System Data clues'],
+    color: '#8b5cf6',
+    tint: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
+    icon: 'system',
+  },
+  {
+    id: 'project-hints',
+    name: 'Project Artifact Hints',
+    subtitle: 'Project artifact candidates detected during cleanup scan',
+    command: 'clean',
+    sections: ['Project artifacts'],
+    color: '#22c55e',
+    tint: 'bg-emerald-100 text-emerald-500 shadow-emerald-200/70',
+    icon: 'projects',
   },
   {
     id: 'projects',
@@ -200,7 +330,7 @@ const stageCopy: Record<Exclude<Stage, 'idle' | 'complete'>, { title: string; de
 };
 
 function createInitialGroups(): CleanupGroup[] {
-  return GROUP_DEFINITIONS.map((group, index) => ({
+  return GROUP_DEFINITIONS.map((group) => ({
     ...group,
     size: 0,
     fileCount: 0,
@@ -208,7 +338,7 @@ function createInitialGroups(): CleanupGroup[] {
     logs: [],
     status: 'pending',
     selected: false,
-    expanded: index === 0,
+    expanded: false,
   }));
 }
 
@@ -270,14 +400,15 @@ function isSummaryLine(line: string) {
 }
 
 function isSectionHeader(line: string) {
-  return /^[→▸➤]\s+(.+?)$/.test(line);
+  const sectionMatch = line.match(/^[→▸➤]\s+(.+?)$/);
+  return Boolean(sectionMatch && CLEAN_SECTION_NAMES.has(sectionMatch[1].trim()));
 }
 
 function cleanDisplayLine(line: string) {
   return line
-    .replace(/^[✓✔•*\-\s]+/, '')
+    .replace(/^[✓✔•*\-→▸➤↳☞◎\s]+/, '')
     .replace(/\s*\((\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB))\)\s*$/i, '')
-    .replace(/\s+\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)\b\s*$/i, '')
+    .replace(/\s*,?\s*\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)\b(?:\s+dry)?\s*$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -336,7 +467,7 @@ function parseCleanableItems(group: CleanupGroup, output: string) {
     size,
     fileCount: items.length,
     selected: items.length > 0,
-    expanded: items.length > 0,
+    expanded: false,
     status: items.length > 0 ? ('ready' as const) : ('empty' as const),
   };
 }
@@ -381,7 +512,7 @@ export function CleanPage() {
 
   const foundGroups = useMemo(() => groups.filter((group) => group.items.length > 0), [groups]);
   const visibleGroups = useMemo(
-    () => groups.filter((group) => group.items.length > 0 || group.status === 'active' || group.status === 'cleaning'),
+    () => groups.filter((group) => group.items.length > 0 || group.status === 'active' || group.status === 'cleaning' || group.status === 'error'),
     [groups],
   );
   const totalSize = useMemo(() => groups.reduce((sum, group) => sum + group.size, 0), [groups]);
@@ -441,7 +572,7 @@ export function CleanPage() {
     const status = dryRun ? 'active' : 'cleaning';
     let currentSection = '';
 
-    patchGroup(group.id, { status, logs: [], ...(dryRun ? { items: [], size: 0, fileCount: 0, selected: false, expanded: true } : {}) });
+    patchGroup(group.id, { status, logs: [], ...(dryRun ? { items: [], size: 0, fileCount: 0, selected: false, expanded: false } : {}) });
     setCurrentScanItem(`Scanning ${group.name.toLowerCase()}...`);
     appendLog(group.id, `$ ${commandLabel(group, dryRun)}`);
 
@@ -475,7 +606,7 @@ export function CleanPage() {
               size,
               fileCount: items.length,
               selected: true,
-              expanded: true,
+              expanded: false,
               status: 'active',
             };
           });
@@ -501,9 +632,11 @@ export function CleanPage() {
       return false;
     }
 
-    if (!result.ok && !dryRun) {
+    const emptyDryRun = dryRun && result.exitCode === 2;
+    if (!result.ok && !emptyDryRun) {
       patchGroup(group.id, { status: 'error' });
       appendLog(group.id, result.stderr || 'Command failed', 'error');
+      if (dryRun) return true;
       return false;
     }
 
@@ -593,37 +726,55 @@ export function CleanPage() {
     });
   };
 
+  const toggleGroupSelected = (groupId: string) => {
+    patchGroup(groupId, (group) => {
+      const selected = !group.items.some((item) => item.selected);
+      return {
+        items: group.items.map((item) => ({ ...item, selected })),
+        selected,
+      };
+    });
+  };
+
   const toggleExpanded = (id: string) => {
     patchGroup(id, (group) => ({ expanded: !group.expanded }));
   };
 
   const renderOrbitItem = (item: (typeof ORBIT_PRESENTATION)[number], index: number) => {
-    const group = groups.find((nextGroup) => nextGroup.id === item.groupId);
+    const orbitGroups = item.groupIds.map((groupId) => groups.find((nextGroup) => nextGroup.id === groupId)).filter((group): group is CleanupGroup => Boolean(group));
     const Icon = item.icon;
-    const active = group ? activeGroup?.id === group.id : false;
-    const showSize = group && group.size > 0 ? group.size : active && stage === 'analyzing' ? liveScanSize : 0;
-    const itemCount = group?.items.length ?? 0;
-    const statusLabel = active
-      ? 'Scanning now'
-      : itemCount > 0
-        ? `${itemCount} ${itemCount === 1 ? 'item' : 'items'} found`
-        : 'Waiting to scan';
+    const active = orbitGroups.some((group) => activeGroup?.id === group.id);
+    const hasError = orbitGroups.some((group) => group.status === 'error');
+    const showSize = orbitGroups.reduce((sum, group) => sum + group.size, 0);
+    const itemCount = orbitGroups.reduce((sum, group) => sum + group.items.length, 0);
+    const hasScanned = orbitGroups.length > 0 && orbitGroups.every((group) => group.status !== 'pending');
+    const isClean = hasScanned && !active && !hasError && itemCount === 0;
+    const isDone = !active && (itemCount > 0 || isClean || hasError);
+    const statusLabel = active ? 'Scanning' : hasError ? 'Issue' : isClean ? 'Clean' : itemCount > 0 ? 'Found' : '';
+    const stateClassName = active
+      ? 'border-dashed border-violet-400 bg-white/88 shadow-[0_16px_44px_rgba(109,93,252,0.16)] animate-clean-card-pulse'
+      : hasError
+        ? 'border-rose-300 bg-rose-50/88 shadow-[0_12px_34px_rgba(244,63,94,0.12)]'
+        : isDone
+          ? 'border-violet-500 bg-violet-50/90 shadow-[0_12px_34px_rgba(109,93,252,0.13)]'
+          : 'border-slate-200/90 bg-white/70 shadow-none opacity-75';
+    const iconStateClassName = active || isDone ? item.iconClassName : 'bg-slate-100 text-slate-400 shadow-none';
 
     return (
       <div
-        key={item.groupId}
-        className={`absolute ${item.positionClassName} z-20 flex min-w-[190px] items-center gap-3 rounded-[1rem] border border-white/74 bg-white/84 px-3.5 py-3 shadow-[0_16px_45px_rgba(83,76,148,0.13)] backdrop-blur-2xl transition-all duration-500 animate-clean-float ${active ? 'scale-105 ring-2 ring-violet-300/70' : ''}`}
+        key={item.label}
+        className={`absolute ${item.positionClassName} z-20 flex w-[clamp(8rem,13.2vw,15.5rem)] min-w-0 items-center gap-[clamp(0.45rem,0.8vw,0.75rem)] rounded-[clamp(0.7rem,0.95vw,1rem)] border px-[clamp(0.55rem,0.85vw,0.875rem)] py-[clamp(0.45rem,0.75vw,0.75rem)] backdrop-blur-2xl transition-all duration-500 ${stateClassName} ${active ? 'scale-[1.02]' : ''}`}
         style={{ animationDelay: `${index * -0.45}s` }}
       >
-        <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[0.9rem] ${item.iconClassName}`}>
-          <Icon className="h-5 w-5" strokeWidth={2.2} />
+        <div className={`flex h-[clamp(2rem,2.8vw,3rem)] w-[clamp(2rem,2.8vw,3rem)] shrink-0 items-center justify-center rounded-[0.8rem] transition-colors duration-500 ${iconStateClassName}`}>
+          <Icon className="h-[clamp(0.95rem,1.25vw,1.25rem)] w-[clamp(0.95rem,1.25vw,1.25rem)]" strokeWidth={2.2} />
         </div>
         <div className="min-w-0">
-          <div className="truncate text-base font-black text-slate-950">{item.label}</div>
-          <div className="mt-1 flex items-center gap-2 text-xs font-black">
-            <span className="text-violet-600">{formatGigValue(showSize)}</span>
-            <span className="h-1 w-1 rounded-full bg-slate-300" />
-            <span className="truncate text-slate-400">{statusLabel}</span>
+          <div className={`truncate text-[clamp(0.72rem,1vw,1rem)] font-black leading-tight ${active || isDone ? 'text-slate-950' : 'text-slate-500'}`}>{item.label}</div>
+          <div className="mt-1 flex min-w-0 items-center gap-[clamp(0.25rem,0.45vw,0.5rem)] text-[clamp(0.6rem,0.74vw,0.75rem)] font-black">
+            <span className={active || isDone ? 'text-violet-600' : 'text-slate-400'}>{formatGigValue(showSize)}</span>
+            {statusLabel && <span className="h-1 w-1 rounded-full bg-slate-300" />}
+            {statusLabel && <span className={`truncate ${active ? 'text-violet-500' : hasError ? 'text-rose-500' : isClean ? 'text-emerald-500' : 'text-slate-500'}`}>{statusLabel}</span>}
           </div>
         </div>
       </div>
@@ -634,58 +785,76 @@ export function CleanPage() {
     const Icon = GROUP_ICONS[group.icon];
     const isActive = group.status === 'active' || group.status === 'cleaning';
     const cardSize = group.items.reduce((sum, item) => sum + item.size, 0);
+    const isSelected = group.items.some((item) => item.selected);
+    const canSelect = group.items.length > 0 && stage === 'results';
+    const errorMessage = group.logs.find((log) => log.type === 'error')?.text;
+    const cardSubtitle = group.status === 'error' ? (errorMessage ?? 'Scan failed for this cleanup group') : isActive ? currentScanItem : group.subtitle;
 
     return (
       <section
         key={group.id}
-        className={`rounded-[1.35rem] border bg-white/70 shadow-[0_12px_36px_rgba(67,56,122,0.07)] backdrop-blur-2xl transition-all duration-300 ${
-          group.expanded ? 'border-violet-300/95' : 'border-slate-200/70'
+        className={`rounded-[clamp(1rem,1.25vw,1.35rem)] border bg-white/70 backdrop-blur-2xl transition-all duration-300 ${
+          group.status === 'error' ? 'border-rose-200/95 bg-rose-50/60' : group.expanded ? 'border-violet-300/95' : 'border-slate-200/70'
         } ${isActive ? 'animate-clean-card-pulse' : ''}`}
       >
-        <div className="flex items-center gap-5 px-6 py-5">
-          <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-full ${group.tint}`}>
-            {isActive ? <Loader2 className="h-7 w-7 animate-spin" /> : <Icon className="h-7 w-7" strokeWidth={2.2} />}
+        <div className="flex items-center gap-[clamp(0.6rem,1vw,1.25rem)] px-[clamp(0.65rem,1.2vw,1.5rem)] py-[clamp(0.6rem,0.95vw,1.25rem)]">
+          <button
+            type="button"
+            onClick={() => toggleGroupSelected(group.id)}
+            disabled={!canSelect}
+            aria-label={`${isSelected ? 'Deselect' : 'Select'} ${group.name}`}
+            aria-pressed={isSelected}
+            className={`flex h-[clamp(1.35rem,1.7vw,1.65rem)] w-[clamp(1.35rem,1.7vw,1.65rem)] shrink-0 items-center justify-center rounded-full border transition-colors ${
+              isSelected
+                ? 'border-violet-500 bg-violet-600 text-white shadow-[0_6px_16px_rgba(109,93,252,0.24)]'
+                : 'border-slate-300 bg-white/70 text-transparent hover:border-violet-300'
+            } ${canSelect ? 'cursor-pointer' : 'cursor-default opacity-45'}`}
+          >
+            <Check className="h-[clamp(0.8rem,1vw,1rem)] w-[clamp(0.8rem,1vw,1rem)]" strokeWidth={3} />
+          </button>
+          <div className={`flex h-[clamp(2.65rem,3.45vw,4rem)] w-[clamp(2.65rem,3.45vw,4rem)] shrink-0 items-center justify-center rounded-full ${group.tint}`}>
+            {isActive ? <Loader2 className="h-[clamp(1.1rem,1.45vw,1.75rem)] w-[clamp(1.1rem,1.45vw,1.75rem)] animate-spin" /> : <Icon className="h-[clamp(1.1rem,1.45vw,1.75rem)] w-[clamp(1.1rem,1.45vw,1.75rem)]" strokeWidth={2.2} />}
           </div>
 
           <button type="button" onClick={() => toggleExpanded(group.id)} className="min-w-0 flex-1 text-left">
-            <h3 className="truncate text-lg font-black leading-tight text-slate-950 sm:text-xl">{group.name}</h3>
-            <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-snug text-slate-500 sm:text-base">{isActive ? currentScanItem : group.subtitle}</p>
+            <h3 className="truncate text-[clamp(0.9rem,1.12vw,1.25rem)] font-black leading-tight text-slate-950">{group.name}</h3>
+            <p className={`mt-[clamp(0.2rem,0.45vw,0.375rem)] line-clamp-2 text-[clamp(0.74rem,0.9vw,1rem)] font-semibold leading-snug ${group.status === 'error' ? 'text-rose-500' : 'text-slate-500'}`}>{cardSubtitle}</p>
           </button>
 
           <div className="shrink-0 text-right">
-            <div className="whitespace-nowrap text-xl font-black text-violet-600 sm:text-2xl">{formatGigValue(cardSize)}</div>
+            <div className="whitespace-nowrap text-[clamp(0.95rem,1.35vw,1.5rem)] font-black text-violet-600">{formatGigValue(cardSize)}</div>
           </div>
 
           <button
             type="button"
             onClick={() => toggleExpanded(group.id)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-violet-50 hover:text-violet-600"
+            className="flex h-[clamp(1.75rem,2.1vw,2rem)] w-[clamp(1.75rem,2.1vw,2rem)] shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-violet-50 hover:text-violet-600"
             aria-label={`${group.expanded ? 'Collapse' : 'Expand'} ${group.name}`}
           >
-            {group.expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+            {group.expanded ? <ChevronUp className="h-[clamp(1rem,1.25vw,1.25rem)] w-[clamp(1rem,1.25vw,1.25rem)]" /> : <ChevronDown className="h-[clamp(1rem,1.25vw,1.25rem)] w-[clamp(1rem,1.25vw,1.25rem)]" />}
           </button>
         </div>
 
         {group.expanded && (
-          <div className="px-6 pb-6 pl-[7.9rem]">
+          <div className="px-[clamp(0.65rem,1.2vw,1.5rem)] pb-[clamp(0.65rem,1.2vw,1.5rem)] pl-[clamp(4.1rem,5.7vw,7.9rem)]">
             <div
               ref={(element) => {
                 itemListRefs.current[group.id] = element;
               }}
-              className="max-h-[210px] space-y-3 overflow-y-auto pr-2 custom-scrollbar"
+              className="max-h-[190px] space-y-[clamp(0.3rem,0.6vw,0.75rem)] overflow-y-auto pr-2 custom-scrollbar"
             >
               {group.items.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => toggleItem(group.id, item.id)}
-                  className="grid w-full grid-cols-[1fr_auto] items-center gap-4 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-violet-50/80"
+                  className="grid w-full grid-cols-[1fr_auto] items-center gap-[clamp(0.55rem,0.85vw,1rem)] rounded-xl px-[clamp(0.3rem,0.5vw,0.5rem)] py-[clamp(0.2rem,0.4vw,0.375rem)] text-left transition-colors hover:bg-violet-50/80"
                 >
-                  <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex min-w-0 items-center gap-[clamp(0.4rem,0.65vw,0.75rem)]">
                     <span className={`grid h-2 w-2 shrink-0 place-items-center rounded-full ${item.selected ? 'bg-violet-500' : 'bg-slate-300'}`} />
-                    <span className={`line-clamp-2 text-sm font-semibold leading-snug sm:text-base ${item.selected ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}</span>
+                    <span className={`line-clamp-2 text-[clamp(0.74rem,0.9vw,1rem)] font-semibold leading-snug ${item.selected ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}</span>
                   </span>
-                  <span className={`whitespace-nowrap text-sm font-black sm:text-base ${item.selected ? 'text-slate-600' : 'text-slate-400'}`}>{formatBytes(item.size)}</span>
+                  <span className={`whitespace-nowrap text-[clamp(0.74rem,0.9vw,1rem)] font-black ${item.selected ? 'text-slate-600' : 'text-slate-400'}`}>{formatBytes(item.size)}</span>
                 </button>
               ))}
             </div>
@@ -720,91 +889,77 @@ export function CleanPage() {
   }
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-16 pb-7 pt-10 text-slate-950">
+    <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(109,93,252,0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(236,72,153,0.07),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
 
       <div className="relative flex h-full min-h-0 flex-col">
         <header className="flex shrink-0 items-start justify-between gap-4">
           <div>
-            <h1 className="text-[clamp(2.35rem,3.1vw,3.15rem)] font-black leading-none text-slate-950">{stageHeader?.title}</h1>
-            <p className="mt-4 max-w-[30rem] text-base font-semibold leading-relaxed text-slate-500">{stageHeader?.description}</p>
+            <h1 className="text-[clamp(1.65rem,2.65vw,3.15rem)] font-black leading-none text-slate-950">{stageHeader?.title}</h1>
+            <p className="mt-[clamp(0.65rem,1.15vw,1rem)] max-w-[30rem] text-[clamp(0.88rem,1.15vw,1rem)] font-semibold leading-relaxed text-slate-500">{stageHeader?.description}</p>
           </div>
 
           <div className="flex shrink-0 items-center gap-3">
-            <Button variant="secondary" icon={ArrowLeft} onClick={reset} className="rounded-full border border-white/70 bg-white/70 px-5 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white">
+            <Button variant="secondary" icon={ArrowLeft} onClick={reset} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
               Back
             </Button>
             {(stage === 'analyzing' || stage === 'cleaning') ? (
-              <Button variant="secondary" icon={X} onClick={stopCurrent} className="rounded-full border border-white/70 bg-white/70 px-5 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white">
+              <Button variant="secondary" icon={X} onClick={stopCurrent} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
                 Stop
               </Button>
             ) : (
-              <Button variant="secondary" icon={RefreshCcw} onClick={startAnalyze} className="rounded-full border border-white/70 bg-white/70 px-5 text-violet-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white">
+              <Button variant="secondary" icon={RefreshCcw} onClick={startAnalyze} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-violet-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
                 Scan Again
               </Button>
             )}
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(520px,1fr)_minmax(570px,1fr)] gap-16">
-          <section className="relative min-h-0">
-            <div className="relative mx-auto mt-4 h-[min(53vh,620px)] min-h-[500px] max-w-[720px]">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,0.96fr)_minmax(0,1fr)] gap-[clamp(1.25rem,3vw,4rem)]">
+          <section className="relative min-h-0 min-w-0">
+            <div className="relative mx-auto mt-[clamp(0.15rem,0.8vw,1rem)] h-[clamp(290px,42vh,620px)] max-w-[720px]">
               <div className="absolute inset-[8%] rounded-full border border-violet-100" />
               <div className="absolute inset-[18%] rounded-full border border-violet-100" />
               <div className="absolute inset-[28%] rounded-full border border-violet-200" />
               <div className="absolute inset-[9%] animate-clean-orbit rounded-full border border-transparent border-r-violet-300 border-t-violet-200" />
-              <div className="absolute left-1/2 top-1/2 h-[clamp(230px,15vw,290px)] w-[clamp(230px,15vw,290px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_38%_26%,#f3c4ff_0%,#9e72ff_46%,#6847ef_100%)] shadow-[0_28px_90px_rgba(109,93,252,0.32),inset_0_1px_1px_rgba(255,255,255,0.8)]" />
-              <div className="absolute left-1/2 top-1/2 z-10 flex h-[clamp(230px,15vw,290px)] w-[clamp(230px,15vw,290px)] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full text-white">
-                <Sparkles className="mb-2 h-8 w-8 animate-sparkle" />
-                <div className="max-w-[88%] whitespace-nowrap text-center text-[clamp(2rem,3.45vw,3.65rem)] font-black leading-none">{formatGigValue(displaySize).replace(' ', '\u00a0')}</div>
-                <div className="mt-3 text-lg font-semibold text-white/86">{stage === 'analyzing' ? 'found so far' : 'of junk found'}</div>
+              <div className="absolute left-1/2 top-1/2 h-[clamp(160px,14vw,290px)] w-[clamp(160px,14vw,290px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_38%_26%,#f3c4ff_0%,#9e72ff_46%,#6847ef_100%)] shadow-[0_28px_90px_rgba(109,93,252,0.32),inset_0_1px_1px_rgba(255,255,255,0.8)]" />
+              <div className="absolute left-1/2 top-1/2 z-10 flex h-[clamp(160px,14vw,290px)] w-[clamp(160px,14vw,290px)] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full text-white">
+                <Sparkles className="mb-2 h-[clamp(1.45rem,2vw,2rem)] w-[clamp(1.45rem,2vw,2rem)] animate-sparkle" />
+                <div className="max-w-[88%] whitespace-nowrap text-center text-[clamp(1.65rem,3vw,3.65rem)] font-black leading-none">{formatGigValue(displaySize).replace(' ', '\u00a0')}</div>
+                <div className="mt-[clamp(0.45rem,0.85vw,0.75rem)] text-[clamp(0.9rem,1.25vw,1.125rem)] font-semibold text-white/86">{stage === 'analyzing' ? 'found so far' : 'of junk found'}</div>
               </div>
 
               {ORBIT_PRESENTATION.map(renderOrbitItem)}
             </div>
 
-            <div className="mx-auto -mt-4 flex max-w-[560px] items-center gap-5 rounded-[1.3rem] border border-white/75 bg-white/76 p-4 shadow-[0_18px_54px_rgba(83,76,148,0.10)] backdrop-blur-2xl">
+            <div className="mx-auto mt-[clamp(0.75rem,1.8vw,1.5rem)] flex max-w-[480px] items-center gap-[clamp(0.65rem,1.2vw,1rem)] rounded-[1.15rem] border border-white/75 bg-white/76 p-[clamp(0.55rem,1vw,0.85rem)] shadow-[0_14px_42px_rgba(83,76,148,0.09)] backdrop-blur-2xl">
               <div
-                className="grid h-[84px] w-[84px] shrink-0 place-items-center rounded-full"
+                className="grid h-[clamp(58px,5vw,72px)] w-[clamp(58px,5vw,72px)] shrink-0 place-items-center rounded-full"
                 style={{ background: 'conic-gradient(#ef334b 316.8deg, #ece8f5 0deg)' }}
               >
-                <div className="grid h-[60px] w-[60px] place-items-center rounded-full bg-white text-sm font-black text-slate-950">88%</div>
+                <div className="grid h-[clamp(42px,3.65vw,52px)] w-[clamp(42px,3.65vw,52px)] place-items-center rounded-full bg-white text-[clamp(0.72rem,0.9vw,0.8rem)] font-black text-slate-950">88%</div>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-lg font-black text-slate-950">Storage</div>
-                <div className="mt-1 text-sm font-semibold text-slate-500">{storageUsageLabel}</div>
-                <div className="mt-4 grid grid-cols-[1fr_auto] items-center gap-5">
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                <div className="text-[clamp(0.92rem,1.15vw,1rem)] font-black text-slate-950">Storage</div>
+                <div className="mt-0.5 text-[clamp(0.76rem,0.9vw,0.82rem)] font-semibold text-slate-500">{storageUsageLabel}</div>
+                <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-4">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
                     <div className="h-full w-[88%] rounded-full bg-[linear-gradient(90deg,#ef334b,#ff9d9a)] transition-all duration-500" />
                   </div>
-                  <div className="text-sm font-semibold text-slate-500">{storageCapacityLabel}</div>
+                  <div className="text-[clamp(0.76rem,0.9vw,0.82rem)] font-semibold text-slate-500">{storageCapacityLabel}</div>
                 </div>
               </div>
             </div>
           </section>
 
-          <section className="flex min-h-0 flex-col pt-8">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-xl font-black text-slate-600">Junk Categories</h2>
+          <section className="flex min-h-0 min-w-0 flex-col pt-[clamp(0.4rem,1.65vw,2rem)]">
+            <div className="mb-[clamp(0.6rem,1vw,1rem)] flex items-center justify-between gap-3">
+              <h2 className="text-[clamp(0.95rem,1.3vw,1.25rem)] font-black text-slate-600">Junk Categories</h2>
             </div>
 
-            <div ref={categoryListRef} className="min-h-0 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-              <div className="space-y-3">
+            <div ref={categoryListRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-visible pr-2 custom-scrollbar">
+              <div className="ml-auto w-[calc(100%-10px)] space-y-[clamp(0.55rem,0.9vw,0.75rem)]">
                 {visibleGroups.map(renderCategoryCard)}
-
-                {stage === 'analyzing' && (
-                  <div className="rounded-[1.15rem] border border-dashed border-violet-200 bg-white/48 p-5 shadow-[0_12px_36px_rgba(67,56,122,0.05)] backdrop-blur-2xl">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-[3.25rem] w-[3.25rem] items-center justify-center rounded-full bg-violet-100 text-violet-600">
-                        <Loader2 className="h-6 w-6 animate-spin" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-lg font-black text-slate-950">Finding more junk</div>
-                        <div className="mt-1 truncate text-sm font-semibold text-slate-500">{currentScanItem}</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {stage !== 'analyzing' && foundGroups.length === 0 && (
                   <div className="rounded-[1.15rem] border border-violet-100 bg-white/62 p-8 text-center shadow-[0_12px_36px_rgba(67,56,122,0.05)]">
@@ -830,13 +985,13 @@ export function CleanPage() {
           </section>
         </div>
 
-        <footer className="mt-6 flex shrink-0 flex-col items-center gap-3">
+        <footer className="mt-[clamp(0.7rem,1.6vw,1.5rem)] flex shrink-0 flex-col items-center gap-[clamp(0.55rem,1vw,0.75rem)]">
           <Button
             icon={stage === 'cleaning' ? Loader2 : Sparkles}
             onClick={startCleaning}
             disabled={stage === 'analyzing' || stage === 'cleaning' || (stage === 'results' && selectedItemCount === 0)}
             size="lg"
-            className="min-w-[450px] rounded-full bg-violet-600 px-10 py-4 text-xl shadow-[0_18px_50px_rgba(109,93,252,0.32)] hover:bg-violet-700"
+            className="min-w-[min(450px,42vw)] rounded-full bg-violet-600 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_rgba(109,93,252,0.32)] hover:bg-violet-700 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
           >
             {stage === 'analyzing'
                 ? `Scanning ${formatGigValue(displaySize)}`
@@ -844,7 +999,7 @@ export function CleanPage() {
                   ? `Cleaning ${formatGigValue(cleanedSize)}`
                   : `Start Cleaning ${formatGigValue(selectedSize)}`}
           </Button>
-          <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
+          <div className="flex items-center gap-2 text-[clamp(0.78rem,1vw,0.875rem)] font-bold text-slate-500">
             <Lock className="h-4 w-4" />
             Nothing will be deleted without your permission
           </div>
