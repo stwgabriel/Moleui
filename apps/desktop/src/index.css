@@ -336,6 +336,30 @@ body {
   animation: sparkle 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
+@keyframes clean-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-clean-orbit {
+  animation: clean-orbit 18s linear infinite;
+}
+
+@keyframes clean-card-pulse {
+  0%, 100% {
+    box-shadow: 0 12px 36px rgba(67, 56, 122, 0.07);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 18px 54px rgba(109, 93, 252, 0.16);
+    transform: translateY(-2px);
+  }
+}
+
+.animate-clean-card-pulse {
+  animation: clean-card-pulse 1.8s ease-in-out infinite;
+}
+
 /* ============================================================
    SLIDE TRANSITIONS
    ============================================================ */

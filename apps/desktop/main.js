@@ -467,13 +467,30 @@ ipcMain.handle("mole:uninstall:execute", async (event, appNames) => {
 
 // Clean command handlers
 ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
-  const args = ["clean"];
+  const command = String(options.command || "clean");
+  const args = [command];
+
+  if (!["clean", "purge", "installer"].includes(command)) {
+    return {
+      ok: false,
+      command: `mole ${command}`,
+      exitCode: null,
+      stdout: "",
+      stderr: `Unsupported clean command: ${command}`,
+    };
+  }
+
   if (options.dryRun) args.push("--dry-run");
-  if (Array.isArray(options.sections)) {
+
+  if (command === "clean" && Array.isArray(options.sections)) {
     for (const section of options.sections) {
       const cleanSection = String(section || "").trim();
       if (cleanSection) args.push("--section", cleanSection);
     }
+  }
+
+  if (command === "installer" && options.all) {
+    args.push("--all", "--yes");
   }
 
   return runMole(args, {

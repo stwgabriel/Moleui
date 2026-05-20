@@ -14,7 +14,8 @@ import (
 const (
 	systemProfilerTimeout = 4 * time.Second
 	macGPUInfoTTL         = 10 * time.Minute
-	macGPUUsageTTL        = 5 * time.Second
+	macGPUUsageTTL        = 1 * time.Second
+	ioregGPUTimeout       = 600 * time.Millisecond
 	powermetricsTimeout   = 2 * time.Second
 )
 
@@ -23,6 +24,7 @@ var (
 	gpuActiveResidencyRe = regexp.MustCompile(`GPU HW active residency:\s+([\d.]+)%`)
 	gpuIdleResidencyRe   = regexp.MustCompile(`GPU idle residency:\s+([\d.]+)%`)
 	gpuTemperatureRe     = regexp.MustCompile(`(?i)GPU(?:\s+die)?\s+temperature:\s+([\d.]+)\s*C`)
+	gpuIORegMetricRe     = regexp.MustCompile(`"(Device|Renderer|Tiler) Utilization %"\s*=\s*([\d.]+)`)
 )
 
 func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
@@ -207,8 +209,12 @@ func (c *Collector) getMacGPUUsage(now time.Time) float64 {
 	return usage
 }
 
-// getMacGPUUsage reads GPU active residency from powermetrics.
+// getMacGPUUsage prefers non-privileged IORegistry utilization and falls back to powermetrics.
 func getMacGPUUsage() float64 {
+	if usage := getMacIORegGPUUsage(); usage >= 0 {
+		return usage
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), powermetricsTimeout)
 	defer cancel()
 
@@ -237,6 +243,59 @@ func getMacGPUUsage() float64 {
 	}
 
 	return -1
+}
+
+func getMacIORegGPUUsage() float64 {
+	ctx, cancel := context.WithTimeout(context.Background(), ioregGPUTimeout)
+	defer cancel()
+
+	if !commandExists("ioreg") {
+		return -1
+	}
+
+	out, err := runCmd(ctx, "ioreg", "-r", "-c", "IOAccelerator", "-d", "1", "-l")
+	if err != nil {
+		return -1
+	}
+
+	return parseMacIORegGPUUsage(out)
+}
+
+func parseMacIORegGPUUsage(raw string) float64 {
+	matches := gpuIORegMetricRe.FindAllStringSubmatch(raw, -1)
+	if len(matches) == 0 {
+		return -1
+	}
+
+	bestFallback := -1.0
+	for _, match := range matches {
+		if len(match) < 3 {
+			continue
+		}
+		value, err := strconv.ParseFloat(match[2], 64)
+		if err != nil {
+			continue
+		}
+		value = clampPercent(value)
+		if match[1] == "Device" {
+			return value
+		}
+		if value > bestFallback {
+			bestFallback = value
+		}
+	}
+
+	return bestFallback
+}
+
+func clampPercent(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func getMacGPUTemperature() float64 {

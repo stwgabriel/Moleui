@@ -157,6 +157,9 @@ export function OptimizePage() {
   const [previewTimeline, setPreviewTimeline] = usePersistentState<TimelineStage[]>('mole-optimize-preview-timeline', []);
   const logEndRef = useRef<HTMLDivElement>(null);
   const previewLogEndRef = useRef<HTMLDivElement>(null);
+  const runIdRef = useRef(0);
+  const activeRunRef = useRef<{ id: number; context: 'preview' | 'main' } | null>(null);
+  const cancelledRunIdsRef = useRef(new Set<number>());
 
   // Auto-scroll logs
   useEffect(() => {
@@ -242,16 +245,30 @@ export function OptimizePage() {
   };
 
   const stopProcess = async (context: 'preview' | 'main') => {
+    const activeRun = activeRunRef.current;
+    if (activeRun?.context === context) {
+      cancelledRunIdsRef.current.add(activeRun.id);
+      activeRunRef.current = null;
+    }
+
     addLog('Stopping...', 'info', context);
-    const result = await window.moleDesktop.optimize.kill();
-    if (result.ok) {
+    window.moleDesktop.optimize.removeListeners();
+    setStage('idle');
+
+    try {
+      await window.moleDesktop.optimize.kill();
       addLog(context === 'preview' ? 'Preview cancelled' : 'Optimization stopped by user', 'error', context);
+    } catch (error) {
+      addLog(`Failed to stop: ${error}`, 'error', context);
     }
   };
 
   // ─── Dry-run preview ────────────────────────────────────────────────────────
 
   const startPreview = async () => {
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
+    activeRunRef.current = { id: runId, context: 'preview' };
     setStage('previewing');
     setPreviewLogs([]);
     setPreviewTimeline([]);
@@ -269,10 +286,13 @@ export function OptimizePage() {
 
     try {
       const result = await window.moleDesktop.optimize.execute({ dryRun: true });
+      const isCurrentRun = activeRunRef.current?.id === runId;
 
-      if (result.killed) {
+      if (cancelledRunIdsRef.current.has(runId) || result.killed) {
         addLog('Preview cancelled', 'error', 'preview');
-        setStage('idle');
+        if (isCurrentRun) setStage('idle');
+      } else if (!isCurrentRun) {
+        return;
       } else if (result.ok || result.exitCode === 0) {
         setPreviewTimeline((prev) =>
           prev.map((s) =>
@@ -286,9 +306,20 @@ export function OptimizePage() {
         setStage('preview-results');
       }
     } catch (error) {
+      if (cancelledRunIdsRef.current.has(runId)) {
+        if (activeRunRef.current?.id === runId) setStage('idle');
+        return;
+      }
+      if (activeRunRef.current?.id !== runId) {
+        return;
+      }
       addLog(`Error: ${error}`, 'error', 'preview');
       setStage('preview-results');
     } finally {
+      if (activeRunRef.current?.id === runId) {
+        activeRunRef.current = null;
+      }
+      cancelledRunIdsRef.current.delete(runId);
       window.moleDesktop.optimize.removeListeners();
     }
   };
@@ -296,6 +327,9 @@ export function OptimizePage() {
   // ─── Real optimization ───────────────────────────────────────────────────────
 
   const startOptimization = async () => {
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
+    activeRunRef.current = { id: runId, context: 'main' };
     setStage('optimizing');
     setLogs([]);
     setTimeline([]);
@@ -313,10 +347,13 @@ export function OptimizePage() {
 
     try {
       const result = await window.moleDesktop.optimize.execute({ dryRun: false });
+      const isCurrentRun = activeRunRef.current?.id === runId;
 
-      if (result.killed) {
+      if (cancelledRunIdsRef.current.has(runId) || result.killed) {
         addLog('Optimization was cancelled', 'error');
-        setStage('idle');
+        if (isCurrentRun) setStage('idle');
+      } else if (!isCurrentRun) {
+        return;
       } else if (result.ok) {
         setTimeline((prev) =>
           prev.map((s) =>
@@ -330,9 +367,20 @@ export function OptimizePage() {
         setStage('error');
       }
     } catch (error) {
+      if (cancelledRunIdsRef.current.has(runId)) {
+        if (activeRunRef.current?.id === runId) setStage('idle');
+        return;
+      }
+      if (activeRunRef.current?.id !== runId) {
+        return;
+      }
       addLog(`Error: ${error}`, 'error');
       setStage('error');
     } finally {
+      if (activeRunRef.current?.id === runId) {
+        activeRunRef.current = null;
+      }
+      cancelledRunIdsRef.current.delete(runId);
       window.moleDesktop.optimize.removeListeners();
     }
   };

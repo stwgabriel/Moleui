@@ -20,6 +20,8 @@ import type { PageId, SystemMetrics } from '@/types';
 import { getMyMacMetrics, setMyMacMetrics } from '@/utils/storage';
 
 const MAX_HISTORY = 30;
+const MAX_BATTERY_HISTORY = 360;
+const BATTERY_SAMPLE_INTERVAL = 60_000;
 const PROCESS_MENU_WIDTH = 232;
 const PROCESS_MENU_HEIGHT = 276;
 const PROCESS_MENU_MARGIN = 8;
@@ -33,6 +35,13 @@ interface HistoryPoint {
   tx: number;
   gpu: number;
   battery: number | null;
+}
+
+interface BatteryHistoryPoint {
+  t: number;
+  battery: number;
+  status: string;
+  timeLeft?: string;
 }
 
 interface MyMacPageProps {
@@ -156,6 +165,80 @@ function makeHistoryPoint(metrics: SystemMetrics, t: number): HistoryPoint {
   };
 }
 
+function trimHistory<T>(history: T[], maxLength: number): T[] {
+  return history.length > maxLength ? history.slice(history.length - maxLength) : history;
+}
+
+function makeBatteryHistoryPoint(metrics: SystemMetrics, t: number): BatteryHistoryPoint | null {
+  const battery = metrics.batteries?.[0];
+  const percent = getBatteryPercent(metrics);
+  if (!battery || percent == null) return null;
+
+  return {
+    t,
+    battery: percent,
+    status: battery.status || 'Unknown',
+    timeLeft: battery.time_left,
+  };
+}
+
+function isBatteryDraining(status: string): boolean {
+  return status.toLowerCase().includes('discharging');
+}
+
+function appendBatteryHistory(history: BatteryHistoryPoint[], metrics: SystemMetrics, t: number): BatteryHistoryPoint[] {
+  const point = makeBatteryHistoryPoint(metrics, t);
+  if (!point) return history;
+
+  const previous = history[history.length - 1];
+  if (!previous) return [point];
+
+  const percentDropped = point.battery < previous.battery;
+  const statusChanged = point.status !== previous.status;
+  const sampleDue = t - previous.t >= BATTERY_SAMPLE_INTERVAL;
+  const draining = isBatteryDraining(point.status) || percentDropped;
+
+  if (!draining && !statusChanged) return history;
+  if (!percentDropped && !statusChanged && !sampleDue) return history;
+
+  return trimHistory([...history, point], MAX_BATTERY_HISTORY);
+}
+
+function parseHistory(value?: string): HistoryPoint[] {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((point): point is HistoryPoint => (
+      typeof point === 'object' &&
+      point !== null &&
+      typeof (point as HistoryPoint).t === 'number' &&
+      typeof (point as HistoryPoint).cpu === 'number'
+    ));
+  } catch {
+    return [];
+  }
+}
+
+function parseBatteryHistory(value?: string): BatteryHistoryPoint[] {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return trimHistory(parsed.filter((point): point is BatteryHistoryPoint => (
+      typeof point === 'object' &&
+      point !== null &&
+      typeof (point as BatteryHistoryPoint).t === 'number' &&
+      typeof (point as BatteryHistoryPoint).battery === 'number' &&
+      typeof (point as BatteryHistoryPoint).status === 'string'
+    )), MAX_BATTERY_HISTORY);
+  } catch {
+    return [];
+  }
+}
+
 function getRenderableHistory(metrics: SystemMetrics | null, history: HistoryPoint[]): HistoryPoint[] {
   if (history.length >= 2) return history;
   if (!metrics) return [];
@@ -168,15 +251,31 @@ function getRenderableHistory(metrics: SystemMetrics | null, history: HistoryPoi
   ];
 }
 
+function getRenderableBatteryHistory(metrics: SystemMetrics | null, history: BatteryHistoryPoint[]): BatteryHistoryPoint[] {
+  if (history.length >= 2) return history;
+
+  const current = metrics ? makeBatteryHistoryPoint(metrics, Date.now()) : null;
+  if (!current) return history;
+  if (history.length === 1) return [history[0], current];
+
+  return [
+    { ...current, t: current.t - 2000 },
+    current,
+  ];
+}
+
 
 export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [batteryHistory, setBatteryHistory] = useState<BatteryHistoryPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh] = useState(true);
   const [pinnedPids, setPinnedPids] = useState<number[]>([]);
   const [processSort, setProcessSort] = useState<ProcessSort>({ key: 'cpu', direction: 'desc' });
   const [processMenu, setProcessMenu] = useState<ProcessMenuState | null>(null);
+  const historyRef = useRef<HistoryPoint[]>([]);
+  const batteryHistoryRef = useRef<BatteryHistoryPoint[]>([]);
   const mountedRef = useRef(true);
 
   const fetchMetrics = useCallback(async (isInitial = false) => {
@@ -198,13 +297,17 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
       const data = JSON.parse(result.stdout) as SystemMetrics;
 
       if (mountedRef.current) {
+        const now = Date.now();
+        const nextHistory = trimHistory([...historyRef.current, makeHistoryPoint(data, now)], MAX_HISTORY);
+        const nextBatteryHistory = appendBatteryHistory(batteryHistoryRef.current, data, now);
+
+        historyRef.current = nextHistory;
+        batteryHistoryRef.current = nextBatteryHistory;
+
         setMetrics(data);
-        setHistory(prev => {
-          const point = makeHistoryPoint(data, Date.now());
-          const next = [...prev, point];
-          return next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next;
-        });
-        await setMyMacMetrics(JSON.stringify(data), JSON.stringify(data.cpu.usage), '[]');
+        setHistory(nextHistory);
+        setBatteryHistory(nextBatteryHistory);
+        await setMyMacMetrics(JSON.stringify(data), JSON.stringify(nextHistory), JSON.stringify(nextBatteryHistory));
       }
     } catch (err) {
       if (mountedRef.current) {
@@ -221,9 +324,18 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
       const cached = await getMyMacMetrics();
       if (cached && mountedRef.current) {
         try {
-          const cachedMetrics = JSON.parse(cached.metrics);
-          setMetrics(cachedMetrics);
-          setHistory(getRenderableHistory(cachedMetrics, []));
+          const cachedBatteryHistory = parseBatteryHistory(cached.batteryHistory);
+          batteryHistoryRef.current = cachedBatteryHistory;
+          setBatteryHistory(cachedBatteryHistory);
+
+          if (Date.now() - cached.timestamp <= 60000) {
+            const cachedMetrics = JSON.parse(cached.metrics) as SystemMetrics;
+            const cachedHistory = parseHistory(cached.history);
+
+            historyRef.current = cachedHistory;
+            setMetrics(cachedMetrics);
+            setHistory(cachedHistory.length > 0 ? cachedHistory : getRenderableHistory(cachedMetrics, []));
+          }
         } catch {
           console.error('Failed to parse cached metrics');
         }
@@ -344,6 +456,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const battery = metrics?.batteries?.[0];
   const batteryPercent = metrics ? getBatteryPercent(metrics) : null;
   const chartHistory = getRenderableHistory(metrics, history);
+  const batteryChartHistory = getRenderableBatteryHistory(metrics, batteryHistory);
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
@@ -433,15 +546,14 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
             {/* Processor - Row 1, Col 2 */}
             <Card className={`min-h-36 col-start-2 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-              <div className="flex flex-col h-full">
-                <div className="flex items-center justify-between mb-1">
+              <div className="flex h-full flex-col">
+                <div className="flex items-start justify-between gap-3">
                   <div className="text-xl font-bold text-slate-950">Processor</div>
                   <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.cpu.usage) }}>
                     {metrics.cpu.usage.toFixed(0)}%
                   </div>
                 </div>
-                <div className="text-xs font-medium text-slate-500 mb-2">{metrics.cpu.core_count} cores</div>
-                <div className="h-24 min-h-0">
+                <div className="min-h-0 flex-1 py-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                       <defs>
@@ -472,20 +584,23 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
+                <div className="mt-auto flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
+                  <span>{metrics.cpu.core_count} cores</span>
+                  <span className="tabular-nums">Load {metrics.cpu.load1.toFixed(2)}</span>
+                </div>
               </div>
             </Card>
 
             {/* GPU - Row 2, Col 2 */}
             <Card className={`min-h-36 col-start-2 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-              <div className="flex flex-col h-full">
-                <div className="flex items-center justify-between mb-1">
+              <div className="flex h-full flex-col">
+                <div className="flex items-start justify-between gap-3">
                   <div className="text-xl font-bold text-slate-950">GPU</div>
                   <div className="text-sm font-semibold" style={{ color: gpuUsage == null ? '#64748b' : getHeatColor(gpuUsage) }}>
                     {gpuUsage == null ? '—' : `${gpuUsage.toFixed(0)}%`}
                   </div>
                 </div>
-                <div className="text-xs font-medium text-slate-500 mb-2 truncate">{metrics.gpu?.[0]?.name || 'Apple GPU'}</div>
-                <div className="h-24 min-h-0">
+                <div className="min-h-0 flex-1 py-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                       <defs>
@@ -517,9 +632,9 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-1 flex items-center justify-between gap-2 text-xs font-medium text-slate-500">
-                  <span>Temp {gpuTemperature}</span>
-                  <span>{gpuUsage == null ? 'Usage unavailable' : `${gpuUsage.toFixed(0)}% usage`}</span>
+                <div className="mt-auto flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
+                  <span className="min-w-0 truncate">{metrics.gpu?.[0]?.name || 'Apple GPU'}</span>
+                  <span className="shrink-0">Temp {gpuTemperature}</span>
                 </div>
               </div>
             </Card>
@@ -562,9 +677,14 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 col-start-3 row-start-1">
               {/* RAM */}
               <Card className={`min-h-44 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-                <div className="flex flex-col h-full">
-                  <div className="text-xl font-bold text-slate-950 mb-1">RAM</div>
-                  <div className="relative flex h-28 min-h-0 items-center justify-center">
+                <div className="flex h-full flex-col">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-xl font-bold text-slate-950">RAM</div>
+                    <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.memory.used_percent) }}>
+                      {metrics.memory.used_percent.toFixed(0)}%
+                    </div>
+                  </div>
+                  <div className="relative flex min-h-0 flex-1 items-center justify-center py-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -592,10 +712,10 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                       <span className="text-base font-bold text-slate-950 leading-none">{metrics.memory.used_percent.toFixed(0)}%</span>
                     </div>
                   </div>
-                  <div className="mt-1 space-y-0.5">
-                    <div className="text-xs font-medium text-slate-500 text-center">{formatBytes(metrics.memory.used)} / {formatBytes(metrics.memory.total)}</div>
+                  <div className="mt-auto space-y-0.5 text-center">
+                    <div className="text-xs font-medium text-slate-500">{formatBytes(metrics.memory.used)} / {formatBytes(metrics.memory.total)}</div>
                     {metrics.memory.swap_total != null && metrics.memory.swap_total > 0 && (
-                      <div className="text-xs text-amber-500 text-center">
+                      <div className="text-xs font-medium text-amber-500">
                         swap {formatBytes(metrics.memory.swap_used ?? 0)}
                       </div>
                     )}
@@ -604,9 +724,14 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               </Card>
               {/* Storage */}
               <Card className={`min-h-44 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-                <div className="flex flex-col h-full">
-                  <div className="text-xl font-bold text-slate-950 mb-1">Storage</div>
-                  <div className="relative flex h-28 min-h-0 items-center justify-center">
+                <div className="flex h-full flex-col">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-xl font-bold text-slate-950">Storage</div>
+                    <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.disks?.[0]?.used_percent ?? 0) }}>
+                      {(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%
+                    </div>
+                  </div>
+                  <div className="relative flex min-h-0 flex-1 items-center justify-center py-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -633,8 +758,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                       <span className="text-base font-bold text-slate-950 leading-none">{(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%</span>
                     </div>
                   </div>
-                  <div className="mt-1">
-                    <div className="text-xs font-medium text-slate-500 text-center">{formatBytes(metrics.disks?.[0]?.used || 0)} / {formatBytes(metrics.disks?.[0]?.total || 0)}</div>
+                  <div className="mt-auto text-center">
+                    <div className="text-xs font-medium text-slate-500">{formatBytes(metrics.disks?.[0]?.used || 0)} / {formatBytes(metrics.disks?.[0]?.total || 0)}</div>
                   </div>
                 </div>
               </Card>
@@ -643,17 +768,13 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             {/* Network + Battery - Row 2, Col 3 */}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 col-start-3 row-start-2">
               <Card className={`min-h-36 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-                <div className="flex flex-col h-full">
-                  <div className="mb-2">
+                <div className="flex h-full flex-col">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="text-xl font-bold text-slate-950">Network</div>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-blue-500">↓ {networkTotals.rx.toFixed(2)} MB/s</span>
-                      <span className="text-xs font-medium text-emerald-500">↑ {networkTotals.tx.toFixed(2)} MB/s</span>
-                    </div>
                   </div>
-                  <div className="h-20 min-h-0">
+                  <div className="min-h-0 flex-1 py-2">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                      <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                         <defs>
                           <linearGradient id="rxGrad" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -680,16 +801,19 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
+                  <div className="mt-auto flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-blue-500">↓ {networkTotals.rx.toFixed(2)} MB/s</span>
+                    <span className="text-xs font-medium text-emerald-500">↑ {networkTotals.tx.toFixed(2)} MB/s</span>
+                  </div>
                 </div>
               </Card>
               <Card className={`min-h-36 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
                 <div className="flex h-full flex-col">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="text-xl font-bold text-slate-950">Battery</div>
                     <div className="text-sm font-semibold text-emerald-500">{batteryPercent == null ? '—' : `${batteryPercent.toFixed(0)}%`}</div>
                   </div>
-                  <div className="mt-1 text-xs font-medium text-slate-500">{formatBatteryDischargeLabel(battery)}</div>
-                  <div className="mt-2 h-20 min-h-0">
+                  <div className="min-h-0 flex-1 py-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                         <defs>
@@ -700,13 +824,15 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                         </defs>
                         <YAxis domain={[0, 100]} hide />
                         <Tooltip
-                          content={({ active, payload }) =>
-                            active && payload?.length && payload[0]?.value != null ? (
-                              <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md backdrop-blur-xl">
-                                {(payload[0].value as number).toFixed(0)}% battery
+                          content={({ active, payload }) => {
+                            const point = payload?.[0]?.payload as BatteryHistoryPoint | undefined;
+                            return active && payload?.length && payload[0]?.value != null ? (
+                              <div className="space-y-0.5 rounded-lg border border-white/70 bg-white/80 px-2 py-1 text-xs shadow-md backdrop-blur-xl">
+                                <div>{(payload[0].value as number).toFixed(0)}% battery</div>
+                                {point && <div className="text-slate-500">{point.status} · {new Date(point.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
                               </div>
-                            ) : null
-                          }
+                            ) : null;
+                          }}
                         />
                         <Area
                           type="monotone"
@@ -721,9 +847,9 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="mt-1 grid grid-cols-2 gap-2 text-xs font-medium text-slate-500">
-                    <div className="truncate">Time {formatBatteryTimeLeft(battery?.time_left)}</div>
-                    <div className="truncate text-right">{battery?.cycle_count ?? '—'} cycles</div>
+                  <div className="mt-auto grid grid-cols-2 gap-2 text-xs font-medium text-slate-500">
+                    <div className="truncate">{formatBatteryDischargeLabel(battery)}</div>
+                    <div className="truncate text-right">{batteryHistory.length > 0 ? `${batteryHistory.length} saved` : `${battery?.cycle_count ?? '—'} cycles`}</div>
                   </div>
                 </div>
               </Card>

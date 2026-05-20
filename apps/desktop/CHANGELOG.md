@@ -1,5 +1,19 @@
 # Desktop App Changelog
 
+## [0.8.0] - 2026-05-19
+
+### Added
+- Added support for custom clean command options (`clean`, `purge`, `installer`) via the IPC bridge.
+- Added interactive orbiting visualizers and dynamic card pulsing animations for the Clean page.
+
+### Changed
+- Redesigned the Clean page results section to support detailed file-group items inspection and action routing.
+- Tweaked font spacing, sizes, and layout constraints on the Start Screen.
+- Switched My Mac storage cache schema to use network/battery metrics and unified histories.
+
+### Fixed
+- Fixed Optimize page execution logic to track execution runs by unique ID, preventing race conditions when cancelling.
+
 ## [0.7.1] - 2026-05-19
 
 ### Added

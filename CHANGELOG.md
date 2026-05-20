@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.42.0] - 2026-05-19
+
+### Added
+- Added non-privileged Apple GPU utilization parsing via `ioreg` as the primary metrics source with fallback to `powermetrics`.
+- Added support for `--all` (select all found installers) and `--yes` / `-y` (skip confirmation prompt) CLI flags to the installer subcommand.
+
+### Changed
+- Improved installer safety by checking for a TTY stdin before asking for confirmation in non-interactive environments.
+- Optimized Apple GPU usage caching TTL down to 1 second and set active collection timeout to 600ms.
+
+### Fixed
+- Fixed Optimize page flow by refactoring run IDs and user cancellation mechanics to avoid UI state races.
+
 ## [1.41.1] - 2026-05-19
 
 ### Added

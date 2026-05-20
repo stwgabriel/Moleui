@@ -5,6 +5,15 @@ const HAS_SEEN_HOME_PAGE = 'mole-has-seen-home-page';
 const PREFERRED_PAGE = 'mole-preferred-page';
 const MY_MAC_METRICS = 'mole-my-mac-metrics';
 
+export interface MyMacMetricsCache {
+  metrics: string;
+  history?: string;
+  batteryHistory?: string;
+  cpuHistory?: string;
+  memoryHistory?: string;
+  timestamp: number;
+}
+
 export async function hasSeenHomePage(): Promise<boolean> {
   try {
     return localStorage.getItem(HAS_SEEN_HOME_PAGE) === 'true';
@@ -39,12 +48,12 @@ export async function setPreferredPage(page: string): Promise<void> {
   }
 }
 
-export async function getMyMacMetrics(): Promise<{ metrics: string; cpuHistory: string; memoryHistory: string; timestamp: number } | null> {
+export async function getMyMacMetrics(): Promise<MyMacMetricsCache | null> {
   try {
     const data = localStorage.getItem(MY_MAC_METRICS);
     if (!data) return null;
-    const parsed = JSON.parse(data);
-    if (Date.now() - parsed.timestamp > 60000) return null;
+    const parsed = JSON.parse(data) as MyMacMetricsCache;
+    if (!parsed.metrics || typeof parsed.timestamp !== 'number') return null;
     return parsed;
   } catch (error) {
     console.error('Failed to read MyMac metrics from localStorage:', error);
@@ -52,12 +61,12 @@ export async function getMyMacMetrics(): Promise<{ metrics: string; cpuHistory: 
   }
 }
 
-export async function setMyMacMetrics(metrics: string, cpuHistory: string, memoryHistory: string): Promise<void> {
+export async function setMyMacMetrics(metrics: string, history: string, batteryHistory: string): Promise<void> {
   try {
     localStorage.setItem(MY_MAC_METRICS, JSON.stringify({
       metrics,
-      cpuHistory,
-      memoryHistory,
+      history,
+      batteryHistory,
       timestamp: Date.now()
     }));
   } catch (error) {

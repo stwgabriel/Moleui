@@ -21,6 +21,8 @@ show_installer_help() {
     echo ""
     echo "Options:"
     echo "  --dry-run         Preview installer cleanup without making changes"
+    echo "  --all             Select all found installers"
+    echo "  --yes             Skip confirmation (intended for trusted UI callers)"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"
 }

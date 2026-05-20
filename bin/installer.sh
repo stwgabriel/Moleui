@@ -128,6 +128,8 @@ scan_all_installers() {
 # Initialize stats
 declare -i total_deleted=0
 declare -i total_size_freed_kb=0
+AUTO_SELECT_ALL=false
+ASSUME_YES=false
 
 # Global arrays for installer data
 declare -a INSTALLER_PATHS=()
@@ -518,6 +520,16 @@ show_installer_menu() {
         return 1
     fi
 
+    if [[ "$AUTO_SELECT_ALL" == "true" ]]; then
+        MOLE_SELECTION_RESULT=""
+        local idx
+        for idx in "${!DISPLAY_NAMES[@]}"; do
+            [[ -n "$MOLE_SELECTION_RESULT" ]] && MOLE_SELECTION_RESULT+=","
+            MOLE_SELECTION_RESULT+="$idx"
+        done
+        return 0
+    fi
+
     echo ""
 
     MOLE_SELECTION_RESULT=""
@@ -560,23 +572,29 @@ delete_selected_installers() {
         fi
     done
 
-    # Confirm deletion
-    echo ""
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} Delete ${#selected_indices[@]} installers, ${confirm_human}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+    # Confirm deletion unless explicitly approved by the caller.
+    if [[ "$ASSUME_YES" != "true" ]]; then
+        if [[ ! -t 0 ]]; then
+            return 1
+        fi
 
-    IFS= read -r -s -n1 confirm || confirm=""
-    case "$confirm" in
-        $'\e' | q | Q)
-            return 1
-            ;;
-        "" | $'\n' | $'\r')
-            printf "\r\033[K" # Clear prompt line
-            echo ""           # Single line break
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+        echo ""
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} Delete ${#selected_indices[@]} installers, ${confirm_human}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+
+        IFS= read -r -s -n1 confirm || confirm=""
+        case "$confirm" in
+            $'\e' | q | Q)
+                return 1
+                ;;
+            "" | $'\n' | $'\r')
+                printf "\r\033[K" # Clear prompt line
+                echo ""           # Single line break
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    fi
 
     # Delete each selected installer with spinner
     total_deleted=0
@@ -696,6 +714,12 @@ main() {
                 ;;
             "--dry-run" | "-n")
                 export MOLE_DRY_RUN=1
+                ;;
+            "--all")
+                AUTO_SELECT_ALL=true
+                ;;
+            "--yes" | "-y")
+                ASSUME_YES=true
                 ;;
             *)
                 echo "Unknown option: $arg"

@@ -1,52 +1,58 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CleanPage } from './CleanPage';
 
-const categories = [
+const groups = [
   {
-    section: 'Developer tools',
-    name: 'Developer Tools',
-    icon: 'Code',
-    color: '#ec4899',
-    size: 3 * 1024 * 1024 * 1024,
-    fileCount: 42,
-    items: ['npm cache, 1.5 GB'],
-    cleanable: true,
-    scanned: true,
-  },
-  {
-    section: 'App caches',
-    name: 'App Caches',
-    icon: 'Package',
-    color: '#06b6d4',
-    size: 700 * 1024 * 1024,
-    fileCount: 18,
-    items: ['Slack cache, 700 MB'],
-    cleanable: true,
-    scanned: true,
-  },
-  {
-    section: 'Browsers',
-    name: 'Browser Data',
-    icon: 'Globe',
-    color: '#10b981',
+    id: 'system',
+    name: 'System',
+    subtitle: 'System, user, Apple, firmware and Time Machine cleanup',
+    command: 'clean',
+    sections: ['System'],
+    color: '#3b82f6',
+    tint: 'bg-violet-100 text-violet-600 shadow-violet-200/70',
+    icon: 'system',
     size: 1024 * 1024 * 1024,
-    fileCount: 27,
-    items: ['Chrome cache, 1 GB'],
-    cleanable: true,
-    scanned: true,
+    fileCount: 2,
+    items: [
+      {
+        id: 'system-1',
+        label: 'System cache, 1 GB',
+        size: 1024 * 1024 * 1024,
+        sourceLine: 'System cache, 1 GB',
+        selected: true,
+      },
+    ],
+    logs: [],
+    status: 'ready',
+    selected: true,
+    expanded: true,
   },
   {
-    section: 'Applications',
-    name: 'Applications',
-    icon: 'AppWindow',
-    color: '#f97316',
-    size: 0,
-    fileCount: 0,
-    items: ['No cleanable files found in this section.'],
-    cleanable: false,
-    scanned: true,
+    id: 'apps',
+    name: 'Application Junk',
+    subtitle: 'Browsers, cloud apps, GUI apps, app support and leftovers',
+    command: 'clean',
+    sections: ['Browsers'],
+    color: '#a855f7',
+    tint: 'bg-blue-100 text-blue-500 shadow-blue-200/70',
+    icon: 'apps',
+    size: 512 * 1024 * 1024,
+    fileCount: 1,
+    items: [
+      {
+        id: 'apps-1',
+        label: 'Chrome cache, 512 MB',
+        size: 512 * 1024 * 1024,
+        sourceLine: 'Chrome cache, 512 MB',
+        selected: true,
+      },
+    ],
+    logs: [],
+    status: 'ready',
+    selected: true,
+    expanded: false,
   },
-];
+] as const;
 
 function mockLocalStorage() {
   const storage = new Map<string, string>();
@@ -67,15 +73,8 @@ function mockLocalStorage() {
 
 function seedCleanResults() {
   localStorage.setItem('mole-clean-stage', JSON.stringify('results'));
-  localStorage.setItem('mole-clean-categories', JSON.stringify(categories));
-  localStorage.setItem(
-    'mole-clean-selected-sections',
-    JSON.stringify(categories.filter((category) => category.cleanable).map((category) => category.section)),
-  );
-  localStorage.setItem('mole-clean-total-size', JSON.stringify(categories.reduce((sum, category) => sum + category.size, 0)));
+  localStorage.setItem('mole-clean-groups', JSON.stringify(groups));
   localStorage.setItem('mole-clean-cleaned-size', JSON.stringify(0));
-  localStorage.setItem('mole-clean-expanded-sections', JSON.stringify([]));
-  localStorage.setItem('mole-clean-sort-by', JSON.stringify('size'));
 }
 
 function mockMoleDesktop() {
@@ -128,10 +127,6 @@ function mockMoleDesktop() {
   };
 }
 
-function visibleSectionNames() {
-  return screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent);
-}
-
 describe('CleanPage', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
@@ -141,25 +136,43 @@ describe('CleanPage', () => {
     seedCleanResults();
   });
 
-  it('sorts scan results by size and name', () => {
+  it('shows grouped cleanup results', () => {
     render(<CleanPage />);
 
-    expect(visibleSectionNames()).toEqual(['Developer Tools', 'Browser Data', 'App Caches', 'Applications']);
-
-    fireEvent.change(screen.getByLabelText('Sort cleanup sections'), { target: { value: 'name' } });
-
-    expect(visibleSectionNames()).toEqual(['App Caches', 'Applications', 'Browser Data', 'Developer Tools']);
+    expect(screen.getByText('Review junk before cleaning')).toBeInTheDocument();
+    expect(screen.queryByText('Smart Cleanup')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'System' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Application Junk' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /start cleaning 1\.5 GB/i })).toBeInTheDocument();
   });
 
-  it('returns to the start screen when stopping a stale scan', async () => {
-    localStorage.setItem('mole-clean-stage', JSON.stringify('scanning'));
+  it('scans every cleanup section exposed by the cleanup CLI', async () => {
+    localStorage.clear();
+    vi.mocked(window.moleDesktop.clean.execute).mockResolvedValue({ ok: true, stdout: '', stderr: '' } as any);
+
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /scan for junk/i }));
+
+    await waitFor(() => expect(window.moleDesktop.clean.execute).toHaveBeenCalled());
+
+    const cleanDryRunCalls = vi.mocked(window.moleDesktop.clean.execute).mock.calls
+      .map(([options]) => options)
+      .filter((options) => options.command === 'clean' && options.dryRun);
+    const scannedSections = cleanDryRunCalls.flatMap((options) => options.sections ?? []);
+
+    expect(scannedSections).toEqual(expect.arrayContaining(['Large files', 'System Data clues', 'Project artifacts']));
+  });
+
+  it('returns to the start screen when stopping analysis', async () => {
+    localStorage.setItem('mole-clean-stage', JSON.stringify('analyzing'));
     vi.mocked(window.moleDesktop.clean.kill).mockResolvedValue({ ok: false } as any);
 
     render(<CleanPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /stop scan/i }));
+    fireEvent.click(screen.getByRole('button', { name: /stop/i }));
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /start cleaning/i })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /scan for junk/i })).toBeInTheDocument());
     expect(window.moleDesktop.clean.kill).toHaveBeenCalledOnce();
     expect(window.moleDesktop.clean.removeListeners).toHaveBeenCalled();
   });
@@ -169,28 +182,18 @@ describe('CleanPage', () => {
 
     render(<CleanPage />);
 
-    expect(screen.getByRole('button', { name: /start cleaning/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /scan for junk/i })).toBeInTheDocument();
   });
 
-  it('ignores corrupt recovered cleanup results instead of crashing', () => {
-    localStorage.setItem('mole-clean-categories', JSON.stringify(null));
-    localStorage.setItem('mole-clean-selected-sections', JSON.stringify(null));
-
-    render(<CleanPage />);
-
-    expect(screen.getByText('Scan Results')).toBeInTheDocument();
-    expect(screen.getByText(/Found 4\.68 GB of cleanable data/)).toBeInTheDocument();
-  });
-
-  it('returns to results when stopping a stale cleanup', async () => {
+  it('returns to results when stopping cleanup', async () => {
     localStorage.setItem('mole-clean-stage', JSON.stringify('cleaning'));
     vi.mocked(window.moleDesktop.clean.kill).mockResolvedValue({ ok: false } as any);
 
     render(<CleanPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /stop cleaning/i }));
+    fireEvent.click(screen.getByRole('button', { name: /stop/i }));
 
-    await waitFor(() => expect(screen.getByText('Scan Results')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /start cleaning 1\.5 GB/i })).toBeInTheDocument());
     expect(window.moleDesktop.clean.kill).toHaveBeenCalledOnce();
     expect(window.moleDesktop.clean.removeListeners).toHaveBeenCalled();
   });

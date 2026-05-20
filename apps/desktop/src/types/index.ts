@@ -34,7 +34,7 @@ export interface MoleDesktopAPI {
     removeListeners: () => void;
   };
   clean: {
-    execute: (options: { dryRun: boolean; sections?: string[] }) => Promise<MoleResult>;
+    execute: (options: { dryRun: boolean; sections?: string[]; command?: 'clean' | 'purge' | 'installer'; all?: boolean }) => Promise<MoleResult>;
     kill: () => Promise<MoleResult>;
     onStdout: (callback: (data: string) => void) => void;
     onStderr: (callback: (data: string) => void) => void;

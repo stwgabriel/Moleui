@@ -200,10 +200,10 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
 
         <div className="relative mx-auto grid h-full max-w-[1540px] grid-cols-[minmax(360px,0.9fr)_minmax(360px,1.1fr)] grid-rows-[minmax(0,1fr)_auto] gap-x-10 px-[5.5%] pb-8 pt-[clamp(5.25rem,9vh,7rem)]">
           <section className="min-w-0">
-            <h1 className="text-[clamp(3.25rem,4.2vw,4.45rem)] font-black leading-[0.92] tracking-[-0.06em] text-slate-950 drop-shadow-[0_3px_0_rgba(255,255,255,0.85)]">
+            <h1 className="text-[clamp(3rem,4vw,4.2rem)] font-black leading-[0.96] tracking-normal text-slate-950 drop-shadow-[0_3px_0_rgba(255,255,255,0.85)]">
               {config.title}
             </h1>
-            <p className="mt-[clamp(1.25rem,3vh,2.25rem)] max-w-[29rem] text-[clamp(1.05rem,1.25vw,1.28rem)] font-medium leading-[1.58] tracking-[-0.035em] text-slate-600">
+            <p className="mt-[clamp(1.25rem,3vh,2.25rem)] max-w-[29rem] text-[clamp(1.05rem,1.25vw,1.28rem)] font-medium leading-[1.58] tracking-normal text-slate-600">
               {config.description}
             </p>
 
@@ -216,8 +216,8 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
                       {ItemIcon && <ItemIcon className="h-[clamp(1.55rem,2.3vw,2rem)] w-[clamp(1.55rem,2.3vw,2rem)]" style={{ color: featureTheme.accent }} strokeWidth={1.9} aria-hidden="true" />}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-[clamp(1.05rem,1.35vw,1.35rem)] font-black leading-none tracking-[-0.04em] text-slate-950">{item.title}</h3>
-                      <p className="mt-[clamp(0.45rem,1vh,0.75rem)] text-[clamp(0.85rem,1vw,1rem)] font-medium leading-[1.22] tracking-[-0.035em] text-slate-500">{item.description}</p>
+                      <h3 className="text-[clamp(1.05rem,1.35vw,1.35rem)] font-black leading-none tracking-normal text-slate-950">{item.title}</h3>
+                      <p className="mt-[clamp(0.45rem,1vh,0.75rem)] text-[clamp(0.85rem,1vw,1rem)] font-medium leading-[1.22] tracking-normal text-slate-500">{item.description}</p>
                     </div>
                   </div>
                 );
@@ -256,7 +256,7 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
             <img
               src="./assets/images/start-here-bg.png"
               alt="Start here"
-              className="absolute -top-[clamp(3rem,5.8vh,4.6rem)] left-[clamp(2rem,6vw,6rem)] w-[clamp(8.75rem,14vw,13rem)] object-contain"
+              className="pointer-events-none absolute top-0 left-[clamp(2rem,6vw,6rem)] w-[clamp(7.5rem,11vw,10.5rem)] object-contain"
               draggable={false}
             />
             <Button
@@ -264,11 +264,11 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
               onClick={onStart}
               icon={MainIcon}
               iconPosition="left"
-              className="h-[clamp(3.8rem,6vh,5rem)] min-w-[clamp(20rem,28vw,26rem)] rounded-[1.85rem] bg-[#6d4dfc] px-12 text-[clamp(1.25rem,1.65vw,1.65rem)] font-bold tracking-[-0.04em] shadow-[0_18px_34px_rgba(83,58,220,0.34)] hover:bg-[#5d3ff0]"
+              className="h-[clamp(3.8rem,6vh,5rem)] min-w-[clamp(20rem,28vw,26rem)] rounded-[1.85rem] bg-[#6d4dfc] px-12 text-[clamp(1.25rem,1.65vw,1.65rem)] font-bold tracking-normal shadow-[0_18px_34px_rgba(83,58,220,0.34)] hover:bg-[#5d3ff0]"
             >
               {config.buttonText}
             </Button>
-            <div className="flex items-center gap-3 text-[clamp(0.8rem,1vw,0.98rem)] font-semibold tracking-[-0.035em] text-slate-500">
+            <div className="flex items-center gap-3 text-[clamp(0.8rem,1vw,0.98rem)] font-semibold tracking-normal text-slate-500">
               <Icons.LockKeyhole className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
               {featureTheme.footerText}
             </div>

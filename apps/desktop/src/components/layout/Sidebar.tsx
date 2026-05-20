@@ -24,10 +24,10 @@ const NAV_ITEMS: Array<{
   activeClassName: string;
 }> = [
   { page: 'mymac', icon: Activity, label: 'My Mac', activeClassName: 'text-violet-600' },
-  { page: 'clean', icon: Sparkles, label: 'Clean', activeClassName: 'text-violet-600' },
-  { page: 'optimize', icon: Gauge, label: 'Performance', activeClassName: 'text-violet-600' },
+  { page: 'clean', icon: Sparkles, label: 'Cleanup', activeClassName: 'text-violet-600' },
+  { page: 'optimize', icon: Gauge, label: 'Optimize', activeClassName: 'text-violet-600' },
   { page: 'uninstall', icon: PackageX, label: 'Uninstall', activeClassName: 'text-violet-600' },
-  { page: 'analyze', icon: BarChart3, label: 'Analyze', activeClassName: 'text-violet-600' },
+  { page: 'analyze', icon: BarChart3, label: 'Storage', activeClassName: 'text-violet-600' },
 ];
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
