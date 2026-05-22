@@ -10,6 +10,8 @@
     "dev": "turbo run dev --parallel",
     "desktop:dev": "bun run --cwd apps/desktop dev",
     "desktop:build": "bun run --cwd apps/desktop dist",
+    "web:dev": "bun run --cwd apps/web dev",
+    "web:build": "bun run --cwd apps/web build",
     "lint": "turbo run lint",
     "test": "turbo run test"
   },

@@ -1417,6 +1417,11 @@ opt_login_items_audit() {
         return 0
     fi
 
+    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+        opt_msg "Login items audit would check for broken entries"
+        return 0
+    fi
+
     local items_output
     items_output=$(_login_items_snapshot 2> /dev/null || true)
 

@@ -83,6 +83,17 @@ parse_optimization_items() {
 show_optimization_summary() {
     local safe_count="${OPTIMIZE_SAFE_COUNT:-0}"
     if ((safe_count == 0)); then
+        if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+            print_summary_block \
+                "No Optimizations Found" \
+                "No changes would be applied" \
+                "System already optimized"
+        else
+            print_summary_block \
+                "No Optimizations Needed" \
+                "No optimization tasks were applied" \
+                "System already optimized"
+        fi
         return
     fi
 
@@ -160,6 +171,22 @@ show_system_health() {
         "$mem_used" "$mem_total" "$disk_used" "$disk_total" "$uptime"
 }
 
+task_is_selected() {
+    local name="$1"
+    shift || true
+
+    if [[ $# -eq 0 ]]; then
+        return 0
+    fi
+
+    local selected
+    for selected in "$@"; do
+        [[ "$name" == "$selected" ]] && return 0
+    done
+
+    return 1
+}
+
 announce_action() {
     local name="$1"
     local desc="$2"
@@ -191,24 +218,39 @@ main() {
     export MOLE_CURRENT_COMMAND="optimize"
 
     local health_json
-    for arg in "$@"; do
-        case "$arg" in
+    local -a selected_tasks=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             "--help" | "-h")
                 show_optimize_help
                 exit 0
                 ;;
             "--debug")
                 export MO_DEBUG=1
+                shift
                 ;;
             "--dry-run")
                 export MOLE_DRY_RUN=1
+                shift
+                ;;
+            "--task")
+                if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                    echo "Missing task name after --task"
+                    exit 1
+                fi
+                selected_tasks+=("$2")
+                shift 2
+                ;;
+            --task=*)
+                selected_tasks+=("${1#--task=}")
+                shift
                 ;;
             "--whitelist")
                 manage_whitelist "optimize"
                 exit 0
                 ;;
             *)
-                echo "Unknown optimize option: $arg"
+                echo "Unknown optimize option: $1"
                 echo "Use 'mo optimize --help' for supported options."
                 exit 1
                 ;;
@@ -304,17 +346,24 @@ main() {
     fi
 
     export FIRST_ACTION=true
+    local safe_count=0
     for item in "${items[@]}"; do
         IFS='|' read -r name desc action path <<< "$item"
+        if ((${#selected_tasks[@]} > 0)) && ! task_is_selected "$name" "${selected_tasks[@]}"; then
+            continue
+        fi
         if command -v is_whitelisted > /dev/null && is_whitelisted "$action"; then
             opt_msg "Skipped (whitelisted): $name"
             continue
         fi
         announce_action "$name" "$desc" "safe"
         execute_optimization "$action" "$path"
+        safe_count=$((safe_count + 1))
     done
 
-    local safe_count=${#items[@]}
+    if [[ ${#selected_tasks[@]} -gt 0 && $safe_count -eq 0 ]]; then
+        opt_msg "No selected optimization tasks matched"
+    fi
 
     export OPTIMIZE_SAFE_COUNT=$safe_count
     export OPTIMIZE_CONFIRM_COUNT=0

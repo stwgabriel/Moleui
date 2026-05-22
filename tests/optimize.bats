@@ -753,6 +753,24 @@ EOF
 	[[ "$output" == *"Login Items Audit|login_items_audit|optimize_task"* ]]
 }
 
+@test "opt_login_items_audit skips AppleScript during dry-run" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+osascript() {
+    echo "UNEXPECTED_OSASCRIPT"
+    return 1
+}
+export -f osascript
+opt_login_items_audit
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Login items audit would check for broken entries"* ]]
+	[[ "$output" != *"UNEXPECTED_OSASCRIPT"* ]]
+}
+
 @test "_login_item_app_exists finds nested helper app bundles" {
 	local helper="$HOME/Applications/Roon.app/Contents/RoonServer.app"
 	mkdir -p "$helper"

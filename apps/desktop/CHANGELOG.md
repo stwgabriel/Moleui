@@ -2,6 +2,10 @@
 
 ## [0.9.1] - 2026-05-22
 
+### Changed
+- Refined Uninstall selection controls, scroll shadows, and refresh/select-all actions.
+- Refined Optimize progress indicators and Clean page copy/visual polish.
+
 ### Fixed
 - Fixed Storage page file and folder list row corners to match the parent list container.
 

@@ -34,6 +34,7 @@ show_optimize_help() {
     echo ""
     echo "Options:"
     echo "  --dry-run         Preview optimization without making changes"
+    echo "  --task NAME       Run only the named optimization task (repeatable)"
     echo "  --whitelist       Manage protected items"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"

@@ -2,8 +2,17 @@
 
 ## [1.43.1] - 2026-05-22
 
+### Added
+- Added repeatable `--task` filtering for `mo optimize` so specific optimization tasks can be run directly.
+- Added root web development and build scripts, with Turbo outputs configured for Next.js builds.
+
+### Changed
+- Refined desktop Uninstall selection controls, scroll shadows, and refresh/select-all actions.
+- Refined desktop Optimize progress indicators and Clean page copy/visual polish.
+
 ### Fixed
 - Fixed Storage page file and folder list row corners to match the parent list container.
+- Fixed optimize dry-runs to avoid invoking the login items AppleScript audit.
 
 ## [1.43.0] - 2026-05-20
 

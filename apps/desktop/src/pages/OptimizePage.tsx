@@ -751,6 +751,8 @@ export function OptimizePage() {
             {planSteps.map((step) => {
               const isActive = step.state === 'active';
               const isComplete = step.state === 'complete';
+              const hasLoadingRing = isActive && (step.title === 'Analyze' || step.title === 'Apply');
+              const hasPulseBackdrop = isActive && step.title === 'Tune';
               const StepIcon = step.icon;
 
               return (
@@ -765,14 +767,22 @@ export function OptimizePage() {
                         : 'border-white/62 bg-white/58 opacity-70'
                   } ${step.className}`}
                 >
-                  <span className={`flex h-[clamp(2rem,2.8vw,2.35rem)] w-[clamp(2rem,2.8vw,2.35rem)] shrink-0 items-center justify-center rounded-full text-[clamp(0.78rem,1vw,0.95rem)] font-black ${
-                    isActive
-                      ? 'bg-violet-600 text-white shadow-[0_8px_24px_rgba(109,93,252,0.35)]'
-                      : isComplete
-                        ? 'bg-emerald-50 text-emerald-500 shadow-[0_8px_20px_rgba(34,197,94,0.12)]'
-                      : 'bg-violet-100 text-violet-600 shadow-[0_8px_20px_rgba(109,93,252,0.16)]'
-                  }`}>
-                    {isComplete ? <Check className="h-[58%] w-[58%]" strokeWidth={3} /> : step.number}
+                  <span className="relative flex shrink-0 items-center justify-center">
+                    {hasPulseBackdrop && (
+                      <span className="absolute inset-[-0.45rem] rounded-full bg-violet-400/25 blur-sm animate-ping" aria-hidden="true" />
+                    )}
+                    {hasLoadingRing && (
+                      <span className="absolute inset-[-0.32rem] rounded-full border-2 border-violet-200/70 border-r-violet-500 border-t-violet-600 animate-spin" aria-hidden="true" />
+                    )}
+                    <span className={`relative z-10 flex h-[clamp(2rem,2.8vw,2.35rem)] w-[clamp(2rem,2.8vw,2.35rem)] items-center justify-center rounded-full text-[clamp(0.78rem,1vw,0.95rem)] font-black ${
+                      isActive
+                        ? 'bg-violet-600 text-white shadow-[0_8px_24px_rgba(109,93,252,0.35)]'
+                        : isComplete
+                          ? 'bg-emerald-50 text-emerald-500 shadow-[0_8px_20px_rgba(34,197,94,0.12)]'
+                        : 'bg-violet-100 text-violet-600 shadow-[0_8px_20px_rgba(109,93,252,0.16)]'
+                    }`}>
+                      {isComplete ? <Check className="h-[58%] w-[58%]" strokeWidth={3} /> : step.number}
+                    </span>
                   </span>
                   <div className="min-w-0">
                     <h3 className="flex items-center gap-2 truncate text-[clamp(1rem,1.35vw,1.18rem)] font-black leading-tight text-slate-700">
@@ -1105,7 +1115,7 @@ export function OptimizePage() {
               </Button>
               {stage === 'preview-results' && (
                 <Button variant="secondary" icon={RefreshCcw} onClick={startPreview} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-rose-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
-                  Preview Again
+                  Scan Again
                 </Button>
               )}
             </div>

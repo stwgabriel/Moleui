@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { 
-  CheckCircle, AlertTriangle, Loader, ArrowRight, X, Trash2,
-  Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, CheckSquare
+  CheckCircle, AlertTriangle, Loader, ArrowRight, ArrowLeft, X, Trash2,
+  Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, CheckSquare, RefreshCw, Square
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -36,6 +36,17 @@ const UNINSTALL_ACCENT_BG = 'pointer-events-none absolute inset-0 bg-[radial-gra
 const LIST_CARD = `relative overflow-hidden rounded-[1.5rem] p-4 ${SOFT_CARD}`;
 const PILL_INPUT = 'rounded-full border border-white/60 bg-white/45 text-slate-950 shadow-inner shadow-white/40 backdrop-blur-xl placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/35 focus:border-rose-300 transition-all';
 const MUTED_PILL = 'rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 backdrop-blur-xl';
+
+function getScrollShadows(element: HTMLDivElement | null) {
+  if (!element) return { top: false, bottom: false };
+
+  const hasOverflow = element.scrollHeight > element.clientHeight + 1;
+
+  return {
+    top: hasOverflow && element.scrollTop > 1,
+    bottom: hasOverflow && element.scrollTop + element.clientHeight < element.scrollHeight - 1,
+  };
+}
 
 function stripPersistedIcon(app: App) {
   if (!app.icon) return app;
@@ -142,9 +153,31 @@ export function UninstallPage() {
   
   const dryRunListRef = useRef<HTMLDivElement>(null);
   const executeListRef = useRef<HTMLDivElement>(null);
+  const appListRef = useRef<HTMLDivElement>(null);
   const scanCancelledRef = useRef(false);
   const iconLoadRunRef = useRef(0);
   const requestedIconsRef = useRef<Set<string>>(new Set());
+  const [appListShadows, setAppListShadows] = useState({ top: false, bottom: false });
+
+  useEffect(() => {
+    if (stage !== 'selection') {
+      setAppListShadows({ top: false, bottom: false });
+      return;
+    }
+
+    const updateShadows = () => {
+      const nextShadows = getScrollShadows(appListRef.current);
+      setAppListShadows(previousShadows => previousShadows.top === nextShadows.top && previousShadows.bottom === nextShadows.bottom ? previousShadows : nextShadows);
+    };
+
+    const frame = requestAnimationFrame(updateShadows);
+    window.addEventListener('resize', updateShadows);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updateShadows);
+    };
+  }, [stage, apps.length, searchQuery, sortBy]);
 
   useEffect(() => {
     if (stage === 'loading') {
@@ -738,6 +771,9 @@ export function UninstallPage() {
   if (stage === 'selection') {
     const filteredApps = getFilteredAndSortedApps();
     const filteredIndices = filteredApps.map(app => apps.indexOf(app));
+    const allAppsSelected = apps.length > 0 && selectedApps.size === apps.length;
+    const RefreshIcon = isRefreshingApps ? Loader : RefreshCw;
+    const SelectAllIcon = allAppsSelected ? Square : CheckSquare;
     
     return (
       <div className={UNINSTALL_SHELL}>
@@ -755,32 +791,13 @@ export function UninstallPage() {
             </div>
             <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
               <Button
-                variant="ghost"
-                icon={X}
+                variant="secondary"
+                icon={ArrowLeft}
                 onClick={reset}
                 size="sm"
-                className="rounded-full px-3 text-slate-500 hover:bg-red-500/10 hover:text-red-500"
+                className="rounded-full border border-white/70 bg-white/70 px-4 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white"
               >
-                Cancel
-              </Button>
-              <Button
-                variant="secondary"
-                icon={Search}
-                onClick={startScan}
-                disabled={isRefreshingApps}
-                size="sm"
-                className="rounded-full bg-white/45 px-4 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60"
-              >
-                {isRefreshingApps ? 'Refreshing...' : 'Scan Again'}
-              </Button>
-              <Button
-                variant="secondary"
-                icon={CheckSquare}
-                onClick={() => selectedApps.size === apps.length ? deselectAll() : selectAll()}
-                size="sm"
-                className="rounded-full bg-white/45 px-4 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60"
-              >
-                {selectedApps.size === apps.length ? 'Deselect All' : 'Select All'}
+                Back
               </Button>
               <Button
                 onClick={proceedToConfirmation}
@@ -795,7 +812,7 @@ export function UninstallPage() {
           </div>
 
           {/* Search and Sort Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
@@ -814,7 +831,26 @@ export function UninstallPage() {
                 </button>
               )}
             </div>
-            
+            <Button
+              variant="secondary"
+              icon={RefreshIcon}
+              onClick={startScan}
+              disabled={isRefreshingApps}
+              size="sm"
+              aria-label={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
+              title={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
+              className={`h-12 w-12 rounded-full bg-white/45 p-0 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60 [&_svg]:h-4 [&_svg]:w-4 ${isRefreshingApps ? '[&_svg]:animate-spin' : ''}`}
+            />
+            <Button
+              variant="secondary"
+              icon={SelectAllIcon}
+              onClick={() => allAppsSelected ? deselectAll() : selectAll()}
+              size="sm"
+              aria-label={allAppsSelected ? 'Deselect all applications' : 'Select all applications'}
+              title={allAppsSelected ? 'Deselect all' : 'Select all'}
+              className="h-12 w-12 rounded-full bg-white/45 p-0 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60 [&_svg]:h-4 [&_svg]:w-4"
+            />
+             
             <div className={`flex items-center gap-2 px-4 py-3 ${MUTED_PILL}`}>
               <ArrowUpDown className="w-4 h-4 text-slate-400" />
               <select
@@ -835,8 +871,16 @@ export function UninstallPage() {
           )}
         </div>
 
-        <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-auto">
-          {filteredApps.length === 0 ? (
+        <div className="relative flex-1 min-h-0 overflow-hidden rounded-[1.75rem] p-2">
+          <div
+            ref={appListRef}
+            onScroll={(event) => {
+              const nextShadows = getScrollShadows(event.currentTarget);
+              setAppListShadows(previousShadows => previousShadows.top === nextShadows.top && previousShadows.bottom === nextShadows.bottom ? previousShadows : nextShadows);
+            }}
+            className="h-full overflow-hidden overflow-y-auto rounded-[1rem] p-4 custom-scrollbar"
+          >
+            {filteredApps.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="p-4 rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 mb-4 backdrop-blur-xl">
                 <Search className="w-8 h-8 text-slate-400" />
@@ -848,7 +892,7 @@ export function UninstallPage() {
                 Try adjusting your search query
               </p>
             </div>
-          ) : (
+            ) : (
             <div className="space-y-2">
               {filteredApps.map((app, displayIndex) => {
                 const originalIndex = filteredIndices[displayIndex];
@@ -888,7 +932,12 @@ export function UninstallPage() {
                 );
               })}
             </div>
-          )}
+            )}
+          </div>
+          <div className="pointer-events-none absolute inset-2 overflow-hidden rounded-[1.5rem]">
+            <div className={`absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-slate-950/12 to-transparent transition-opacity duration-200 ${appListShadows.top ? 'opacity-100' : 'opacity-0'}`} />
+            <div className={`absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/14 to-transparent transition-opacity duration-200 ${appListShadows.bottom ? 'opacity-100' : 'opacity-0'}`} />
+          </div>
         </div>
         </div>
       </div>

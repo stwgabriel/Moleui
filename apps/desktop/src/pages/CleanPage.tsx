@@ -320,8 +320,8 @@ const CLEAN_SECTION_NAMES = new Set(
 );
 
 const config: PageConfig = {
-  title: 'Start a cleanup scan',
-  description: 'Scan every cleanup area Mole can safely inspect, then review the junk found before cleaning.',
+  title: 'Cleanup',
+  description: 'Scan every cleanup area you can safely inspect, then review the junk found before cleaning.',
   icon: 'Sparkles',
   buttonText: 'Scan for Junk',
   items: [
@@ -1041,7 +1041,7 @@ export function CleanPage() {
               <div className="absolute inset-[18%] rounded-full border border-violet-100" />
               <div className="absolute inset-[28%] rounded-full border border-violet-200" />
               <div className="absolute inset-[9%] animate-clean-orbit rounded-full border border-transparent border-r-violet-300 border-t-violet-200" />
-              <div className="absolute left-1/2 top-1/2 h-[clamp(160px,14vw,290px)] w-[clamp(160px,14vw,290px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-[radial-gradient(circle_at_38%_26%,#f3c4ff_0%,#9e72ff_46%,#6847ef_100%)] shadow-[0_28px_90px_rgba(109,93,252,0.32),inset_0_1px_1px_rgba(255,255,255,0.8)]" />
+              <div className="absolute left-1/2 top-1/2 h-[clamp(160px,14vw,290px)] w-[clamp(160px,14vw,290px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-[radial-gradient(circle_at_38%_26%,#f3c4ff_0%,#9e72ff_46%,#6847ef_100%)] shadow-[0_28px_90px_rgba(109,93,252,0.32),inset_0_1px_1px_rgba(255,255,255,0.8)]" />
               <div className="absolute left-1/2 top-1/2 z-10 flex h-[clamp(160px,14vw,290px)] w-[clamp(160px,14vw,290px)] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full text-white">
                 <Sparkles className="mb-2 h-[clamp(1.45rem,2vw,2rem)] w-[clamp(1.45rem,2vw,2rem)] animate-sparkle" />
                 <div className="max-w-[88%] whitespace-nowrap text-center text-[clamp(1.65rem,3vw,3.65rem)] font-black leading-none">{formatGigValue(displaySize).replace(' ', '\u00a0')}</div>
