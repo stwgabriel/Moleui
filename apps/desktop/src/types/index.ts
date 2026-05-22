@@ -12,6 +12,11 @@ export interface MoleDesktopAPI {
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
   openSettingsWindow?: () => Promise<{ ok: boolean; message?: string }>;
   getSettingsProfile?: () => Promise<{ deviceName: string; user: { name: string; email: string } }>;
+  touchid?: {
+    status: () => Promise<MoleResult>;
+    enable: () => Promise<MoleResult>;
+    disable: () => Promise<MoleResult>;
+  };
   openExternal: (url: string) => Promise<{ ok: boolean; message?: string }>;
   copyText: (text: string) => Promise<{ ok: boolean }>;
   revealPath: (commandPath: string) => Promise<{ ok: boolean; message?: string }>;
