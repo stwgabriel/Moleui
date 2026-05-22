@@ -144,6 +144,11 @@ describe('CleanPage', () => {
     expect(screen.getByRole('heading', { name: 'System' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Application Junk' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /start cleaning 1\.5 GB/i })).toBeInTheDocument();
+    expect(screen.getByText('Will free 1.5 GB')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: /storage usage/i })).toHaveAttribute(
+      'aria-valuetext',
+      expect.stringContaining('1.5 GB will be freed'),
+    );
   });
 
   it('allows cleanup groups to be excluded from cleaning', () => {
@@ -155,6 +160,7 @@ describe('CleanPage', () => {
     expect(screen.getByRole('button', { name: /start cleaning 0 GB/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Select System' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Select Application Junk' })).toBeInTheDocument();
+    expect(screen.queryByText(/will free/i)).not.toBeInTheDocument();
   });
 
   it('scans every cleanup section exposed by the cleanup CLI', async () => {

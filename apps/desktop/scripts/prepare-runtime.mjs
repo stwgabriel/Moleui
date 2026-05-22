@@ -53,6 +53,7 @@ await copyRuntimeFile("bin/optimize.sh");
 await copyRuntimeFile("bin/analyze.sh");
 await copyRuntimeFile("bin/purge.sh");
 await copyRuntimeFile("bin/installer.sh");
+await copyRuntimeFile("bin/config.sh");
 await copyRuntimeFile("bin/touchid.sh");
 await copyRuntimeFile("bin/completion.sh");
 
@@ -78,6 +79,7 @@ await chmod(path.join(runtimeDir, "bin", "optimize.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "analyze.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "purge.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "installer.sh"), 0o755);
+await chmod(path.join(runtimeDir, "bin", "config.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "touchid.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "completion.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "status-go"), 0o755);

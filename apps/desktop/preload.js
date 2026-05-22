@@ -54,6 +54,15 @@ function onStreamWithLog(channel, callback) {
 
 contextBridge.exposeInMainWorld("moleDesktop", {
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
+  openSettingsWindow: () => ipcRenderer.invoke("mole:settings:open"),
+  getSettingsProfile: () => ipcRenderer.invoke("mole:settings:profile"),
+
+  // Touch ID configuration
+  touchid: {
+    status: () => invokeWithLog("mole:touchid:status", "touchid status"),
+    enable: () => invokeWithLog("mole:touchid:enable", "touchid enable"),
+    disable: () => invokeWithLog("mole:touchid:disable", "touchid disable"),
+  },
   runStatus: () => invokeWithLog("mole:status", "status --json"),
   openExternal: (url) => ipcRenderer.invoke("mole:open-external", url),
   copyText: (text) => ipcRenderer.invoke("mole:copy-text", text),

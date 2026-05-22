@@ -1,9 +1,34 @@
-import { useEffect, useRef } from 'react';
-import { Zap, Check, X, Clock, CheckCircle2, Loader2, AlertCircle, Gauge, Eye, Play } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  BatteryCharging,
+  Bell,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Database,
+  Gauge,
+  Globe2,
+  ListChecks,
+  Loader2,
+  Play,
+  RefreshCcw,
+  Rocket,
+  Search,
+  Shield,
+  ShieldCheck,
+  SlidersHorizontal,
+  Type,
+  UserRound,
+  X,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { Spinner } from '@/components/ui/Spinner';
 import { stripAnsi } from '@/utils/format';
 import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig } from '@/types';
@@ -21,6 +46,7 @@ interface TimelineStage {
   name: string;
   status: 'pending' | 'active' | 'complete' | 'error';
   items: string[];
+  selected?: boolean;
   startTime?: number;
   endTime?: number;
 }
@@ -31,7 +57,75 @@ type ParsedOptimizeLine =
   | { kind: 'section'; text: string }
   | { kind: 'item'; text: string };
 
+type TaskBadgeTone = 'recommended' | 'attention' | 'high' | 'medium' | 'safe' | 'running' | 'queued' | 'done';
+
+interface TaskBadge {
+  label: string;
+  tone: TaskBadgeTone;
+}
+
+interface TaskVisualRule {
+  pattern: RegExp;
+  icon: LucideIcon;
+  description: string;
+}
+
 const OPTIMIZE_ITEM_ICON_PATTERN = /^[✓✔→◎○ℹ-]\s*/;
+const NO_EXPANDED_TASK = '__none__';
+
+const taskVisualRules: TaskVisualRule[] = [
+  {
+    pattern: /login/i,
+    icon: UserRound,
+    description: 'Items that run automatically at login',
+  },
+  {
+    pattern: /launch\s*agent|daemon/i,
+    icon: Rocket,
+    description: 'Background agents and daemons',
+  },
+  {
+    pattern: /database|sqlite|launchservices/i,
+    icon: Database,
+    description: 'Optimize system databases and indexes',
+  },
+  {
+    pattern: /dns|spotlight|network/i,
+    icon: Globe2,
+    description: 'Refresh caches and resolve issues',
+  },
+  {
+    pattern: /font/i,
+    icon: Type,
+    description: 'Rebuild font caches for stability',
+  },
+  {
+    pattern: /notification/i,
+    icon: Bell,
+    description: 'Clean and reset notification data',
+  },
+  {
+    pattern: /finder|cache/i,
+    icon: Search,
+    description: 'Refresh system caches and services',
+  },
+  {
+    pattern: /security|firewall|gatekeeper|permission|quarantine/i,
+    icon: ShieldCheck,
+    description: 'Verify protection and repair trust data',
+  },
+];
+
+const taskBadgeClassByTone: Record<TaskBadgeTone, string> = {
+  recommended: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  attention: 'bg-rose-50 text-rose-500 ring-1 ring-rose-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  high: 'bg-rose-50 text-rose-500 ring-1 ring-rose-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  medium: 'bg-orange-50 text-orange-500 ring-1 ring-orange-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  safe: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  running: 'bg-violet-50 text-violet-600 ring-1 ring-violet-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  queued: 'bg-slate-100/80 text-slate-500 ring-1 ring-slate-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]',
+  done: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+};
 
 function removeOptimizeItemIcon(line: string) {
   return line.replace(OPTIMIZE_ITEM_ICON_PATTERN, '').trim();
@@ -120,6 +214,66 @@ function parseOptimizeLine(rawLine: string, target: TimelineTarget): ParsedOptim
   return null;
 }
 
+function getTaskVisualMeta(taskName: string) {
+  return taskVisualRules.find((rule) => rule.pattern.test(taskName)) ?? {
+    icon: Gauge,
+    description: 'Optimize performance maintenance task',
+  };
+}
+
+function getTaskBadge(timelineStage: TimelineStage, currentStage: Stage): TaskBadge {
+  const taskText = `${timelineStage.name} ${timelineStage.items.join(' ')}`.toLowerCase();
+
+  if (timelineStage.status === 'error') return { label: 'Attention Needed', tone: 'attention' };
+  if (timelineStage.status === 'active') return { label: currentStage === 'previewing' ? 'Scanning' : 'Running', tone: 'running' };
+  if (timelineStage.status === 'pending') return { label: 'Queued', tone: 'queued' };
+  if (currentStage === 'optimizing') return { label: 'Done', tone: 'done' };
+
+  if (/launch\s*agent|daemon|outdated|orphaned|broken/.test(taskText)) {
+    return { label: 'Attention Needed', tone: 'attention' };
+  }
+
+  if (/login/.test(taskText)) return { label: 'Recommended', tone: 'recommended' };
+  if (/database|sqlite|memory|permission|repair/.test(taskText) || timelineStage.items.length >= 6) {
+    return { label: 'Medium impact', tone: 'medium' };
+  }
+
+  return { label: 'Safe', tone: 'safe' };
+}
+
+function getTaskItemBadge(item: string, parentBadge: TaskBadge): TaskBadge {
+  const itemText = item.toLowerCase();
+
+  if (/outdated|remove|delete|broken/.test(itemText)) return { label: 'High impact', tone: 'high' };
+  if (/disable|clean|clear|flush|refresh|rebuild|repair|restart|release|optimize|vacuum/.test(itemText)) {
+    return { label: 'Medium impact', tone: 'medium' };
+  }
+  if (/already|healthy|valid|verified|verify|optimal|skipped|not found|unavailable/.test(itemText)) {
+    return { label: 'Safe', tone: 'safe' };
+  }
+  if (parentBadge.tone === 'attention') return { label: 'Medium impact', tone: 'medium' };
+
+  return { label: 'Safe', tone: 'safe' };
+}
+
+function taskCountLabel(count: number) {
+  return `${count} ${count === 1 ? 'item' : 'items'}`;
+}
+
+function isTimelineStageSelected(timelineStage: TimelineStage) {
+  return timelineStage.selected !== false;
+}
+
+function getScrollShadowState(element: HTMLDivElement | null) {
+  if (!element) return { top: false, bottom: false };
+
+  const hasOverflow = element.scrollHeight - element.clientHeight > 1;
+  return {
+    top: hasOverflow && element.scrollTop > 1,
+    bottom: hasOverflow && element.scrollTop + element.clientHeight < element.scrollHeight - 1,
+  };
+}
+
 const config: PageConfig = {
   title: 'Optimize performance',
   description: "Fine-tune your Mac's performance with system optimization and maintenance tasks.",
@@ -149,6 +303,67 @@ const config: PageConfig = {
   ],
 };
 
+const stageCopy: Record<Exclude<Stage, 'idle' | 'complete' | 'error'>, { title: string; description: string }> = {
+  previewing: {
+    title: 'Scanning Mac',
+    description: 'Mole is checking the tune-up path first, so you can see every optimization before it changes anything.',
+  },
+  'preview-results': {
+    title: 'Review tasks',
+    description: 'Review the optimization tasks we found, then apply the performance tune-up when you are ready.',
+  },
+  optimizing: {
+    title: 'Boosting performance',
+    description: 'Mole is applying the approved maintenance tasks and tracking each performance pass as it finishes.',
+  },
+};
+
+function timelineStats(timeline: TimelineStage[]) {
+  return {
+    completedStages: timeline.filter((stage) => stage.status === 'complete'),
+    activeStage: timeline.find((stage) => stage.status === 'active'),
+    totalItems: timeline.reduce((sum, stage) => sum + stage.items.length, 0),
+  };
+}
+
+function hasNoOptimizationsOutput(logs: LogEntry[]) {
+  return logs.some((log) => /No Optimizations (Found|Needed)|No changes would be applied|No optimization tasks were applied|System already optimized/i.test(log.text));
+}
+
+function isNoopOptimizationItem(item: string) {
+  return /\b(already|skipped|unavailable|not found|disabled|valid|optimal|healthy|verified|no .*found|all .*healthy|requires sudo|not available)\b/i.test(item);
+}
+
+function actionableOptimizationItemCount(timeline: TimelineStage[]) {
+  return timeline.reduce(
+    (sum, timelineStage) => sum + timelineStage.items.filter((item) => !isNoopOptimizationItem(item)).length,
+    0,
+  );
+}
+
+function getImpactScores(timeline: TimelineStage[], attentionTaskCount: number, noOptimizationsFound: boolean) {
+  if (noOptimizationsFound || timeline.length === 0) {
+    return {
+      performance: 0,
+      responsiveness: 0,
+      stability: 0,
+      battery: 0,
+    };
+  }
+
+  const text = timeline.map((timelineStage) => `${timelineStage.name} ${timelineStage.items.join(' ')}`).join(' ').toLowerCase();
+  const itemCount = timeline.reduce((sum, timelineStage) => sum + timelineStage.items.length, 0);
+  const baseScore = Math.min(4, Math.max(1, Math.ceil(itemCount / 4)));
+  const scoreFor = (pattern: RegExp, boost: number) => Math.min(10, baseScore + (pattern.test(text) ? boost : 0));
+
+  return {
+    performance: scoreFor(/cache|database|sqlite|spotlight|launchservices|maintenance|memory|optimiz/i, 4),
+    responsiveness: scoreFor(/memory|dns|network|quicklook|finder|dock|bluetooth|responsiveness|cache/i, 5),
+    stability: attentionTaskCount > 0 ? Math.max(3, baseScore + 1) : scoreFor(/permission|repair|verify|security|quarantine|notification|healthy|stability/i, 5),
+    battery: scoreFor(/launch\s*agent|login|background|daemon|bluetooth|network|battery/i, 3),
+  };
+}
+
 export function OptimizePage() {
   const [stage, setStage] = usePersistentState<Stage>('mole-optimize-stage', 'idle');
   const [logs, setLogs] = usePersistentState<LogEntry[]>('mole-optimize-logs', []);
@@ -157,14 +372,32 @@ export function OptimizePage() {
   const [previewTimeline, setPreviewTimeline] = usePersistentState<TimelineStage[]>('mole-optimize-preview-timeline', []);
   const logEndRef = useRef<HTMLDivElement>(null);
   const previewLogEndRef = useRef<HTMLDivElement>(null);
+  const taskListRef = useRef<HTMLDivElement>(null);
   const runIdRef = useRef(0);
   const activeRunRef = useRef<{ id: number; context: 'preview' | 'main' } | null>(null);
   const cancelledRunIdsRef = useRef(new Set<number>());
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [taskScrollShadow, setTaskScrollShadow] = useState({ top: false, bottom: false });
+
+  const updateTaskScrollShadow = () => {
+    const next = getScrollShadowState(taskListRef.current);
+    setTaskScrollShadow((previous) => (previous.top === next.top && previous.bottom === next.bottom ? previous : next));
+  };
 
   // Auto-scroll logs
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(updateTaskScrollShadow);
+    return () => window.cancelAnimationFrame(frame);
+  });
+
+  useEffect(() => {
+    window.addEventListener('resize', updateTaskScrollShadow);
+    return () => window.removeEventListener('resize', updateTaskScrollShadow);
+  }, []);
 
   useEffect(() => {
     previewLogEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -208,12 +441,12 @@ export function OptimizePage() {
         );
         const existingIndex = updated.findIndex((s) => s.name === sectionName);
         if (existingIndex >= 0) {
-          updated[existingIndex] = { ...updated[existingIndex], status: 'active', startTime: Date.now() };
+          updated[existingIndex] = { ...updated[existingIndex], status: 'active', selected: updated[existingIndex].selected ?? true, startTime: Date.now() };
           return updated;
         }
         return [
           ...updated,
-          { id: `stage-${Date.now()}-${sectionName}`, name: sectionName, status: 'active', items: [], startTime: Date.now() },
+          { id: `stage-${Date.now()}-${sectionName}`, name: sectionName, status: 'active', items: [], selected: true, startTime: Date.now() },
         ];
       });
       return;
@@ -253,6 +486,7 @@ export function OptimizePage() {
 
     addLog('Stopping...', 'info', context);
     window.moleDesktop.optimize.removeListeners();
+    setExpandedTaskId(null);
     setStage('idle');
 
     try {
@@ -261,6 +495,16 @@ export function OptimizePage() {
     } catch (error) {
       addLog(`Failed to stop: ${error}`, 'error', context);
     }
+  };
+
+  const toggleTaskSelected = (id: string) => {
+    if (stage !== 'preview-results') return;
+
+    setPreviewTimeline((prev) =>
+      prev.map((timelineStage) =>
+        timelineStage.id === id ? { ...timelineStage, selected: !isTimelineStageSelected(timelineStage) } : timelineStage
+      )
+    );
   };
 
   // ─── Dry-run preview ────────────────────────────────────────────────────────
@@ -272,6 +516,7 @@ export function OptimizePage() {
     setStage('previewing');
     setPreviewLogs([]);
     setPreviewTimeline([]);
+    setExpandedTaskId(null);
 
     addLog('Running dry-run preview...', 'info', 'preview');
 
@@ -327,12 +572,20 @@ export function OptimizePage() {
   // ─── Real optimization ───────────────────────────────────────────────────────
 
   const startOptimization = async () => {
+    const taskNames = stage === 'preview-results'
+      ? previewTimeline.filter(isTimelineStageSelected).map((timelineStage) => timelineStage.name)
+      : undefined;
+
+    if (stage === 'preview-results' && previewTimeline.length > 0 && taskNames?.length === 0) return;
+    if (stage === 'preview-results' && noOptimizationsFound) return;
+
     const runId = runIdRef.current + 1;
     runIdRef.current = runId;
     activeRunRef.current = { id: runId, context: 'main' };
     setStage('optimizing');
     setLogs([]);
     setTimeline([]);
+    setExpandedTaskId(null);
 
     addLog('Starting system optimization...', 'info');
 
@@ -346,7 +599,7 @@ export function OptimizePage() {
     });
 
     try {
-      const result = await window.moleDesktop.optimize.execute({ dryRun: false });
+      const result = await window.moleDesktop.optimize.execute({ dryRun: false, taskNames });
       const isCurrentRun = activeRunRef.current?.id === runId;
 
       if (cancelledRunIdsRef.current.has(runId) || result.killed) {
@@ -386,12 +639,432 @@ export function OptimizePage() {
   };
 
   const reset = () => {
+    window.moleDesktop.optimize.removeListeners();
     setStage('idle');
     setLogs([]);
     setPreviewLogs([]);
     setTimeline([]);
     setPreviewTimeline([]);
+    setExpandedTaskId(null);
   };
+
+  const activeTimeline = stage === 'previewing' || stage === 'preview-results' ? previewTimeline : timeline;
+  const activeLogs = stage === 'previewing' || stage === 'preview-results' ? previewLogs : logs;
+  const activeStats = useMemo(() => timelineStats(activeTimeline), [activeTimeline]);
+  const selectedPreviewTaskCount = useMemo(() => previewTimeline.filter(isTimelineStageSelected).length, [previewTimeline]);
+  const fallbackExpandedTaskId = activeStats.activeStage?.id ?? activeTimeline.find((timelineStage) => timelineStage.items.length > 0)?.id ?? activeTimeline[0]?.id ?? null;
+  const selectedExpandedTaskId = expandedTaskId === NO_EXPANDED_TASK
+    ? null
+    : activeTimeline.some((timelineStage) => timelineStage.id === expandedTaskId)
+      ? expandedTaskId
+      : fallbackExpandedTaskId;
+  const selectedTimeline = useMemo(
+    () => (stage === 'preview-results' ? previewTimeline.filter(isTimelineStageSelected) : activeTimeline),
+    [activeTimeline, previewTimeline, stage],
+  );
+  const selectedTaskCount = selectedTimeline.length;
+  const selectedActionItemCount = actionableOptimizationItemCount(selectedTimeline);
+  const noOptimizationsFound = hasNoOptimizationsOutput(activeLogs) || (stage === 'preview-results' && selectedTaskCount > 0 && selectedActionItemCount === 0);
+  const attentionTaskCount = selectedTimeline.filter((timelineStage) => {
+    const badge = getTaskBadge(timelineStage, stage);
+    return badge.tone === 'attention' || badge.tone === 'high';
+  }).length;
+
+  const renderOptimizationPlan = () => {
+    const readyTaskCount = stage === 'preview-results' ? selectedTaskCount : activeTimeline.length;
+    const readyItemCount = noOptimizationsFound ? 0 : stage === 'preview-results' ? selectedActionItemCount : activeStats.totalItems;
+    const completedTimelineCount = activeStats.completedStages.length;
+    const appliedTimelineCount = stage === 'optimizing' ? completedTimelineCount : 0;
+    const expectedApplyCount = Math.max(selectedPreviewTaskCount, activeTimeline.length, 1);
+    const impactScores = getImpactScores(selectedTimeline, attentionTaskCount, noOptimizationsFound);
+    const readyPlanCount = noOptimizationsFound ? 0 : readyItemCount > 0 ? readyItemCount : readyTaskCount;
+    const activeStageName = activeStats.activeStage?.name;
+    const activeStageItems = activeStats.activeStage?.items.length ?? 0;
+    const taskSummaryTitle = noOptimizationsFound
+      ? 'No tasks ready'
+      : stage === 'previewing'
+      ? 'Scanning tasks'
+      : stage === 'optimizing'
+        ? `${readyPlanCount} ${readyPlanCount === 1 ? 'task' : 'tasks'} applying`
+        : `${readyPlanCount} ${readyPlanCount === 1 ? 'task' : 'tasks'} ready`;
+    const taskSummaryDescription = noOptimizationsFound
+      ? 'Preview complete'
+      : stage === 'preview-results'
+      ? 'Preview complete'
+      : stage === 'optimizing'
+        ? `${readyItemCount} ${readyItemCount === 1 ? 'change' : 'changes'} in progress`
+        : 'Checking system paths';
+    const safetyTitle = attentionTaskCount > 0 ? 'Review first' : stage === 'optimizing' ? 'Applying safely' : 'Safe to apply';
+    const safetyDescription = attentionTaskCount > 0
+      ? `${attentionTaskCount} ${attentionTaskCount === 1 ? 'task needs' : 'tasks need'} attention`
+      : 'No risky changes detected';
+    const planSteps = [
+      {
+        number: '01',
+        title: 'Analyze',
+        description: stage === 'previewing'
+          ? activeStageName ? `Scanning ${activeStageName}` : 'Scanning system health'
+          : `${Math.max(previewTimeline.length, completedTimelineCount)} checks complete`,
+        icon: Search,
+        state: stage === 'previewing' ? 'active' : 'complete',
+        className: 'left-1/2 top-[2%] w-[43.2%] -translate-x-1/2',
+      },
+      {
+        number: '02',
+        title: 'Tune',
+        description: stage === 'preview-results'
+          ? noOptimizationsFound ? 'No tune-up needed' : `${selectedPreviewTaskCount}/${Math.max(previewTimeline.length, selectedPreviewTaskCount)} tasks selected`
+          : stage === 'optimizing'
+            ? 'Tune plan locked'
+            : activeStageItems > 0 ? `${activeStageItems} findings grouped` : 'Optimizing settings and resources',
+        icon: SlidersHorizontal,
+        state: stage === 'previewing' ? 'queued' : stage === 'preview-results' ? 'active' : 'complete',
+        className: 'left-1/2 top-[34%] w-[43.2%] -translate-x-1/2',
+      },
+      {
+        number: '03',
+        title: 'Apply',
+        description: stage === 'optimizing'
+          ? `${appliedTimelineCount}/${expectedApplyCount} tasks applied`
+          : noOptimizationsFound ? 'Nothing to apply' : `${selectedPreviewTaskCount || readyTaskCount} safe changes queued`,
+        icon: ShieldCheck,
+        state: stage === 'optimizing' ? 'active' : 'queued',
+        className: 'left-1/2 top-[68%] w-[43.2%] -translate-x-1/2',
+      },
+    ];
+    const impactMetrics = [
+      { label: 'Performance', icon: Rocket, score: impactScores.performance, tone: 'bg-violet-500' },
+      { label: 'Responsiveness', icon: Zap, score: impactScores.responsiveness, tone: 'bg-violet-600' },
+      { label: 'Stability', icon: Shield, score: impactScores.stability, tone: 'bg-violet-300' },
+      { label: 'Battery', icon: BatteryCharging, score: impactScores.battery, tone: 'bg-violet-300' },
+    ];
+
+    return (
+      <section className="flex min-h-0 min-w-0 flex-col justify-center pt-[clamp(0.4rem,1.65vw,2rem)]">
+        <div className="relative mx-auto flex h-[clamp(500px,62vh,650px)] w-full max-w-[720px] flex-col overflow-visible">
+
+          <div className="relative z-10 min-h-[0] flex-1">
+            <div className="absolute left-[6%] top-[9%] h-[65%] w-[31%] rounded-[50%] border border-dashed border-violet-300/56" aria-hidden="true" />
+            <div className="absolute left-[19%] top-[4%] h-[74%] w-[68%] rounded-full border border-dashed border-violet-300/62" aria-hidden="true" />
+            <div className="absolute left-[31%] top-[8%] h-[64%] w-[56%] rounded-full border border-dashed border-violet-200/70" aria-hidden="true" />
+
+            {planSteps.map((step) => {
+              const isActive = step.state === 'active';
+              const isComplete = step.state === 'complete';
+              const StepIcon = step.icon;
+
+              return (
+                <div
+                  key={step.number}
+                  aria-current={isActive ? 'step' : undefined}
+                  className={`absolute z-20 flex min-h-[clamp(5.85rem,9.5vh,7rem)] min-w-0 items-center gap-[clamp(0.85rem,1.15vw,1.1rem)] rounded-[2.15rem] border px-[clamp(0.85rem,1.2vw,1.15rem)] py-3 shadow-[0_18px_58px_rgba(83,76,148,0.12)] backdrop-blur-2xl transition-all duration-500 ${
+                    isActive
+                      ? 'z-30 scale-[1.08] border-violet-200/80 bg-white/88 shadow-[0_20px_66px_rgba(109,93,252,0.18),0_0_0_6px_rgba(109,93,252,0.05)]'
+                      : isComplete
+                        ? 'border-emerald-100/80 bg-white/78'
+                        : 'border-white/62 bg-white/58 opacity-70'
+                  } ${step.className}`}
+                >
+                  <span className={`flex h-[clamp(2rem,2.8vw,2.35rem)] w-[clamp(2rem,2.8vw,2.35rem)] shrink-0 items-center justify-center rounded-full text-[clamp(0.78rem,1vw,0.95rem)] font-black ${
+                    isActive
+                      ? 'bg-violet-600 text-white shadow-[0_8px_24px_rgba(109,93,252,0.35)]'
+                      : isComplete
+                        ? 'bg-emerald-50 text-emerald-500 shadow-[0_8px_20px_rgba(34,197,94,0.12)]'
+                      : 'bg-violet-100 text-violet-600 shadow-[0_8px_20px_rgba(109,93,252,0.16)]'
+                  }`}>
+                    {isComplete ? <Check className="h-[58%] w-[58%]" strokeWidth={3} /> : step.number}
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="flex items-center gap-2 truncate text-[clamp(1rem,1.35vw,1.18rem)] font-black leading-tight text-slate-700">
+                      <StepIcon className={`h-[0.95em] w-[0.95em] shrink-0 ${isActive ? 'text-violet-500' : isComplete ? 'text-emerald-500' : 'text-violet-300'}`} />
+                      <span className="truncate">{step.title}</span>
+                    </h3>
+                    <p className="mt-2 max-w-[8.5rem] text-[clamp(0.72rem,0.9vw,0.82rem)] font-semibold leading-snug text-slate-500">{step.description}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="relative z-10 overflow-hidden rounded-[1.35rem] border border-violet-100/70 bg-white/76 shadow-[0_18px_54px_rgba(83,76,148,0.10)] backdrop-blur-2xl">
+
+            <div className="grid grid-cols-2 divide-x divide-slate-900/[0.06]">
+              <div className="flex min-w-0 items-center gap-4 p-[clamp(0.9rem,1.25vw,1.15rem)]">
+                <div className="flex h-[clamp(3rem,4vw,3.5rem)] w-[clamp(3rem,4vw,3.5rem)] shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-500">
+                  <ListChecks className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[clamp(0.9rem,1.08vw,1rem)] font-black text-slate-950">{taskSummaryTitle}</div>
+                  <div className="mt-1 truncate text-[clamp(0.72rem,0.88vw,0.82rem)] font-semibold text-slate-500">{taskSummaryDescription}</div>
+                </div>
+              </div>
+
+              <div className="flex min-w-0 items-center gap-4 p-[clamp(0.9rem,1.25vw,1.15rem)]">
+                <div className={`flex h-[clamp(3rem,4vw,3.5rem)] w-[clamp(3rem,4vw,3.5rem)] shrink-0 items-center justify-center rounded-full ${
+                  attentionTaskCount > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'
+                }`}>
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[clamp(0.9rem,1.08vw,1rem)] font-black text-slate-950">{safetyTitle}</div>
+                  <div className="mt-1 truncate text-[clamp(0.72rem,0.88vw,0.82rem)] font-semibold text-slate-500">{safetyDescription}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-900/[0.06] p-[clamp(0.9rem,1.25vw,1.15rem)]">
+              <div className="mb-3 flex items-center gap-2 text-[clamp(0.82rem,1vw,0.95rem)] font-black text-slate-600">
+                System impact preview
+                <AlertCircle className="h-4 w-4 text-slate-400" />
+              </div>
+              <div className="grid grid-cols-4 gap-4">
+                {impactMetrics.map((metric) => {
+                  const MetricIcon = metric.icon;
+
+                  return (
+                    <div key={metric.label} className="min-w-0">
+                      <div className="mb-2 flex min-w-0 items-center gap-2">
+                        <MetricIcon className="h-4 w-4 shrink-0 text-violet-500" />
+                        <span className="truncate text-[0.68rem] font-black text-slate-500">{metric.label}</span>
+                      </div>
+                      <div
+                        className="grid grid-cols-10 gap-1"
+                        role="meter"
+                        aria-label={`${metric.label} impact`}
+                        aria-valuemin={0}
+                        aria-valuemax={10}
+                        aria-valuenow={metric.score}
+                      >
+                        {Array.from({ length: 10 }, (_, index) => (
+                          <span
+                            key={`${metric.label}-${index}`}
+                            aria-hidden="true"
+                            className={`h-2 rounded-full ${index < metric.score ? metric.tone : 'bg-violet-100/90'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  const renderTimelineCard = (timelineStage: TimelineStage) => {
+    const isExpanded = selectedExpandedTaskId === timelineStage.id;
+    const isActive = timelineStage.status === 'active';
+    const isError = timelineStage.status === 'error';
+    const canSelect = stage === 'preview-results';
+    const isSelected = isTimelineStageSelected(timelineStage);
+    const visualMeta = getTaskVisualMeta(timelineStage.name);
+    const TaskIcon = visualMeta.icon;
+    const taskBadge = canSelect && !isSelected ? { label: 'Excluded', tone: 'queued' as const } : getTaskBadge(timelineStage, stage);
+    const visibleItems = timelineStage.items.slice(0, 8);
+    const hiddenItemCount = Math.max(0, timelineStage.items.length - visibleItems.length);
+    const detailsId = `optimize-task-${timelineStage.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+
+    return (
+      <section
+        key={timelineStage.id}
+        className={`relative border-b border-slate-900/[0.07] transition-colors duration-300 first:rounded-t-[1.55rem] last:border-b-0 last:rounded-b-[1.55rem] ${
+          isError ? 'bg-rose-50/28' : isActive ? 'bg-violet-50/24 animate-clean-card-pulse' : 'hover:bg-white/38'
+        } ${canSelect && isSelected ? 'shadow-[inset_5px_0_0_rgba(109,93,252,0.32)]' : ''} ${canSelect && !isSelected ? 'opacity-70' : ''}`}
+      >
+        <div className="group flex w-full items-center gap-[clamp(0.8rem,1.15vw,1.25rem)] px-[clamp(0.8rem,1.35vw,1.35rem)] py-[clamp(0.85rem,1.2vw,1.2rem)] text-left transition">
+          {canSelect && (
+            <button
+              type="button"
+              onClick={() => toggleTaskSelected(timelineStage.id)}
+              aria-label={`${isSelected ? 'Deselect' : 'Select'} ${timelineStage.name}`}
+              aria-pressed={isSelected}
+              className={`flex h-[clamp(1.35rem,1.75vw,1.7rem)] w-[clamp(1.35rem,1.75vw,1.7rem)] shrink-0 items-center justify-center rounded-full border transition-all ${
+                isSelected
+                  ? 'border-violet-500 bg-violet-600 text-white shadow-[0_8px_18px_rgba(109,93,252,0.26),0_0_0_5px_rgba(109,93,252,0.10)]'
+                  : 'border-slate-300 bg-white/76 text-transparent shadow-[0_6px_14px_rgba(83,76,148,0.06)] hover:border-violet-300 hover:text-violet-300'
+              }`}
+            >
+              <Check className="h-[clamp(0.8rem,1vw,1rem)] w-[clamp(0.8rem,1vw,1rem)]" strokeWidth={3} />
+            </button>
+          )}
+
+          <button
+            type="button"
+            aria-controls={detailsId}
+            aria-expanded={isExpanded}
+            onClick={() => setExpandedTaskId(isExpanded ? NO_EXPANDED_TASK : timelineStage.id)}
+            className="flex min-w-0 flex-1 items-center gap-[clamp(0.8rem,1.15vw,1.25rem)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
+          >
+            <div
+              className={`flex h-[clamp(2.75rem,3.7vw,4.05rem)] w-[clamp(2.75rem,3.7vw,4.05rem)] shrink-0 items-center justify-center rounded-[1.05rem] border bg-white/76 backdrop-blur-xl ${
+                isActive
+                  ? 'border-violet-200/90 text-violet-600'
+                  : isError
+                    ? 'border-rose-200/90 text-rose-500'
+                    : 'border-violet-100/80 text-violet-500'
+              }`}
+            >
+              <TaskIcon className="h-[clamp(1.25rem,1.65vw,1.65rem)] w-[clamp(1.25rem,1.65vw,1.65rem)]" strokeWidth={2.15} />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate text-[clamp(0.92rem,1.12vw,1.15rem)] font-black leading-tight text-slate-950">{timelineStage.name}</h3>
+              <p className="mt-[clamp(0.25rem,0.45vw,0.4rem)] truncate text-[clamp(0.74rem,0.92vw,0.92rem)] font-semibold leading-snug text-slate-500">{visualMeta.description}</p>
+            </div>
+          </button>
+
+          <span className={`hidden shrink-0 rounded-full px-[clamp(0.65rem,0.9vw,0.8rem)] py-[clamp(0.3rem,0.45vw,0.4rem)] text-[clamp(0.68rem,0.84vw,0.8rem)] font-black leading-none sm:inline-flex ${taskBadgeClassByTone[taskBadge.tone]}`}>
+            {taskBadge.label}
+          </span>
+
+          <span className="shrink-0 whitespace-nowrap text-[clamp(0.72rem,0.9vw,0.86rem)] font-black text-slate-500">
+            {taskCountLabel(timelineStage.items.length)}
+          </span>
+
+          <button
+            type="button"
+            aria-controls={detailsId}
+            aria-expanded={isExpanded}
+            onClick={() => setExpandedTaskId(isExpanded ? NO_EXPANDED_TASK : timelineStage.id)}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/62 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${timelineStage.name}`}
+          >
+            {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+          </button>
+        </div>
+
+        {isExpanded && (
+          <div id={detailsId} className="px-[clamp(0.8rem,1.35vw,1.35rem)] pb-[clamp(0.8rem,1.2vw,1.2rem)]">
+            <div className="ml-[clamp(3.55rem,4.9vw,5.25rem)] overflow-hidden rounded-[1.1rem] border border-violet-100/80 bg-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] backdrop-blur-xl">
+              {visibleItems.length > 0 ? (
+                <>
+                  {visibleItems.map((item, index) => {
+                    const itemBadge = getTaskItemBadge(item, taskBadge);
+
+                    return (
+                      <div
+                        key={`${timelineStage.id}-${index}-${item}`}
+                        className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_1.35rem] items-center gap-[clamp(0.55rem,0.95vw,0.9rem)] border-b border-slate-900/[0.06] px-[clamp(0.75rem,1.15vw,1rem)] py-[clamp(0.65rem,0.95vw,0.85rem)] last:border-b-0"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-violet-500 shadow-[0_0_0_4px_rgba(109,93,252,0.11)]" />
+                          <span className="truncate text-[clamp(0.75rem,0.9vw,0.88rem)] font-bold text-slate-700">{item}</span>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-[clamp(0.55rem,0.8vw,0.7rem)] py-[clamp(0.28rem,0.42vw,0.36rem)] text-[clamp(0.64rem,0.78vw,0.76rem)] font-black leading-none ${taskBadgeClassByTone[itemBadge.tone]}`}>
+                          {itemBadge.label}
+                        </span>
+                        <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" />
+                      </div>
+                    );
+                  })}
+
+                  {hiddenItemCount > 0 && (
+                    <div className="border-t border-slate-900/[0.06] px-[clamp(0.75rem,1.15vw,1rem)] py-2 text-center text-[clamp(0.68rem,0.82vw,0.78rem)] font-black text-slate-400">
+                      +{hiddenItemCount} more {hiddenItemCount === 1 ? 'item' : 'items'}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex min-w-0 items-center gap-3 px-[clamp(0.75rem,1.15vw,1rem)] py-[clamp(0.75rem,1vw,0.95rem)]">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-violet-500 shadow-[0_0_0_4px_rgba(109,93,252,0.11)]" />
+                  <span className="truncate text-[clamp(0.75rem,0.9vw,0.88rem)] font-bold text-slate-500">Waiting for optimizer output...</span>
+                  {isActive && <Loader2 className="ml-auto h-4 w-4 shrink-0 animate-spin text-violet-500" />}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+    );
+  };
+
+  const renderTaskPanel = () => {
+    const panelTitle = stage === 'previewing'
+      ? 'Optimization Preview'
+      : stage === 'preview-results'
+        ? 'Performance Tasks'
+        : 'Optimization Progress';
+    const emptyTitle = noOptimizationsFound
+      ? 'No optimizations found'
+      : stage === 'preview-results' ? 'System already optimized' : 'Preparing optimization checks';
+    const emptyDescription = noOptimizationsFound
+      ? 'Mole checked your system and did not find optimization tasks to apply.'
+      : stage === 'preview-results'
+      ? 'No significant optimizations were found in the preview.'
+      : 'Tasks will appear here as Mole reads the optimizer output.';
+
+    return (
+      <section className="flex min-h-0 min-w-0 flex-col pt-[clamp(0.4rem,1.65vw,2rem)]">
+        <div className="mb-[clamp(0.6rem,1vw,1rem)] flex items-center justify-between gap-3">
+          <h2 className="text-[clamp(0.95rem,1.3vw,1.25rem)] font-black text-slate-600">{panelTitle}</h2>
+          <div className="rounded-full bg-white/70 px-3 py-1 text-[clamp(0.72rem,0.88vw,0.82rem)] font-black text-rose-500 shadow-[0_8px_24px_rgba(83,76,148,0.06)]">
+            {taskCountLabel(activeStats.totalItems)}
+          </div>
+        </div>
+
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[1.55rem]">
+          <div ref={taskListRef} onScroll={updateTaskScrollShadow} className="h-full min-h-0 overflow-auto pr-2 custom-scrollbar">
+            <div>
+              {activeTimeline.length > 0 && !noOptimizationsFound && (
+                <div className="overflow-hidden rounded-[1.55rem] border border-violet-100/75 bg-white/58 backdrop-blur-2xl">
+                  {activeTimeline.map(renderTimelineCard)}
+                </div>
+              )}
+
+              {(activeTimeline.length === 0 || noOptimizationsFound) && (
+                <div className="rounded-[1.15rem] border border-rose-100 bg-white/62 p-8 text-center">
+                  <Gauge className="mx-auto h-10 w-10 text-rose-500" />
+                  <h3 className="mt-3 text-xl font-black text-slate-950">{emptyTitle}</h3>
+                  <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-relaxed text-slate-500">{emptyDescription}</p>
+                  {noOptimizationsFound && (
+                    <div className="mx-auto mt-4 inline-flex rounded-full border border-emerald-100 bg-emerald-50/78 px-4 py-2 text-sm font-black text-emerald-600">
+                      System already optimized
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          {taskScrollShadow.top && <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-10 rounded-t-[1.55rem] bg-[linear-gradient(to_bottom,rgba(67,56,122,0.14),rgba(67,56,122,0))]" />}
+          {taskScrollShadow.bottom && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-10 rounded-b-[1.55rem] bg-[linear-gradient(to_top,rgba(67,56,122,0.14),rgba(67,56,122,0))]" />}
+        </div>
+      </section>
+    );
+  };
+
+  const renderFooter = () => (
+    <footer className="mt-[clamp(0.7rem,1.6vw,1.5rem)] flex shrink-0 flex-col items-center gap-[clamp(0.55rem,1vw,0.75rem)]">
+      {stage === 'preview-results' ? (
+        <div className="flex w-full justify-center">
+          <Button
+            icon={Play}
+            onClick={startOptimization}
+            disabled={selectedPreviewTaskCount === 0 || noOptimizationsFound}
+            className="min-w-[min(370px,42vw)] rounded-full bg-rose-500 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_rgba(239,35,60,0.25)] hover:bg-rose-600 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
+          >
+            Apply Optimizations
+          </Button>
+        </div>
+      ) : (
+        <Button
+          icon={stage === 'previewing' ? X : Loader2}
+          onClick={() => stopProcess(stage === 'previewing' ? 'preview' : 'main')}
+          size="lg"
+          className="min-w-[min(450px,42vw)] rounded-full bg-rose-500 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_rgba(239,35,60,0.25)] hover:bg-rose-600 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
+        >
+          {stage === 'previewing' ? 'Cancel Preview' : 'Stop Optimization'}
+        </Button>
+      )}
+
+      <div className="flex items-center gap-2 text-[clamp(0.78rem,1vw,0.875rem)] font-bold text-slate-500">
+        <ShieldCheck className="h-4 w-4" />
+        A preview runs before any optimization changes
+      </div>
+    </footer>
+  );
 
   // ─── Idle ────────────────────────────────────────────────────────────────────
 
@@ -399,271 +1072,98 @@ export function OptimizePage() {
     return <StartScreen config={config} onStart={startPreview} variant="feature" />;
   }
 
-  // ─── Shared timeline renderer ────────────────────────────────────────────────
-
-  const renderTimeline = (
-    tl: TimelineStage[],
-    title: string,
-    runningText = 'Running...'
-  ) => (
-    <Card variant="glass" className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-      <h3 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
-        <Gauge className="w-4 h-4" />
-        {title}
-
-      </h3>
-      <div className="space-y-4">
-        {tl.map((s, index) => (
-          <div key={s.id} className="relative">
-            {index < tl.length - 1 && (
-              <div className="absolute left-4 top-10 bottom-0 w-0.5 bg-gradient-to-b from-optimize/30 to-transparent" />
-            )}
-            <div className="flex gap-3">
-              <div className="relative z-10">
-                {s.status === 'active' && (
-                  <div className="w-8 h-8 rounded-full bg-optimize/20 flex items-center justify-center">
-                    <Loader2 className="w-4 h-4 text-optimize animate-spin" />
-                  </div>
-                )}
-                {s.status === 'complete' && (
-                  <div className="w-8 h-8 rounded-full bg-accent-success/20 flex items-center justify-center">
-                    <CheckCircle2 className="w-4 h-4 text-accent-success" />
-                  </div>
-                )}
-                {s.status === 'error' && (
-                  <div className="w-8 h-8 rounded-full bg-accent-danger/20 flex items-center justify-center">
-                    <AlertCircle className="w-4 h-4 text-accent-danger" />
-                  </div>
-                )}
-                {s.status === 'pending' && (
-                  <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center">
-                    <Clock className="w-4 h-4 text-text-tertiary" />
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 pb-4">
-                <h4 className="font-semibold text-text-primary mb-1">{s.name}</h4>
-                {s.items.length > 0 && (
-                  <div className="space-y-1 mt-2">
-                    {s.items.slice(-3).map((item, i) => (
-                      <div key={i} className="text-xs text-text-secondary font-mono">
-                        {item}
-                      </div>
-                    ))}
-                    {s.items.length > 3 && (
-                      <div className="text-xs text-text-tertiary italic">
-                        +{s.items.length - 3} more items
-                      </div>
-                    )}
-                  </div>
-                )}
-                {s.status === 'active' && s.items.length === 0 && (
-                  <div className="text-xs text-text-tertiary italic">{runningText}</div>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-        {tl.length === 0 && (
-          <div className="text-center text-text-tertiary py-8">
-            <Gauge className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Initializing...</p>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-
   // ─── Previewing (dry-run) ────────────────────────────────────────────────────
 
-  if (stage === 'previewing') {
-    return (
-      <div className="h-full flex flex-col p-8">
-        <div className="mb-6 text-center">
-          <div className="flex justify-center mb-4">
-            <div className="relative">
-              <Spinner size="lg" />
-              <Eye className="absolute inset-0 m-auto w-6 h-6 text-optimize" />
-            </div>
-          </div>
-          <h2 className="text-2xl font-semibold text-text-primary">Previewing Optimizations...</h2>
-          <p className="text-text-secondary mt-1">Analyzing what will be optimized on your system</p>
-        </div>
-
-        <div className="flex-1 flex gap-4 overflow-hidden mb-6">
-          {renderTimeline(previewTimeline, 'What Will Be Optimized', 'Checking...')}
-        </div>
-
-        <Button variant="secondary" icon={X} onClick={() => stopProcess('preview')}>
-          Cancel Preview
-        </Button>
-      </div>
-    );
-  }
-
-  // ─── Preview results ─────────────────────────────────────────────────────────
-
-  if (stage === 'preview-results') {
-    const completedTasks = previewTimeline.filter((s) => s.status === 'complete');
-    const totalItems = previewTimeline.reduce((sum, s) => sum + s.items.length, 0);
+  if (stage === 'previewing' || stage === 'preview-results' || stage === 'optimizing') {
+    const header = stageCopy[stage];
+    const backHandler = () => {
+      if (stage === 'previewing') {
+        void stopProcess('preview');
+        return;
+      }
+      if (stage === 'optimizing') {
+        void stopProcess('main');
+        return;
+      }
+      reset();
+    };
 
     return (
-      <div className="h-full flex flex-col p-8 overflow-hidden">
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-2">
-            <h2 className="text-3xl font-bold text-text-primary">Preview Results</h2>
-          </div>
-          <p className="text-text-secondary">
-            {completedTasks.length} optimization tasks ready to apply
-          </p>
-        </div>
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(239,35,60,0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
 
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <Card variant="glass" className="p-6">
-            <div className="text-3xl font-bold text-optimize mb-1">{completedTasks.length}</div>
-            <div className="text-sm text-text-secondary">Tasks to Apply</div>
-          </Card>
-          <Card variant="glass" className="p-6">
-            <div className="text-3xl font-bold text-accent-primary mb-1">{totalItems}</div>
-            <div className="text-sm text-text-secondary">Actions Planned</div>
-          </Card>
-        </div>
-
-        {completedTasks.length > 0 && (
-          <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 mb-6">
-            {completedTasks.map((s) => (
-              <Card key={s.id} variant="glass" className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-optimize/15 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Zap className="w-4 h-4 text-optimize" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-text-primary">{s.name}</h4>
-                    {s.items.length > 0 && (
-                      <div className="mt-1 space-y-0.5">
-                        {s.items.slice(0, 3).map((item, i) => (
-                          <div key={i} className="text-xs text-text-secondary font-mono truncate">
-                            {item}
-                          </div>
-                        ))}
-                        {s.items.length > 3 && (
-                          <div className="text-xs text-text-tertiary italic">
-                            +{s.items.length - 3} more
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {completedTasks.length === 0 && (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-text-tertiary">
-              <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-accent-success opacity-60" />
-              <p className="font-medium text-text-secondary">System already optimized</p>
-              <p className="text-sm mt-1">No significant optimizations were found</p>
+        <div className="relative flex h-full min-h-0 flex-col">
+          <header className="flex shrink-0 items-start justify-between gap-4">
+            <div>
+              <h1 className="text-[clamp(1.65rem,2.65vw,3.15rem)] font-black leading-none text-slate-950">{header.title}</h1>
+              <p className="mt-[clamp(0.65rem,1.15vw,1rem)] max-w-[34rem] text-[clamp(0.88rem,1.15vw,1rem)] font-semibold leading-relaxed text-slate-500">{header.description}</p>
             </div>
-          </div>
-        )}
 
-        <div className="flex gap-4">
-          <Button variant="secondary" icon={X} onClick={reset}>
-            Cancel
-          </Button>
-          <Button icon={Play} onClick={startOptimization} className="flex-1">
-            Apply Optimizations
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Optimizing ──────────────────────────────────────────────────────────────
-
-  if (stage === 'optimizing') {
-    return (
-      <div className="h-full flex flex-col p-8">
-        <div className="mb-6 text-center">
-          <div className="flex justify-center mb-4">
-            <div className="relative">
-              <Spinner size="lg" />
-              <Zap className="absolute inset-0 m-auto w-6 h-6 text-optimize" />
+            <div className="flex shrink-0 items-center gap-3">
+              <Button variant="secondary" icon={ArrowLeft} onClick={backHandler} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
+                Back
+              </Button>
+              {stage === 'preview-results' && (
+                <Button variant="secondary" icon={RefreshCcw} onClick={startPreview} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-rose-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
+                  Preview Again
+                </Button>
+              )}
             </div>
+          </header>
+
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,0.96fr)_minmax(0,1fr)] gap-[clamp(1.25rem,3vw,4rem)]">
+            {renderOptimizationPlan()}
+            {renderTaskPanel()}
           </div>
-          <h2 className="text-2xl font-semibold text-text-primary">Optimizing System...</h2>
-          <p className="text-text-secondary mt-1">Running system maintenance and optimization tasks</p>
-        </div>
 
-        <div className="flex-1 flex gap-4 overflow-hidden mb-6">
-          {renderTimeline(timeline, 'Optimization Progress', 'Running...')}
+          {renderFooter()}
         </div>
-
-        <Button variant="secondary" icon={X} onClick={() => stopProcess('main')}>
-          Stop Optimization
-        </Button>
       </div>
     );
   }
 
   if (stage === 'complete') {
-    const completedStages = timeline.filter((s) => s.status === 'complete');
-    const totalItems = timeline.reduce((sum, s) => sum + s.items.length, 0);
+    const { completedStages, totalItems } = timelineStats(timeline);
 
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center space-y-8 max-w-md w-full">
-          <div className="flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-accent-success/12 flex items-center justify-center">
-              <Check className="w-10 h-10 text-accent-success" />
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] p-7">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(239,35,60,0.12),transparent_36%),radial-gradient(circle_at_16%_88%,rgba(34,197,94,0.12),transparent_34%)]" />
+        <div className="relative flex h-full items-center justify-center">
+          <div className="w-full max-w-xl rounded-[1.4rem] border border-white/80 bg-white/70 p-8 text-center shadow-[0_24px_80px_rgba(83,76,148,0.16)] backdrop-blur-2xl">
+            <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-500 shadow-[0_18px_45px_rgba(34,197,94,0.16)]">
+              <Check className="h-10 w-10" />
             </div>
-          </div>
-          <div>
-            <h2 className="text-3xl font-bold text-text-primary mb-2">Optimization Complete!</h2>
-            <p className="text-text-secondary">System maintenance tasks finished successfully</p>
-          </div>
+            <h2 className="text-3xl font-black text-slate-950">Optimization Complete!</h2>
+            <p className="mt-2 text-sm font-semibold text-slate-500">Mole completed {completedStages.length} performance tasks and processed {totalItems} optimization actions.</p>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Card variant="glass" className="p-6">
-              <div className="text-3xl font-bold text-optimize mb-1">{completedStages.length}</div>
-              <div className="text-sm text-text-secondary">Tasks Completed</div>
-            </Card>
-            <Card variant="glass" className="p-6">
-              <div className="text-3xl font-bold text-accent-primary mb-1">{totalItems}</div>
-              <div className="text-sm text-text-secondary">Items Processed</div>
-            </Card>
-          </div>
-
-          {completedStages.length > 0 && (
-            <Card variant="glass" className="p-4 text-left">
-              <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
-                <Zap className="w-4 h-4 text-optimize" />
-                Completed Tasks
-              </h3>
-              <div className="space-y-2">
-                {completedStages.map((s) => (
-                  <div key={s.id} className="flex items-center gap-3">
-                    <div className="w-5 h-5 rounded-full bg-accent-success/20 flex items-center justify-center flex-shrink-0">
-                      <CheckCircle2 className="w-3 h-3 text-accent-success" />
+            {completedStages.length > 0 && (
+              <div className="mt-6 rounded-[1.15rem] border border-emerald-100 bg-emerald-50/55 p-4 text-left">
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-black text-emerald-700">
+                  <Zap className="h-4 w-4" />
+                  Completed Tasks
+                </h3>
+                <div className="space-y-2">
+                  {completedStages.slice(0, 5).map((completedStage) => (
+                    <div key={completedStage.id} className="flex items-center gap-3">
+                      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-500">
+                        <CheckCircle2 className="h-3 w-3" />
+                      </div>
+                      <span className="text-sm font-semibold text-slate-600">{completedStage.name}</span>
+                      {completedStage.startTime && completedStage.endTime && (
+                        <span className="ml-auto text-xs font-bold text-slate-400">
+                          {((completedStage.endTime - completedStage.startTime) / 1000).toFixed(1)}s
+                        </span>
+                      )}
                     </div>
-                    <span className="text-sm text-text-secondary">{s.name}</span>
-                    {s.startTime && s.endTime && (
-                      <span className="text-xs text-text-tertiary ml-auto">
-                        {((s.endTime - s.startTime) / 1000).toFixed(1)}s
-                      </span>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </Card>
-          )}
+            )}
 
-          <Button icon={Check} onClick={reset} size="lg">
-            Done
-          </Button>
+            <Button icon={Check} onClick={reset} size="lg" className="mt-8 rounded-full bg-rose-500 px-8 shadow-[0_18px_44px_rgba(239,35,60,0.24)] hover:bg-rose-600">
+              Done
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -673,40 +1173,39 @@ export function OptimizePage() {
 
   if (stage === 'error') {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center space-y-8 max-w-md w-full">
-          <div className="flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-accent-danger/12 flex items-center justify-center">
-              <AlertCircle className="w-10 h-10 text-accent-danger" />
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] p-7">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(239,35,60,0.14),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+        <div className="relative flex h-full items-center justify-center">
+          <div className="w-full max-w-xl rounded-[1.4rem] border border-white/80 bg-white/70 p-8 text-center shadow-[0_24px_80px_rgba(83,76,148,0.16)] backdrop-blur-2xl">
+            <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-rose-100 text-rose-500 shadow-[0_18px_45px_rgba(239,35,60,0.16)]">
+              <AlertCircle className="h-10 w-10" />
             </div>
-          </div>
-          <div>
-            <h2 className="text-3xl font-bold text-text-primary mb-2">Optimization Failed</h2>
-            <p className="text-text-secondary">Some tasks encountered errors. Check the log for details.</p>
-          </div>
+            <h2 className="text-3xl font-black text-slate-950">Optimization Failed</h2>
+            <p className="mt-2 text-sm font-semibold text-slate-500">Some tasks encountered errors. Check the details below, then try the tune-up again.</p>
 
-          {logs.filter((l) => l.type === 'error').length > 0 && (
-            <Card variant="glass" className="p-4 text-left">
-              <h3 className="text-sm font-semibold text-text-primary mb-3">Error Details</h3>
-              <div className="space-y-1 font-mono text-xs max-h-40 overflow-y-auto custom-scrollbar">
-                {logs
-                  .filter((l) => l.type === 'error')
-                  .map((log, i) => (
-                    <div key={i} className="text-red-400">
-                      {log.text}
-                    </div>
-                  ))}
+            {logs.filter((log) => log.type === 'error').length > 0 && (
+              <div className="mt-6 rounded-[1.15rem] border border-rose-100 bg-rose-50/55 p-4 text-left">
+                <h3 className="mb-3 text-sm font-black text-rose-700">Error Details</h3>
+                <div className="max-h-40 space-y-1 overflow-y-auto font-mono text-xs custom-scrollbar">
+                  {logs
+                    .filter((log) => log.type === 'error')
+                    .map((log, index) => (
+                      <div key={`${log.timestamp}-${index}`} className="text-rose-500">
+                        {log.text}
+                      </div>
+                    ))}
+                </div>
               </div>
-            </Card>
-          )}
+            )}
 
-          <div className="flex gap-4 justify-center">
-            <Button variant="secondary" onClick={reset}>
-              Back
-            </Button>
-            <Button icon={Zap} onClick={startOptimization}>
-              Try Again
-            </Button>
+            <div className="mt-8 flex justify-center gap-4">
+              <Button variant="secondary" onClick={reset} className="rounded-full border border-white/70 bg-white/70 px-8 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white">
+                Back
+              </Button>
+              <Button icon={Zap} onClick={startOptimization} className="rounded-full bg-rose-500 px-8 shadow-[0_18px_44px_rgba(239,35,60,0.24)] hover:bg-rose-600">
+                Try Again
+              </Button>
+            </div>
           </div>
         </div>
       </div>

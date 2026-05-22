@@ -855,7 +855,7 @@ export function UninstallPage() {
                 return (
                   <Card
                     key={originalIndex}
-                    className={`${LIST_CARD} cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 ${
+                    className={`${LIST_CARD} shadow-sm cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 ${
                       selectedApps.has(originalIndex) ? 'ring-2 ring-rose-400 bg-white/55' : ''
                     }`}
                     onClick={() => toggleApp(originalIndex)}

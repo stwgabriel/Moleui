@@ -12,7 +12,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import { AreaChart, Area, ResponsiveContainer, Tooltip, YAxis, PieChart, Pie, Cell } from 'recharts';
+import { AreaChart, Area, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell } from 'recharts';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { formatBytes } from '@/utils/format';
@@ -20,8 +20,10 @@ import type { PageId, SystemMetrics } from '@/types';
 import { getMyMacMetrics, setMyMacMetrics } from '@/utils/storage';
 
 const MAX_HISTORY = 30;
-const MAX_BATTERY_HISTORY = 360;
+const MAX_BATTERY_HISTORY = 24 * 60;
 const BATTERY_SAMPLE_INTERVAL = 60_000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 const PROCESS_MENU_WIDTH = 232;
 const PROCESS_MENU_HEIGHT = 276;
 const PROCESS_MENU_MARGIN = 8;
@@ -42,6 +44,24 @@ interface BatteryHistoryPoint {
   battery: number;
   status: string;
   timeLeft?: string;
+}
+
+interface BatteryChartPoint {
+  t: number;
+  battery: number | null;
+  predictedBattery: number | null;
+  status?: string;
+  timeLeft?: string;
+  forecast?: boolean;
+}
+
+interface BatteryPrediction {
+  label: string;
+  detail: string;
+  current: BatteryHistoryPoint | null;
+  projectedBattery: number | null;
+  ratePerHour: number | null;
+  direction: 'up' | 'down' | 'flat';
 }
 
 interface MyMacPageProps {
@@ -191,61 +211,138 @@ function isBatteryCharging(status: string): boolean {
   return !statusLower.includes('discharging') && (statusLower.includes('charging') || statusLower.includes('charged'));
 }
 
-function formatBatteryDuration(milliseconds: number): string {
-  const totalMinutes = Math.max(1, Math.round(milliseconds / 60000));
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+function clampBatteryPercent(percent: number): number {
+  return Math.max(0, Math.min(percent, 100));
 }
 
-function getBatteryDrainPrediction(metrics: SystemMetrics | null, history: BatteryHistoryPoint[]) {
-  const current = metrics ? makeBatteryHistoryPoint(metrics, Date.now()) : null;
-  if (!current) return { label: 'No battery data', detail: 'Waiting for samples' };
+function parseBatteryTimeLeftMs(timeLeft?: string): number | null {
+  const formatted = formatBatteryTimeLeft(timeLeft);
+  if (formatted === '—') return null;
+
+  const match = formatted.match(/^(\d+):(\d{2})$/);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes >= 60) return null;
+
+  const milliseconds = (hours * 60 + minutes) * 60000;
+  return milliseconds > 0 ? milliseconds : null;
+}
+
+function getBatteryDayBounds(now: number): { start: number; end: number } {
+  const startDate = new Date(now);
+  startDate.setHours(0, 0, 0, 0);
+  const start = startDate.getTime();
+
+  return { start, end: start + DAY_MS };
+}
+
+function getBatteryHourTicks(dayStart: number): number[] {
+  return Array.from({ length: 25 }, (_, hour) => dayStart + hour * HOUR_MS);
+}
+
+function formatBatteryHourTick(value: number, dayStart: number): string {
+  const hour = Math.round((value - dayStart) / HOUR_MS);
+  return hour % 6 === 0 ? String(hour).padStart(2, '0') : '';
+}
+
+function getBatteryHistoryRate(
+  points: BatteryHistoryPoint[],
+  current: BatteryHistoryPoint,
+  direction: 'up' | 'down' | 'any',
+): number | null {
+  const baseline = [...points]
+    .reverse()
+    .find((point) => {
+      if (point.t >= current.t || point.battery === current.battery) return false;
+
+      const delta = current.battery - point.battery;
+      if (direction === 'up') return delta > 0;
+      if (direction === 'down') return delta < 0;
+      return delta !== 0;
+    });
+
+  if (!baseline) return null;
+
+  const elapsedHours = (current.t - baseline.t) / HOUR_MS;
+  if (elapsedHours <= 0) return null;
+
+  const ratePerHour = (current.battery - baseline.battery) / elapsedHours;
+  return Number.isFinite(ratePerHour) && ratePerHour !== 0 ? ratePerHour : null;
+}
+
+function getBatteryPrediction(metrics: SystemMetrics | null, history: BatteryHistoryPoint[], now: number): BatteryPrediction {
+  const current = metrics ? makeBatteryHistoryPoint(metrics, now) : null;
+  if (!current) {
+    return {
+      label: 'No battery data',
+      detail: 'Waiting for samples',
+      current: null,
+      projectedBattery: null,
+      ratePerHour: null,
+      direction: 'flat',
+    };
+  }
+
+  const timeLeftMs = parseBatteryTimeLeftMs(current.timeLeft);
+  const points = trimHistory([...history, current], MAX_BATTERY_HISTORY).sort((a, b) => a.t - b.t);
+  let direction: BatteryPrediction['direction'] = 'flat';
+  let ratePerHour: number | null = null;
 
   if (isBatteryCharging(current.status)) {
-    return {
-      label: current.status || 'Charging',
-      detail: 'Prediction paused',
-    };
-  }
-
-  const points = trimHistory([...history, current], MAX_BATTERY_HISTORY).sort((a, b) => a.t - b.t);
-  let lastChargingIndex = -1;
-  for (let index = points.length - 1; index >= 0; index -= 1) {
-    if (isBatteryCharging(points[index].status)) {
-      lastChargingIndex = index;
-      break;
+    if (current.battery >= 99.5 || current.status.toLowerCase().includes('charged')) {
+      ratePerHour = 0;
+    } else {
+      direction = 'up';
+      ratePerHour = timeLeftMs ? (100 - current.battery) / (timeLeftMs / HOUR_MS) : getBatteryHistoryRate(points, current, 'up');
     }
+  } else if (isBatteryDraining(current.status)) {
+    direction = 'down';
+    ratePerHour = timeLeftMs ? -current.battery / (timeLeftMs / HOUR_MS) : getBatteryHistoryRate(points, current, 'down');
+  } else {
+    ratePerHour = getBatteryHistoryRate(points, current, 'any');
+    if (ratePerHour != null) direction = ratePerHour > 0 ? 'up' : 'down';
   }
-  const dischargePoints = points.slice(lastChargingIndex + 1).filter((point) => point.t <= current.t);
-  const baseline = [...dischargePoints].reverse().find((point) => point.t < current.t && point.battery > current.battery) ?? dischargePoints[0];
 
-  if (!baseline || baseline.t >= current.t) {
+  if (ratePerHour != null && Math.abs(ratePerHour) < 0.01) {
+    ratePerHour = 0;
+    direction = 'flat';
+  }
+
+  if (ratePerHour == null) {
     return {
-      label: metrics ? formatBatteryDischargeLabel(metrics.batteries?.[0]) : 'Learning drain',
-      detail: `${history.length} saved`,
+      label: isBatteryCharging(current.status) ? current.status : formatBatteryDischargeLabel(metrics?.batteries?.[0]),
+      detail: 'Learning trend',
+      current,
+      projectedBattery: current.battery,
+      ratePerHour,
+      direction,
     };
   }
 
-  const percentDrop = baseline.battery - current.battery;
-  const elapsedMs = current.t - baseline.t;
-  if (percentDrop <= 0 || elapsedMs <= 0) {
+  const { end } = getBatteryDayBounds(now);
+  const hoursToMidnight = Math.max(0, (end - current.t) / HOUR_MS);
+  const projectedBattery = clampBatteryPercent(current.battery + ratePerHour * hoursToMidnight);
+
+  if (ratePerHour === 0) {
     return {
-      label: metrics ? formatBatteryDischargeLabel(metrics.batteries?.[0]) : 'Learning drain',
-      detail: `${history.length} saved`,
+      label: `Midnight ${projectedBattery.toFixed(0)}%`,
+      detail: 'Flat estimate',
+      current,
+      projectedBattery,
+      ratePerHour,
+      direction: 'flat',
     };
   }
-
-  const drainPerHour = percentDrop / (elapsedMs / 3600000);
-  const timeToEmptyMs = (current.battery / drainPerHour) * 3600000;
 
   return {
-    label: `Predicted ${formatBatteryDuration(timeToEmptyMs)} to 0%`,
-    detail: `${drainPerHour.toFixed(1)}%/hr over ${formatBatteryDuration(elapsedMs)}`,
+    label: `Midnight ${projectedBattery.toFixed(0)}%`,
+    detail: `${ratePerHour > 0 ? '+' : ''}${ratePerHour.toFixed(1)}%/hr ${direction}`,
+    current,
+    projectedBattery,
+    ratePerHour,
+    direction,
   };
 }
 
@@ -256,13 +353,15 @@ function appendBatteryHistory(history: BatteryHistoryPoint[], metrics: SystemMet
   const previous = history[history.length - 1];
   if (!previous) return [point];
 
+  const percentChanged = point.battery !== previous.battery;
   const percentDropped = point.battery < previous.battery;
   const statusChanged = point.status !== previous.status;
   const sampleDue = t - previous.t >= BATTERY_SAMPLE_INTERVAL;
-  const draining = isBatteryDraining(point.status) || percentDropped;
+  const charging = isBatteryCharging(point.status) && point.battery < 99.5;
+  const activeBattery = isBatteryDraining(point.status) || charging || percentDropped || percentChanged;
 
-  if (!draining && !statusChanged) return history;
-  if (!percentDropped && !statusChanged && !sampleDue) return history;
+  if (!activeBattery && !statusChanged) return history;
+  if (!percentChanged && !statusChanged && !sampleDue) return history;
 
   return trimHistory([...history, point], MAX_BATTERY_HISTORY);
 }
@@ -314,17 +413,70 @@ function getRenderableHistory(metrics: SystemMetrics | null, history: HistoryPoi
   ];
 }
 
-function getRenderableBatteryHistory(metrics: SystemMetrics | null, history: BatteryHistoryPoint[]): BatteryHistoryPoint[] {
-  if (history.length >= 2) return history;
+function upsertBatteryChartPoint(chart: Map<number, BatteryChartPoint>, point: BatteryChartPoint): void {
+  const existing = chart.get(point.t);
 
-  const current = metrics ? makeBatteryHistoryPoint(metrics, Date.now()) : null;
-  if (!current) return history;
-  if (history.length === 1) return [history[0], current];
+  chart.set(point.t, {
+    t: point.t,
+    battery: point.battery ?? existing?.battery ?? null,
+    predictedBattery: point.predictedBattery ?? existing?.predictedBattery ?? null,
+    status: point.status ?? existing?.status,
+    timeLeft: point.timeLeft ?? existing?.timeLeft,
+    forecast: point.forecast ?? existing?.forecast,
+  });
+}
 
-  return [
-    { ...current, t: current.t - 2000 },
-    current,
-  ];
+function getBatteryChartData(history: BatteryHistoryPoint[], prediction: BatteryPrediction, now: number): BatteryChartPoint[] {
+  const { start, end } = getBatteryDayBounds(now);
+  const chart = new Map<number, BatteryChartPoint>();
+  const current = prediction.current;
+  const actualPoints = history.filter((point) => point.t >= start && point.t <= Math.min(now, end));
+
+  if (current && current.t >= start && current.t <= end) {
+    actualPoints.push(current);
+  }
+
+  if (actualPoints.length === 1) {
+    const [point] = actualPoints;
+    upsertBatteryChartPoint(chart, {
+      t: Math.max(start, point.t - 2000),
+      battery: point.battery,
+      predictedBattery: null,
+      status: point.status,
+      timeLeft: point.timeLeft,
+    });
+  }
+
+  actualPoints.forEach((point) => {
+    upsertBatteryChartPoint(chart, {
+      t: point.t,
+      battery: point.battery,
+      predictedBattery: null,
+      status: point.status,
+      timeLeft: point.timeLeft,
+    });
+  });
+
+  if (current && current.t <= end) {
+    const projectedBattery = prediction.projectedBattery ?? current.battery;
+    upsertBatteryChartPoint(chart, {
+      t: current.t,
+      battery: null,
+      predictedBattery: current.battery,
+      status: current.status,
+      timeLeft: current.timeLeft,
+      forecast: true,
+    });
+    upsertBatteryChartPoint(chart, {
+      t: end,
+      battery: null,
+      predictedBattery: projectedBattery,
+      status: 'Predicted',
+      forecast: true,
+    });
+  }
+
+  return [...chart.values()].sort((a, b) => a.t - b.t);
 }
 
 
@@ -519,9 +671,13 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const battery = metrics?.batteries?.[0];
   const batteryPercent = metrics ? getBatteryPercent(metrics) : null;
   const chartHistory = getRenderableHistory(metrics, history);
-  const batteryChartHistory = getRenderableBatteryHistory(metrics, batteryHistory);
+  const now = Date.now();
+  const batteryDayBounds = getBatteryDayBounds(now);
+  const batteryHourTicks = getBatteryHourTicks(batteryDayBounds.start);
+  const batteryPrediction = getBatteryPrediction(metrics, batteryHistory, now);
+  const batteryChartHistory = getBatteryChartData(batteryHistory, batteryPrediction, now);
   const batteryCharging = battery ? isBatteryCharging(battery.status) : false;
-  const batteryPrediction = getBatteryDrainPrediction(metrics, batteryHistory);
+  const batteryPredictionStroke = batteryPrediction.direction === 'down' ? '#f97316' : '#22c55e';
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
@@ -885,20 +1041,35 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                       </div>
                     )}
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                      <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 14 }}>
                         <defs>
                           <linearGradient id="batteryGrad" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
                             <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
                           </linearGradient>
                         </defs>
+                        <CartesianGrid vertical horizontal={false} stroke="rgba(15, 23, 42, 0.09)" strokeDasharray="1 5" />
+                        <XAxis
+                          dataKey="t"
+                          type="number"
+                          domain={[batteryDayBounds.start, batteryDayBounds.end]}
+                          ticks={batteryHourTicks}
+                          interval={0}
+                          tickFormatter={(value) => formatBatteryHourTick(Number(value), batteryDayBounds.start)}
+                          axisLine={false}
+                          tickLine={false}
+                          tickMargin={4}
+                          tick={{ fill: '#94a3b8', fontSize: 9 }}
+                        />
                         <YAxis domain={[0, 100]} hide />
                         <Tooltip
                           content={({ active, payload }) => {
-                            const point = payload?.[0]?.payload as BatteryHistoryPoint | undefined;
-                            return active && payload?.length && payload[0]?.value != null ? (
+                            const item = payload?.find((entry) => entry.value != null);
+                            const point = item?.payload as BatteryChartPoint | undefined;
+
+                            return active && item?.value != null ? (
                               <div className="space-y-0.5 rounded-lg border border-white/70 bg-white/80 px-2 py-1 text-xs shadow-md backdrop-blur-xl">
-                                <div>{(payload[0].value as number).toFixed(0)}% battery</div>
+                                <div>{(item.value as number).toFixed(0)}% {point?.forecast ? 'predicted' : 'battery'}</div>
                                 {point && <div className="text-slate-500">{point.status} · {new Date(point.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
                               </div>
                             ) : null;
@@ -914,13 +1085,26 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                           isAnimationActive={false}
                           connectNulls
                         />
+                        <Area
+                          type="monotone"
+                          dataKey="predictedBattery"
+                          stroke={batteryPredictionStroke}
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          fill="transparent"
+                          fillOpacity={0}
+                          dot={false}
+                          activeDot={false}
+                          isAnimationActive={false}
+                          connectNulls
+                        />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="mt-auto grid grid-cols-2 gap-2 text-xs font-medium text-slate-500">
+                  {/* <div className="mt-auto grid grid-cols-2 gap-2 text-xs font-medium text-slate-500">
                     <div className="truncate">{batteryPrediction.label}</div>
                     <div className="truncate text-right">{batteryPrediction.detail}</div>
-                  </div>
+                  </div> */}
                 </div>
               </Card>
             </div>

@@ -1,13 +1,14 @@
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, shell } from "electron";
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = !app.isPackaged;
-const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-light.png");
+const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-purple.png");
 
 app.setName("Moleui Desktop");
 nativeTheme.themeSource = "light";
@@ -382,8 +383,75 @@ function createWindow() {
 }
 
 let mainWindow;
+let settingsWindow;
+
+function loadAppWindow(window, query = "") {
+  if (isDev) {
+    window.loadURL(`http://localhost:5173${query}`);
+  } else {
+    window.loadFile(path.join(__dirname, "dist", "index.html"), query ? { search: query.slice(1) } : undefined);
+  }
+}
+
+function createSettingsWindow(parentWindow) {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.focus();
+    return settingsWindow;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 540,
+    height: 640,
+    minWidth: 480,
+    minHeight: 560,
+    show: false,
+    title: "Settings",
+    titleBarStyle: "hidden",
+    trafficLightPosition: {
+      x: 18,
+      y: 6,
+    },
+    parent: parentWindow,
+    icon: appIconPath,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  loadAppWindow(settingsWindow, "?window=settings");
+
+  settingsWindow.once("ready-to-show", () => {
+    settingsWindow.show();
+  });
+
+  settingsWindow.on("closed", () => {
+    settingsWindow = null;
+  });
+
+  return settingsWindow;
+}
 
 ipcMain.handle("mole:status", async () => runMole(["status", "--json", "--process-limit", "0"]));
+
+ipcMain.handle("mole:settings:open", async (event) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  createSettingsWindow(parentWindow);
+  return { ok: true };
+});
+
+ipcMain.handle("mole:settings:profile", async () => {
+  const deviceName = os.hostname() || "This Mac";
+
+  return {
+    deviceName,
+    user: {
+      name: deviceName,
+      email: deviceName,
+    },
+  };
+});
 
 ipcMain.handle("mole:uninstall:list", async (event) => {
   return runMole(["uninstall", "--list"], {
@@ -521,6 +589,13 @@ ipcMain.handle("mole:clean:kill", async () => {
 ipcMain.handle("mole:optimize:execute", async (event, options = {}) => {
   const args = ["optimize"];
   if (options.dryRun) args.push("--dry-run");
+  if (Array.isArray(options.taskNames)) {
+    for (const taskName of options.taskNames) {
+      if (typeof taskName === "string" && taskName.trim()) {
+        args.push("--task", taskName.trim());
+      }
+    }
+  }
 
   return runMole(args, {
     processId: "optimize",
@@ -635,6 +710,18 @@ ipcMain.handle("mole:delete-path", async (_event, inputPath) => {
   } catch (error) {
     return { ok: false, message: error.message };
   }
+});
+
+ipcMain.handle("mole:touchid:status", async () => {
+  return runMole(["touchid", "status"]);
+});
+
+ipcMain.handle("mole:touchid:enable", async () => {
+  return runMole(["touchid", "enable"]);
+});
+
+ipcMain.handle("mole:touchid:disable", async () => {
+  return runMole(["touchid", "disable"]);
 });
 
 ipcMain.handle("mole:open-activity-monitor", async () => {

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.43.1] - 2026-05-22
+
+### Fixed
+- Fixed Storage page file and folder list row corners to match the parent list container.
+
 ## [1.43.0] - 2026-05-20
 
 ### Added

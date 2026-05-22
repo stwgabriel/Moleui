@@ -3,7 +3,7 @@ import {
   HardDrive, FolderOpen, File, BarChart3, Search,
   RefreshCw, X, ChevronRight, ChevronUp, Home, Download,
   AlertCircle, ArrowLeft, Folder, Trash2, ExternalLink,
-  Filter, List, LayoutGrid, CalendarDays
+  ListFilter,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
+import { getFileIconCategory } from '@/lib/fileIcons';
 import { formatBytes, stripAnsi } from '@/utils/format';
 import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig } from '@/types';
@@ -18,8 +19,6 @@ import type { PageConfig } from '@/types';
 type Stage = 'idle' | 'scanning' | 'results' | 'error';
 type AnalyzeMode = 'disk' | 'home' | 'downloads' | 'custom';
 type QuickAnalyzeMode = Exclude<AnalyzeMode, 'custom'>;
-type ResultsViewMode = 'map' | 'list';
-type EntrySortMode = 'size' | 'date';
 
 interface AnalyzeEntry {
   name: string;
@@ -29,6 +28,7 @@ interface AnalyzeEntry {
   insight?: boolean;
   cleanable?: boolean;
   last_access?: string;
+  isGroupedSmallFiles?: boolean;
 }
 
 interface AnalyzeLargeFile {
@@ -72,18 +72,29 @@ interface TreemapRect extends TreemapItem {
   height: number;
 }
 
+type AppIconMap = Record<string, string>;
+
 const QUICK_PATHS: Array<{ mode: QuickAnalyzeMode; label: string; path: string; icon: LucideIcon }> = [
   { mode: 'disk', label: 'Entire Disk', path: '/', icon: HardDrive },
   { mode: 'home', label: 'Home Folder', path: '~', icon: Home },
   { mode: 'downloads', label: 'Downloads', path: '~/Downloads', icon: Download },
 ];
 
-const ANALYZE_GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
 const TREEMAP_COLORS = [
   '#fb923c', '#0ea5e9', '#ef4444', '#3b82f6',
   '#a855f7', '#14b8a6', '#f59e0b', '#ec4899',
   '#22c55e', '#64748b', '#f97316', '#06b6d4',
 ];
+const SMALL_FILE_GROUP_THRESHOLD = 1024 * 1024;
+
+function isApplicationsPath(path: string) {
+  const cleanPath = path.replace(/\/+$/, '') || '/';
+  return cleanPath === '/Applications' || cleanPath.endsWith('/Applications');
+}
+
+function isMacAppEntry(entry: Pick<AnalyzeEntry, 'path' | 'is_dir'>) {
+  return entry.is_dir && entry.path.endsWith('.app');
+}
 
 function pathForAnalyzeMode(mode: AnalyzeMode, customPath: string) {
   if (mode === 'custom') return customPath.trim() || '/';
@@ -98,13 +109,30 @@ function sumSizes(items: Array<{ size: number }>) {
   return items.reduce((sum, item) => sum + Math.max(0, item.size), 0);
 }
 
+function groupSmallFiles(entries: AnalyzeEntry[], resultPath: string): AnalyzeEntry[] {
+  const smallFiles = entries.filter((entry) => !entry.is_dir && entry.size > 0 && entry.size < SMALL_FILE_GROUP_THRESHOLD);
+
+  if (smallFiles.length < 2) return entries;
+
+  const smallFilePaths = new Set(smallFiles.map((entry) => entry.path));
+  const groupedEntry: AnalyzeEntry = {
+    name: 'Files under 1 MB',
+    path: `${resultPath.replace(/\/$/, '') || '/'}/.mole-small-files`,
+    size: sumSizes(smallFiles),
+    is_dir: false,
+    isGroupedSmallFiles: true,
+  };
+
+  return [...entries.filter((entry) => !smallFilePaths.has(entry.path)), groupedEntry];
+}
+
 function buildTreemapItems(
   entries: AnalyzeEntry[],
   totalSize: number,
   resultPath: string,
   remainderTotal = totalSize,
 ): TreemapItem[] {
-  const visibleEntries = entries.filter((entry) => entry.size > 0).slice(0, 12);
+  const visibleEntries = entries.filter((entry) => entry.size > 0);
   const visibleSize = sumSizes(visibleEntries);
   const remainder = Math.max(0, remainderTotal - visibleSize);
   const items: TreemapItem[] = visibleEntries.map((entry, index) => ({
@@ -198,43 +226,51 @@ function DiskUsageProportionGraph({
   totalSize: number;
 }) {
   const visibleItems = items.filter((item) => item.size > 0).slice(0, 8);
+  const totalStorageLabel = formatBytes(totalSize);
 
   if (visibleItems.length === 0 || totalSize <= 0) {
     return null;
   }
 
   return (
-    <div className="rounded-2xl border border-white/50 bg-white/25 p-3 shadow-inner shadow-white/20">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Disk usage</div>
-        <div className="font-mono text-xs font-black text-slate-500">{formatBytes(totalSize)}</div>
+    <div className="rounded-[1.35rem] border border-white/55 bg-white/42 p-5 shadow-[0_18px_54px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="text-[0.78rem] font-black uppercase tracking-[0.24em] text-slate-500">Disk usage</div>
+        <div className="shrink-0 rounded-full border border-white/65 bg-white/55 px-3 py-1 font-mono text-[11px] font-black text-slate-600 shadow-sm">
+          Total storage {totalStorageLabel}
+        </div>
       </div>
       <div
         aria-label="Disk usage proportions"
-        className="flex h-4 overflow-hidden rounded-full bg-slate-900/10"
+        className="flex h-6 overflow-hidden rounded-full bg-slate-900/10 shadow-inner shadow-slate-900/10"
       >
-        {visibleItems.map((item) => (
-          <div
-            key={item.path}
-            className="min-w-[3px] border-r border-white/50 last:border-r-0"
-            style={{
-              width: `${Math.max(1, item.percentage)}%`,
-              background: item.color,
-            }}
-            title={`${item.name} - ${formatBytes(item.size)} - ${item.percentage.toFixed(1)}%`}
-          />
-        ))}
+        {visibleItems.map((item) => {
+          const showInlineLabel = item.percentage >= 9;
+
+          return (
+            <div
+              key={item.path}
+              className="flex min-w-[3px] items-center justify-center overflow-hidden border-r border-white/60 px-1 text-center last:border-r-0"
+              style={{
+                width: `${Math.max(1, item.percentage)}%`,
+                background: `linear-gradient(135deg, ${item.color}, ${item.color}dd)`,
+              }}
+              title={`${item.name} - ${formatBytes(item.size)} - ${item.percentage.toFixed(1)}%`}
+            >
+              {showInlineLabel && (
+                <span className="truncate text-[10px] font-black leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.38)]">
+                  {formatBytes(item.size)}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-3 xl:grid-cols-4">
         {visibleItems.slice(0, 4).map((item) => (
-          <div key={item.path} className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.color }} />
-              <span className="truncate text-xs font-bold text-slate-700">{item.name}</span>
-            </div>
-            <div className="mt-0.5 font-mono text-[11px] font-black text-slate-500">
-              {item.percentage.toFixed(1)}%
-            </div>
+          <div key={item.path} className="flex min-w-0 items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.color }} />
+            <span className="truncate text-xs font-black text-slate-700">{item.name}</span>
           </div>
         ))}
       </div>
@@ -287,13 +323,28 @@ export function AnalyzePage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [inlineScanPath, setInlineScanPath] = useState('');
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
-  const [resultsView, setResultsView] = usePersistentState<ResultsViewMode>('mole-analyze-results-view', 'map');
-  const [entrySortMode, setEntrySortMode] = usePersistentState<EntrySortMode>('mole-analyze-entry-sort', 'size');
   const [showFiles, setShowFiles] = usePersistentState('mole-analyze-show-files', true);
   const [showFolders, setShowFolders] = usePersistentState('mole-analyze-show-folders', true);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [appIcons, setAppIcons] = useState<AppIconMap>({});
+  const fileListScrollRef = useRef<HTMLDivElement | null>(null);
+  const [fileListScrollShadows, setFileListScrollShadows] = useState({ top: false, bottom: false });
 
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const updateFileListScrollShadows = useCallback(() => {
+    const element = fileListScrollRef.current;
+    if (!element) return;
+
+    const next = {
+      top: element.scrollTop > 2,
+      bottom: element.scrollTop + element.clientHeight < element.scrollHeight - 2,
+    };
+
+    setFileListScrollShadows((previous) => (
+      previous.top === next.top && previous.bottom === next.bottom ? previous : next
+    ));
+  }, []);
 
   // Cache the current result whenever it changes
   useEffect(() => {
@@ -347,6 +398,54 @@ export function AnalyzePage() {
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [isFilterOpen]);
+
+  useEffect(() => {
+    if (stage !== 'results') return;
+
+    const frame = requestAnimationFrame(updateFileListScrollShadows);
+    return () => cancelAnimationFrame(frame);
+  }, [inlineScanPath, result, showFiles, showFolders, stage, updateFileListScrollShadows]);
+
+  useEffect(() => {
+    if (stage !== 'results' || !result || !isApplicationsPath(result.path)) return;
+
+    const appPaths = result.entries.filter(isMacAppEntry).map((entry) => entry.path);
+    const missingAppPaths = appPaths.filter((path) => !appIcons[path]);
+    if (missingAppPaths.length === 0) return;
+
+    let cancelled = false;
+
+    window.moleDesktop.uninstall.getAppIcons(missingAppPaths)
+      .then((iconResult) => {
+        if (cancelled || !iconResult?.ok) return;
+        setAppIcons((currentIcons) => ({ ...currentIcons, ...iconResult.icons }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+
+        void Promise.all(missingAppPaths.map(async (appPath) => {
+          try {
+            const iconResult = await window.moleDesktop.uninstall.getAppIcon(appPath);
+            return iconResult.ok && iconResult.icon ? [appPath, iconResult.icon] as const : null;
+          } catch {
+            return null;
+          }
+        })).then((icons) => {
+          if (cancelled) return;
+          setAppIcons((currentIcons) => {
+            const nextIcons = { ...currentIcons };
+            icons.forEach((icon) => {
+              if (icon) nextIcons[icon[0]] = icon[1];
+            });
+            return nextIcons;
+          });
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appIcons, result, stage]);
 
   const startScan = async (
     path?: string,
@@ -537,8 +636,8 @@ export function AnalyzePage() {
     setPathInput(nextPath);
   };
 
-  const openItemContextMenu = (event: MouseEvent, item: FileActionItem & { isOther?: boolean }) => {
-    if (item.isOther) return;
+  const openItemContextMenu = (event: MouseEvent, item: FileActionItem & { isOther?: boolean; isGroupedSmallFiles?: boolean }) => {
+    if (item.isOther || item.isGroupedSmallFiles) return;
     event.preventDefault();
     event.stopPropagation();
 
@@ -749,48 +848,50 @@ export function AnalyzePage() {
   // ── Results ──────────────────────────────────────────────────────────────
   if (stage === 'results' && result) {
     const entries = [...(result.entries ?? [])].sort((a, b) => b.size - a.size);
+    const fileCount = entries.filter((entry) => !entry.is_dir).length;
+    const folderCount = entries.length - fileCount;
     const filteredEntries = entries.filter((entry) => (entry.is_dir ? showFolders : showFiles));
-    const sortedListEntries = [...filteredEntries].sort((a, b) => {
-      if (entrySortMode === 'date') {
-        return getEntryDateValue(b) - getEntryDateValue(a) || b.size - a.size;
-      }
-
-      return b.size - a.size;
-    });
-    const largeFiles = showFiles
-      ? [...(result.large_files ?? [])].sort((a, b) => b.size - a.size)
-      : [];
-    const filteredSize = sumSizes(filteredEntries);
-    const treemapItems = buildTreemapItems(filteredEntries, result.total_size, result.path, filteredSize);
+    const groupedEntries = groupSmallFiles(filteredEntries, result.path);
+    const sortedListEntries = [...groupedEntries].sort((a, b) => b.size - a.size);
+    const filteredSize = sumSizes(groupedEntries);
+    const treemapItems = buildTreemapItems(groupedEntries, result.total_size, result.path, filteredSize);
     const treemapRects = createTreemapLayout(treemapItems);
-    const leadingEntries = treemapItems.slice(0, 7);
     const breadcrumbs = buildBreadcrumbs();
     const canGoUp = result.path !== '/';
+    const pathParts = result.path.split('/').filter(Boolean);
+    const currentPathLabel = result.path === '/' ? 'Macintosh HD' : pathParts[pathParts.length - 1] ?? result.path;
+    const isViewingApplications = isApplicationsPath(result.path);
+    const applicationEntries = sortedListEntries.filter(isMacAppEntry);
 
     return (
-      <div className="relative h-full overflow-y-auto p-4 xl:overflow-hidden">
+      <div className="relative h-full overflow-y-auto p-6 xl:overflow-hidden">
         {/* Breadcrumb navigation bar */}
-        <div className="mb-3 flex items-center gap-1.5 rounded-2xl border border-white/50 bg-white/30 px-3 py-2 shadow-inner shadow-white/20 backdrop-blur-xl overflow-x-auto custom-scrollbar">
+        <div className="relative z-50 mb-7 flex items-center gap-2 rounded-full border border-white/55 bg-white/28 px-4 py-3 shadow-[0_16px_48px_rgba(109,93,252,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
           <button
             type="button"
             onClick={navigateBack}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition hover:bg-white/40 text-slate-500 hover:text-slate-800"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/45 hover:text-slate-800"
             title={navHistory.length > 0 ? 'Go back' : 'Back to start'}
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
+            <ArrowLeft className="h-4 w-4" />
           </button>
           {canGoUp && (
             <button
               type="button"
               onClick={navigateUp}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition hover:bg-white/40 text-slate-500 hover:text-slate-800"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/45 hover:text-slate-800"
               title="Go to parent folder"
             >
-              <ChevronUp className="h-3.5 w-3.5" />
+              <ChevronUp className="h-4 w-4" />
             </button>
           )}
-          <div className="mx-1 h-4 w-px bg-slate-300/60 shrink-0" />
-          <div className="flex items-center gap-0.5 min-w-0 overflow-x-auto">
+          <div className="mx-1 h-5 w-px shrink-0 bg-slate-300/60" />
+          <div className="flex shrink-0 items-center gap-2 rounded-full px-1.5 text-sm font-black text-slate-600">
+            <HardDrive className="h-4 w-4" />
+            {currentPathLabel}
+          </div>
+          <div className="mx-1 h-5 w-px shrink-0 bg-slate-300/60" />
+          <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;
               return (
@@ -833,7 +934,7 @@ export function AnalyzePage() {
                 setIsBackgroundRefreshing(false);
                 void startScan(targetPath, { skipCache: true, pushHistory: false, display: 'page' });
               }}
-              className="h-8 rounded-full px-3"
+              className="h-9 rounded-full px-3"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isBackgroundRefreshing ? 'animate-spin' : ''}`} />
             </Button>
@@ -841,252 +942,98 @@ export function AnalyzePage() {
               <Button
                 variant="secondary"
                 aria-label="Filter results"
+                aria-expanded={isFilterOpen}
                 title="Filter files and folders"
                 onClick={(event) => {
                   event.stopPropagation();
                   setIsFilterOpen((open) => !open);
                 }}
-                className="h-8 rounded-full px-3"
+                className="h-10 rounded-full bg-white/72 px-3 text-slate-700 shadow-[0_8px_24px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.8)] hover:bg-white/90"
               >
-                <Filter className="h-3.5 w-3.5" />
+                <ListFilter className="h-[1.05rem] w-[1.05rem]" strokeWidth={2.4} />
+                <span className="hidden text-sm font-black sm:inline">Filter</span>
               </Button>
+
               {isFilterOpen && (
                 <div
-                  className="absolute right-0 top-10 z-40 w-52 rounded-2xl border border-white/60 bg-white/90 p-2 shadow-[0_18px_50px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
+                  className="absolute right-0 top-12 z-[90] w-72 rounded-[1.35rem] border border-white/65 bg-white/90 p-3 shadow-[0_24px_70px_rgba(15,23,42,0.22)] backdrop-blur-2xl"
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-900/5">
-                    <input
-                      type="checkbox"
-                      checked={showFiles}
-                      onChange={(event) => setShowFiles(event.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-accent-primary focus:ring-accent-primary"
-                    />
-                    <File className="h-4 w-4 text-slate-500" />
-                    Files
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-900/5">
-                    <input
-                      type="checkbox"
-                      checked={showFolders}
-                      onChange={(event) => setShowFolders(event.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-accent-primary focus:ring-accent-primary"
-                    />
-                    <Folder className="h-4 w-4 text-slate-500" />
-                    Folders
-                  </label>
+                  <div className="mb-3 flex items-end justify-between gap-4 px-1">
+                    <div>
+                      <div className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-slate-500">Show in map</div>
+                      <div className="mt-1 text-sm font-black text-slate-950">{sortedListEntries.length} visible</div>
+                    </div>
+                    <div className="font-mono text-[11px] font-black text-slate-500">Size order</div>
+                  </div>
+
+                  <div className="grid grid-cols-2 rounded-full border border-slate-200/80 bg-slate-100/80 p-1 shadow-inner shadow-slate-900/5">
+                    <button
+                      type="button"
+                      aria-pressed={showFiles}
+                      onClick={() => setShowFiles((current) => (current && !showFolders ? current : !current))}
+                      className={`flex h-11 items-center justify-center gap-2 rounded-full text-sm font-black transition ${showFiles
+                        ? 'bg-white text-sky-700 shadow-[0_8px_20px_rgba(14,165,233,0.18)] ring-1 ring-sky-100'
+                        : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                    >
+                      <File className="h-4 w-4" />
+                      Files
+                      <span className="font-mono text-[10px] opacity-70">{fileCount}</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={showFolders}
+                      onClick={() => setShowFolders((current) => (current && !showFiles ? current : !current))}
+                      className={`flex h-11 items-center justify-center gap-2 rounded-full text-sm font-black transition ${showFolders
+                        ? 'bg-white text-violet-700 shadow-[0_8px_20px_rgba(139,92,246,0.18)] ring-1 ring-violet-100'
+                        : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                    >
+                      <Folder className="h-4 w-4" />
+                      Folders
+                      <span className="font-mono text-[10px] opacity-70">{folderCount}</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        <div className="grid min-h-[calc(100%-3.25rem)] grid-cols-1 gap-4 h-[calc(100%-3.25rem)] min-h-0 grid-cols-[20rem_minmax(0,1fr)]">
-          <Card className={`min-h-[34rem] rounded-[1.75rem] p-4 xl:min-h-0 ${ANALYZE_GLASS_CARD}`}>
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="flex flex-col items-center text-center">
+        <div className="grid h-[calc(100%-5.35rem)] min-h-[42rem] grid-cols-1 gap-6 xl:min-h-0 xl:grid-cols-[450px_minmax(0,1fr)]">
+          <div className="flex min-h-0 flex-col gap-5">
+            <DiskUsageProportionGraph items={treemapItems} totalSize={result.total_size} />
 
-                <div className="font-mono text-2xl font-black tracking-tight text-slate-950">
-                  {filteredEntries.length} of {entries.length} items, {formatBytes(filteredSize)}
-                </div>
-                <div className="mt-2 max-w-full truncate font-mono text-xs font-semibold text-slate-500">
-                  {result.path}
-                </div>
-              </div>
-
-              <div className="mt-8 flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
-                <div className="space-y-2">
-                  {leadingEntries.map((entry) => (
-                    <button
-                      key={entry.path}
-                      type="button"
-                      aria-disabled={!entry.is_dir || entry.isOther}
-                      onContextMenu={(event) => openItemContextMenu(event, entry)}
-                      onClick={() => {
-                        if (entry.is_dir && !entry.isOther) {
-                          setScanPath(entry.path);
-                          startScan(entry.path);
-                        }
-                      }}
-                      className={`group flex w-full items-center gap-3 rounded-2xl px-2 py-3 text-left transition hover:bg-white/35 ${!entry.is_dir || entry.isOther ? 'cursor-default' : ''}`}
-                    >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/60 bg-white/35 shadow-inner shadow-white/30" style={{ color: entry.color }}>
-                        {entry.is_dir ? <Folder className="h-4 w-4" /> : <File className="h-4 w-4" />}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-lg font-black text-slate-950">{entry.name}</span>
-                        <span className="block font-mono text-sm font-bold text-slate-500">
-                          {formatBytes(entry.size)} - {entry.percentage.toFixed(0)}%
-                        </span>
-                      </span>
-                      {entry.is_dir && !entry.isOther && (
-                        <ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-700" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-
-                {largeFiles.length > 0 && (
-                  <div className="mt-7 border-t border-slate-900/10 pt-5">
-                    <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">Largest Files</div>
-                    <div className="space-y-2">
-                      {largeFiles.slice(0, 4).map((file, index) => (
-                        <div
-                          key={file.path}
-                          onContextMenu={(event) => openItemContextMenu(event, { ...file, is_dir: false })}
-                          className="rounded-2xl border border-white/50 bg-white/25 p-3 shadow-inner shadow-white/20"
-                        >
-                          <div className="flex items-center gap-2">
-                            <File className="h-4 w-4 shrink-0 text-rose-500" />
-                            <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">{file.name}</span>
-                            <span className="font-mono text-xs font-black text-slate-500">#{index + 1}</span>
-                            <button
-                              type="button"
-                              onClick={() => requestDelete({ ...file, is_dir: false })}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-rose-500 transition hover:bg-rose-500/10 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
-                              title={`Delete ${file.name}`}
-                              aria-label={`Delete ${file.name}`}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                          <div className="mt-1 font-mono text-xs font-bold text-slate-500">{formatBytes(file.size)}</div>
+            <div className="min-h-[31rem] flex-1 xl:min-h-0">
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="relative min-h-0 flex-1">
+                  <div
+                    ref={fileListScrollRef}
+                    onScroll={updateFileListScrollShadows}
+                    className="h-full overflow-hidden overflow-y-auto rounded-[1.35rem] pr-1 custom-scrollbar"
+                  >
+                    {inlineScanPath ? (
+                      <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 p-8 text-center shadow-inner shadow-white/20">
+                        <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-analyze/10">
+                          <Spinner size="lg" />
+                          <Search className="absolute inset-0 m-auto h-5 w-5 text-analyze" />
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-5 flex flex-col gap-2">
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={navigateBack} className="flex-1 gap-2">
-                    <ArrowLeft className="h-4 w-4" />
-                    Back
-                  </Button>
-                  {canGoUp && (
-                    <Button variant="secondary" onClick={navigateUp} className="flex-1 gap-2">
-                      <ChevronUp className="h-4 w-4" />
-                      Up
-                    </Button>
-                  )}
-                </div>
-                <Button variant="secondary" onClick={() => { setStage('idle'); setView('pick'); }} className="w-full gap-2">
-                  <FolderOpen className="h-4 w-4" />
-                  Path
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          <Card className={`min-h-[36rem]  p-4 xl:min-h-0 ${ANALYZE_GLASS_CARD}`}>
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-black text-slate-950">
-                    {resultsView === 'map' ? 'Storage map' : 'File management'}
-                  </h2>
-                  <p className="mt-1 text-sm font-semibold text-slate-500">
-                    {filteredEntries.length} visible items from {formatBytes(result.total_size)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex rounded-full border border-white/60 bg-white/35 p-1 shadow-inner shadow-white/20">
-                    <button
-                      type="button"
-                      aria-label="Storage map"
-                      onClick={() => setResultsView('map')}
-                      className={`flex h-8 w-8 items-center justify-center rounded-full transition ${resultsView === 'map'
-                        ? 'bg-slate-950 text-white shadow-md'
-                        : 'text-slate-500 hover:bg-white/50 hover:text-slate-900'
-                        }`}
-                      title="Storage map"
-                    >
-                      <LayoutGrid className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="File management list"
-                      onClick={() => setResultsView('list')}
-                      className={`flex h-8 w-8 items-center justify-center rounded-full transition ${resultsView === 'list'
-                        ? 'bg-slate-950 text-white shadow-md'
-                        : 'text-slate-500 hover:bg-white/50 hover:text-slate-900'
-                        }`}
-                      title="File management list"
-                    >
-                      <List className="h-4 w-4" />
-                    </button>
-                  </div>
-                  {resultsView === 'list' && (
-                    <div className="flex rounded-full border border-white/60 bg-white/35 p-1 shadow-inner shadow-white/20">
-                      <button
-                        type="button"
-                        aria-label="Sort by size"
-                        onClick={() => setEntrySortMode('size')}
-                        className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-black transition ${entrySortMode === 'size'
-                          ? 'bg-slate-950 text-white shadow-md'
-                          : 'text-slate-500 hover:bg-white/50 hover:text-slate-900'
-                          }`}
-                      >
-                        <BarChart3 className="h-3.5 w-3.5" />
-                        Size
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Sort by date"
-                        onClick={() => setEntrySortMode('date')}
-                        className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-black transition ${entrySortMode === 'date'
-                          ? 'bg-slate-950 text-white shadow-md'
-                          : 'text-slate-500 hover:bg-white/50 hover:text-slate-900'
-                          }`}
-                      >
-                        <CalendarDays className="h-3.5 w-3.5" />
-                        Date
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {resultsView === 'list' && (
-                <div className="mb-4">
-                  <DiskUsageProportionGraph items={treemapItems} totalSize={result.total_size} />
-                </div>
-              )}
-
-              <div className="relative flex-1 min-h-0 rounded-sm space-4">
-                {inlineScanPath ? (
-                  <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-white/45 bg-white/25 p-8 text-center shadow-inner shadow-white/20">
-                    <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-analyze/10">
-                      <Spinner size="lg" />
-                      <Search className="absolute inset-0 m-auto h-5 w-5 text-analyze" />
-                    </div>
-                    <h3 className="text-xl font-black text-slate-950">Scanning folder</h3>
-                    <p className="mt-2 max-w-md truncate font-mono text-sm font-bold text-slate-500">{inlineScanPath}</p>
-                    <div className="mt-6 w-full max-w-sm space-y-2">
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-900/10">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-analyze to-accent-secondary transition-all duration-500 ease-out"
-                          style={{ width: `${progress}%` }}
-                        />
+                        <h3 className="text-xl font-black text-slate-950">Scanning folder</h3>
+                        <p className="mt-2 max-w-md truncate font-mono text-sm font-bold text-slate-500">{inlineScanPath}</p>
                       </div>
-                      <div className="flex items-center justify-between gap-3 font-mono text-xs font-bold text-slate-500">
-                        <span className="truncate">{currentFile || 'Scanning...'}</span>
-                        <span className="shrink-0">{Math.round(progress)}%</span>
+                    ) : filteredEntries.length === 0 ? (
+                      <div className="flex h-full flex-col items-center justify-center text-center">
+                        <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
+                        <p className="font-semibold text-slate-600">No entries match the current filters.</p>
                       </div>
-                    </div>
-                  </div>
-                ) : filteredEntries.length === 0 ? (
-                  <div className="flex h-full flex-col items-center justify-center text-center">
-                    <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
-                    <p className="font-semibold text-slate-600">No entries match the current filters.</p>
-                  </div>
-                ) : resultsView === 'list' ? (
-                  <div className="h-full overflow-y-auto pr-1 custom-scrollbar">
-                    <div className="space-y-2">
-                      {sortedListEntries.map((entry) => {
+                    ) : (
+                      <div className="space-y-2.5 pb-2">
+                        {sortedListEntries.map((entry) => {
                         const percentage = result.total_size > 0 ? (entry.size / result.total_size) * 100 : 0;
                         const entryDate = formatEntryDate(entry);
+                        const iconCategory = getFileIconCategory(entry);
+                        const EntryIcon = iconCategory.icon;
                         return (
                           <button
                             key={entry.path}
@@ -1100,30 +1047,21 @@ export function AnalyzePage() {
                                 startScan(entry.path);
                               }
                             }}
-                            className={`group relative w-full overflow-hidden rounded-2xl border border-white/50 bg-white/30 p-3 text-left shadow-inner shadow-white/20 transition hover:bg-white/45 ${!entry.is_dir ? 'cursor-default' : ''}`}
+                            className={`group relative w-full overflow-hidden rounded-[1.35rem] border border-white/50 bg-white/30 p-3 text-left shadow-sm transition hover:bg-white/46 ${!entry.is_dir ? 'cursor-default' : ''}`}
                           >
                             <div
-                              className="absolute inset-y-0 left-0 bg-accent-primary/10"
-                              style={{ width: `${Math.max(1, percentage)}%` }}
+                              className="absolute inset-y-0 left-0 rounded-[1.35rem] bg-violet-200/38 transition-[width] duration-300"
+                              style={{ width: `${Math.min(100, Math.max(3, percentage))}%` }}
                             />
                             <div className="relative flex items-center gap-3">
-                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/60 bg-white/45 text-slate-600 shadow-inner shadow-white/30">
-                                {entry.is_dir ? <Folder className="h-4 w-4" /> : <File className="h-4 w-4" />}
+                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-inner shadow-white/30 ${iconCategory.backgroundClassName}`} title={iconCategory.label}>
+                                <EntryIcon className={`h-[1.125rem] w-[1.125rem] ${iconCategory.iconClassName}`} />
                               </span>
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-base font-black text-slate-950">{entry.name}</span>
-                                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs font-bold text-slate-500">
+                                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] font-bold text-slate-500">
                                   <span>{formatBytes(entry.size)}</span>
-                                  <span>{percentage.toFixed(1)}% of parent</span>
                                   {entryDate && <span>{entryDate}</span>}
-                                </span>
-                              </span>
-                              <span className="hidden w-28 shrink-0 sm:block">
-                                <span className="block h-2 overflow-hidden rounded-full bg-slate-900/10">
-                                  <span
-                                    className="block h-full rounded-full bg-slate-950/70"
-                                    style={{ width: `${Math.max(2, percentage)}%` }}
-                                  />
                                 </span>
                               </span>
                               {entry.is_dir && (
@@ -1132,59 +1070,130 @@ export function AnalyzePage() {
                             </div>
                           </button>
                         );
-                      })}
-                    </div>
+                        })}
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  treemapRects.map((rect) => {
-                    const showDetails = rect.width > 12 && rect.height > 10;
-                    const showLargeLabel = rect.width > 22 && rect.height > 16;
-                    return (
-                      <button
-                        key={rect.path}
-                        type="button"
-                        aria-disabled={!rect.is_dir || rect.isOther}
-                        onContextMenu={(event) => openItemContextMenu(event, rect)}
-                        onClick={() => {
-                          if (rect.is_dir && !rect.isOther) {
-                            setScanPath(rect.path);
-                            startScan(rect.path);
-                          }
-                        }}
-                        className={`group absolute overflow-hidden rounded-lg border border-white/35 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.36),0_12px_36px_rgba(15,23,42,0.10)] transition duration-300 hover:z-10 hover:scale-[1.01] hover:shadow-[0_20px_50px_rgba(15,23,42,0.20)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
-                        style={{
-                          left: `${rect.x}%`,
-                          top: `${rect.y}%`,
-                          width: `${rect.width}%`,
-                          height: `${rect.height}%`,
-                          background: `linear-gradient(145deg, ${rect.color}, ${rect.color}dd)`,
-                        }}
-                        title={`${rect.name} - ${formatBytes(rect.size)} - ${rect.percentage.toFixed(1)}%`}
-                      >
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_20%,rgba(255,255,255,0.28),transparent_38%)] opacity-80" />
-                        {!showLargeLabel && (
-                          <div className="absolute inset-x-1 top-1 z-[1] truncate rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-black leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
-                            {rect.name}
-                          </div>
-                        )}
-                        {showDetails && (
-                          <div className="relative flex h-full flex-col items-center justify-center text-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
-                            {showLargeLabel && (
-                              <div className="mb-2 flex items-center gap-2">
-                                {rect.is_dir ? <Folder className="h-5 w-5" /> : <File className="h-5 w-5" />}
-                                <span className="truncate text-xl font-black">{rect.name}</span>
-                              </div>
-                            )}
-                            <div className="font-mono text-sm font-black sm:text-base">{formatBytes(rect.size)}</div>
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })
-                )}
+                  <div
+                    className={`pointer-events-none absolute inset-x-0 top-0 h-8 rounded-t-[1.35rem] bg-gradient-to-b from-slate-900/7 to-transparent transition-opacity duration-200 ${fileListScrollShadows.top ? 'opacity-100' : 'opacity-0'}`}
+                  />
+                  <div
+                    className={`pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-[1.35rem] bg-gradient-to-t from-slate-900/8 to-transparent transition-opacity duration-200 ${fileListScrollShadows.bottom ? 'opacity-100' : 'opacity-0'}`}
+                  />
+                </div>
+
+                <div className="mt-4 flex items-center justify-between px-2 font-mono text-xs font-black text-slate-500">
+                  <span>{sortedListEntries.length} items</span>
+                  <span>{formatBytes(filteredSize)} total</span>
+                </div>
               </div>
             </div>
-          </Card>
+          </div>
+
+          <div className="relative min-h-[34rem] overflow-hidden rounded-[1.2rem] xl:min-h-0">
+            {inlineScanPath ? (
+              <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 p-8 text-center shadow-inner shadow-white/20">
+                <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-analyze/10">
+                  <Spinner size="lg" />
+                  <Search className="absolute inset-0 m-auto h-5 w-5 text-analyze" />
+                </div>
+                <h3 className="text-xl font-black text-slate-950">Scanning folder</h3>
+                <p className="mt-2 max-w-md truncate font-mono text-sm font-bold text-slate-500">{inlineScanPath}</p>
+              </div>
+            ) : filteredEntries.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 text-center">
+                <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
+                <p className="font-semibold text-slate-600">No entries match the current filters.</p>
+              </div>
+            ) : isViewingApplications && applicationEntries.length > 0 ? (
+              <div className="h-full overflow-y-auto rounded-[1.35rem] border border-white/45 bg-white/25 p-3 shadow-inner shadow-white/20 custom-scrollbar">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(7.25rem,1fr))] gap-3">
+                  {applicationEntries.map((entry) => {
+                    const appIcon = appIcons[entry.path];
+                    const iconCategory = getFileIconCategory(entry);
+                    const FallbackIcon = iconCategory.icon;
+
+                    return (
+                      <button
+                        key={entry.path}
+                        type="button"
+                        onContextMenu={(event) => openItemContextMenu(event, entry)}
+                        onClick={() => {
+                          setScanPath(entry.path);
+                          startScan(entry.path);
+                        }}
+                        className="group flex min-h-[8.75rem] max-h-[11rem] min-w-[7.25rem] flex-col items-center justify-center overflow-hidden rounded-[1.1rem] border border-white/62 bg-white/46 p-3 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] transition hover:bg-white/70 hover:shadow-[0_18px_44px_rgba(15,23,42,0.14)]"
+                        title={`${entry.name} - ${formatBytes(entry.size)}`}
+                      >
+                        <span className="mb-3 flex h-24 w-24 min-h-12 min-w-12 max-w-full items-center justify-center rounded-2xl bg-white/35 p-2 shadow-inner shadow-white/50">
+                          {appIcon ? (
+                            <img
+                              src={appIcon}
+                              alt=""
+                              className="h-[clamp(3rem,7vw,5.5rem)] w-[clamp(3rem,7vw,5.5rem)] min-w-12 max-w-24 object-contain drop-shadow-[0_10px_18px_rgba(15,23,42,0.18)]"
+                              draggable={false}
+                            />
+                          ) : (
+                            <FallbackIcon className={`h-10 w-10 ${iconCategory.iconClassName}`} />
+                          )}
+                        </span>
+                        <span className="w-full truncate text-sm font-black text-slate-950">{entry.name.replace(/\.app$/, '')}</span>
+                        <span className="mt-1 font-mono text-[11px] font-bold text-slate-500">{formatBytes(entry.size)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              treemapRects.map((rect) => {
+                const showDetails = rect.width > 12 && rect.height > 10;
+                const showLargeLabel = rect.width > 21 && rect.height > 15;
+                const iconCategory = getFileIconCategory(rect);
+                const RectIcon = iconCategory.icon;
+                return (
+                  <button
+                    key={rect.path}
+                    type="button"
+                    aria-disabled={!rect.is_dir || rect.isOther}
+                    onContextMenu={(event) => openItemContextMenu(event, rect)}
+                    onClick={() => {
+                      if (rect.is_dir && !rect.isOther) {
+                        setScanPath(rect.path);
+                        startScan(rect.path);
+                      }
+                    }}
+                    className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition duration-300 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
+                    style={{
+                      left: `${rect.x}%`,
+                      top: `${rect.y}%`,
+                      width: `${rect.width}%`,
+                      height: `${rect.height}%`,
+                      background: `linear-gradient(145deg, ${rect.color}, ${rect.color}df)`,
+                    }}
+                    title={`${rect.name} - ${formatBytes(rect.size)} - ${rect.percentage.toFixed(1)}%`}
+                  >
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_26%_18%,rgba(255,255,255,0.26),transparent_42%)] opacity-90" />
+                    {!showLargeLabel && (
+                      <div className="absolute inset-x-2 top-2 z-[1] truncate rounded-md bg-black/12 px-1.5 py-0.5 text-[10px] font-black leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
+                        {rect.name}
+                      </div>
+                    )}
+                    {showDetails && (
+                      <div className="relative flex h-full flex-col items-center justify-center text-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
+                        {showLargeLabel && (
+                          <div className="mb-4 flex max-w-full items-center gap-2">
+                            <RectIcon className="h-5 w-5 shrink-0" />
+                            <span className="truncate text-xl font-black tracking-wide">{rect.name}</span>
+                          </div>
+                        )}
+                        <div className="font-mono text-sm font-black tracking-wide sm:text-base">{formatBytes(rect.size)}</div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
 
         {contextMenu && (

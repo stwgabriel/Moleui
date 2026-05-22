@@ -121,4 +121,116 @@ describe('OptimizePage', () => {
     expect(screen.getByRole('button', { name: /start optimization/i })).toBeInTheDocument();
     expect(screen.queryByText('Preview Results')).not.toBeInTheDocument();
   });
+
+  it('runs only selected preview tasks', async () => {
+    localStorage.setItem('mole-optimize-stage', JSON.stringify('preview-results'));
+    localStorage.setItem('mole-optimize-preview-timeline', JSON.stringify([
+      {
+        id: 'task-login',
+        name: 'Login Items Audit',
+        status: 'complete',
+        items: ['Would review login items'],
+        selected: true,
+      },
+      {
+        id: 'task-fonts',
+        name: 'Font Cache Rebuild',
+        status: 'complete',
+        items: ['Would rebuild font cache'],
+        selected: true,
+      },
+    ]));
+    vi.mocked(window.moleDesktop.optimize.execute).mockResolvedValue(successfulOptimizeResult);
+
+    render(<OptimizePage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deselect Font Cache Rebuild' }));
+    fireEvent.click(screen.getByRole('button', { name: /apply optimizations/i }));
+
+    await waitFor(() => expect(window.moleDesktop.optimize.execute).toHaveBeenCalled());
+    expect(window.moleDesktop.optimize.execute).toHaveBeenCalledWith({
+      dryRun: false,
+      taskNames: ['Login Items Audit'],
+    });
+  });
+
+  it('builds preview tasks from streamed optimize stdout', async () => {
+    let stdoutHandler: (text: string) => void = () => {};
+    vi.mocked(window.moleDesktop.optimize.onStdout).mockImplementation((handler: (text: string) => void) => {
+      stdoutHandler = handler;
+    });
+    vi.mocked(window.moleDesktop.optimize.execute).mockImplementation(async () => {
+      stdoutHandler('\u001b[1;34m➤ DNS & Spotlight Check\u001b[0m\n  \u001b[0;33m→\u001b[0m DNS cache flushed\n');
+      return successfulOptimizeResult;
+    });
+
+    render(<OptimizePage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /start optimization/i }));
+
+    await waitFor(() => expect(screen.getByText('DNS & Spotlight Check')).toBeInTheDocument());
+    expect(screen.getByText('Would flush DNS cache')).toBeInTheDocument();
+  });
+
+  it('shows the centered staged cards with system impact metrics', () => {
+    localStorage.setItem('mole-optimize-stage', JSON.stringify('preview-results'));
+    localStorage.setItem('mole-optimize-preview-timeline', JSON.stringify([
+      {
+        id: 'task-dns',
+        name: 'DNS & Spotlight Check',
+        status: 'complete',
+        items: ['Would refresh DNS cache', 'Would rebuild Spotlight index'],
+        selected: true,
+      },
+    ]));
+
+    render(<OptimizePage />);
+
+    expect(screen.getAllByText('Analyze').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Tune').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Apply').length).toBeGreaterThan(0);
+    expect(screen.getByText('1/1 tasks selected')).toBeInTheDocument();
+    expect(screen.getByRole('meter', { name: 'Performance impact' })).toHaveAttribute('aria-valuenow', '5');
+    expect(screen.getByRole('meter', { name: 'Responsiveness impact' })).toHaveAttribute('aria-valuenow', '6');
+    expect(screen.getAllByText(/tasks ready/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows an explicit no optimizations result from preview output', () => {
+    localStorage.setItem('mole-optimize-stage', JSON.stringify('preview-results'));
+    localStorage.setItem('mole-optimize-preview-logs', JSON.stringify([
+      {
+        text: 'No Optimizations Found\nNo changes would be applied\nSystem already optimized',
+        timestamp: Date.now(),
+        type: 'success',
+      },
+    ]));
+
+    render(<OptimizePage />);
+
+    expect(screen.getByText('No optimizations found')).toBeInTheDocument();
+    expect(screen.getByText('No tasks ready')).toBeInTheDocument();
+    expect(screen.getAllByText('System already optimized').length).toBeGreaterThan(0);
+    expect(screen.getByRole('meter', { name: 'Performance impact' })).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByRole('meter', { name: 'Responsiveness impact' })).toHaveAttribute('aria-valuenow', '0');
+  });
+
+  it('treats all-noop preview tasks as no optimizations found', () => {
+    localStorage.setItem('mole-optimize-stage', JSON.stringify('preview-results'));
+    localStorage.setItem('mole-optimize-preview-timeline', JSON.stringify([
+      {
+        id: 'task-health',
+        name: 'System Health Check',
+        status: 'complete',
+        items: ['All preference files valid', 'Network stack already optimal', 'Launch Agents all healthy'],
+        selected: true,
+      },
+    ]));
+
+    render(<OptimizePage />);
+
+    expect(screen.getByText('No optimizations found')).toBeInTheDocument();
+    expect(screen.getByText('No tune-up needed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /apply optimizations/i })).toBeDisabled();
+    expect(screen.getByRole('meter', { name: 'Performance impact' })).toHaveAttribute('aria-valuenow', '0');
+  });
 });

@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { cn } from '@/utils/cn';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { SettingsWindow } from '@/components/settings/SettingsWindow';
 import { HomePage } from '@/pages/HomePage';
 import { MyMacPage } from '@/pages/MyMacPage';
 import { hasSeenHomePage, markHomePageSeen } from '@/utils/storage';
@@ -24,6 +25,7 @@ function PageLoadingFallback() {
 }
 
 function App() {
+  const isSettingsWindow = new URLSearchParams(window.location.search).get('window') === 'settings';
   const [currentPage, setCurrentPage] = useState<PageId>('home');
   const [animationDirection, setAnimationDirection] = useState<'left' | 'right'>('left');
   const [isInitialized, setIsInitialized] = useState(false);
@@ -93,6 +95,10 @@ function App() {
   };
 
   const isLoading = !isInitialized;
+
+  if (isSettingsWindow) {
+    return <SettingsWindow />;
+  }
 
   return (
     <>

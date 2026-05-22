@@ -1,7 +1,7 @@
 {
   "name": "@repo/desktop",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Moleui application built with React",
   "main": "main.js",
   "scripts": {
@@ -52,7 +52,7 @@
   "build": {
     "appId": "stwgabriel.moleui",
     "productName": "Moleui",
-    "icon": "public/assets/base/molui-light.png",
+    "icon": "public/assets/base/molui-purple.png",
     "directories": {
       "output": "dist-electron"
     },

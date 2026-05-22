@@ -10,6 +10,8 @@ export interface MoleResult {
 
 export interface MoleDesktopAPI {
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
+  openSettingsWindow?: () => Promise<{ ok: boolean; message?: string }>;
+  getSettingsProfile?: () => Promise<{ deviceName: string; user: { name: string; email: string } }>;
   openExternal: (url: string) => Promise<{ ok: boolean; message?: string }>;
   copyText: (text: string) => Promise<{ ok: boolean }>;
   revealPath: (commandPath: string) => Promise<{ ok: boolean; message?: string }>;
@@ -41,7 +43,7 @@ export interface MoleDesktopAPI {
     removeListeners: () => void;
   };
   optimize: {
-    execute: (options: { dryRun: boolean }) => Promise<MoleResult>;
+    execute: (options: { dryRun: boolean; taskNames?: string[] }) => Promise<MoleResult>;
     kill: () => Promise<MoleResult>;
     onStdout: (callback: (data: string) => void) => void;
     onStderr: (callback: (data: string) => void) => void;
