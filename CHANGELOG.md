@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.44.0] - 2026-05-23
+
+### Added
+- Added a native desktop application menu with Settings, edit/window actions, and development reload tools.
+- Added Analyze page loading overlays, disk usage flow animation, and directional folder navigation transitions.
+- Added battery prediction utility coverage for charging and discharging forecasts.
+
+### Changed
+- Refined Analyze results around a storage map, disk usage list totals, and size-sorted file management rows.
+- Refined Uninstall selection with larger packed app bubbles, refreshed scan controls, and a primary uninstall action.
+- Enabled desktop GPU rasterization flags for smoother rendering.
+
+### Fixed
+- Fixed battery forecast charts to end at the predicted full or empty time.
+
 ## [1.43.1] - 2026-05-22
 
 ### Added

@@ -1,10 +1,10 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { forceCollide, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force';
+import { forceCollide, forceSimulation, forceX, forceY } from 'd3-force';
 import type { SimulationNodeDatum } from 'd3-force';
 import { AnimatePresence, motion } from 'motion/react';
 import { 
-  CheckCircle, AlertTriangle, Loader, ArrowRight, ArrowLeft, X, Trash2,
-  Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, CheckSquare, RefreshCw, Square
+  CheckCircle, AlertTriangle, Loader, ArrowLeft, X, Trash2,
+  Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -176,16 +176,25 @@ function parseAppSizeToBytes(sizeStr: string): number {
 }
 
 function getCenterBubbleSize(count: number) {
-  if (count === 0) return 144;
-  if (count <= 8) return 136;
-  if (count <= 18) return 124;
-  return 112;
+  if (count === 0) return 202;
+  if (count <= 8) return 142;
+  if (count <= 18) return 136;
+  return 128;
 }
 
 function getAppBubbleSize(count: number, stageWidth: number, stageHeight: number) {
   const available = Math.min(stageWidth, stageHeight);
-  const target = count <= 1 ? 144 : count <= 3 ? 132 : count <= 6 ? 116 : count <= 10 ? 102 : count <= 16 ? 92 : count <= 24 ? 84 : 76;
-  return Math.max(72, Math.min(target, available * 0.28));
+  const target = count <= 1 ? 156 : count <= 3 ? 144 : count <= 6 ? 132 : count <= 10 ? 122 : count <= 16 ? 114 : count <= 24 ? 106 : 98;
+  return Math.max(96, Math.min(target, available * 0.34));
+}
+
+function getBubbleStageHeight(count: number) {
+  if (count <= 3) return 360;
+  if (count <= 6) return 440;
+  if (count <= 10) return 560;
+  if (count <= 16) return 720;
+  if (count <= 24) return 900;
+  return 1080 + Math.ceil((count - 24) / 6) * 160;
 }
 
 function getPackedBubbleLayout(appIds: string[], stageWidth: number, stageHeight: number, previousLayout?: Record<string, BubbleLayoutItem>) {
@@ -198,7 +207,7 @@ function getPackedBubbleLayout(appIds: string[], stageWidth: number, stageHeight
   const appSize = getAppBubbleSize(count, width, height);
   const centerRadius = centerSize / 2;
   const appRadius = appSize / 2;
-  const padding = count > 12 ? 3 : 5;
+  const padding = count > 12 ? 2 : 4;
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
   const nodes: BubbleNode[] = [
     {
@@ -240,12 +249,11 @@ function getPackedBubbleLayout(appIds: string[], stageWidth: number, stageHeight
   const simulation = forceSimulation(nodes)
     .force('x', forceX<BubbleNode>(centerX).strength(node => node.kind === 'center' ? 1 : 0.085))
     .force('y', forceY<BubbleNode>(centerY).strength(node => node.kind === 'center' ? 1 : 0.085))
-    .force('charge', forceManyBody<BubbleNode>().strength(node => node.kind === 'center' ? 0 : -1.5))
     .force('collide', forceCollide<BubbleNode>().radius(node => node.radius + padding).strength(1).iterations(8))
     .force('bounds', () => keepInsideBounds())
     .stop();
 
-  for (let tick = 0; tick < 220; tick += 1) simulation.tick();
+  for (let tick = 0; tick < 140; tick += 1) simulation.tick();
   keepInsideBounds();
 
   return nodes.reduce<Record<string, BubbleLayoutItem>>((layout, node) => {
@@ -275,7 +283,8 @@ function SelectedAppBubbleCluster({
   const selectedCount = selectedAppItems.length;
   const selectedAppIds = selectedAppItems.map(({ app, index }) => `${app.path}-${index}`);
   const stageRef = useRef<HTMLDivElement>(null);
-  const [stageSize, setStageSize] = useState({ width: 544, height: 560 });
+  const stageMinHeight = getBubbleStageHeight(selectedCount);
+  const [stageSize, setStageSize] = useState({ width: 544, height: stageMinHeight });
   const layoutRef = useRef<Record<string, BubbleLayoutItem>>({});
   const [bubbleLayout, setBubbleLayout] = useState<Record<string, BubbleLayoutItem>>(() => getPackedBubbleLayout([], 544, 560));
   const isDense = selectedCount > 8;
@@ -292,7 +301,7 @@ function SelectedAppBubbleCluster({
       const rect = element.getBoundingClientRect();
       setStageSize(currentSize => {
         const nextWidth = Math.round(rect.width) || 544;
-        const nextHeight = Math.round(rect.height) || 560;
+        const nextHeight = Math.round(rect.height) || stageMinHeight;
 
         return currentSize.width === nextWidth && currentSize.height === nextHeight
           ? currentSize
@@ -308,7 +317,7 @@ function SelectedAppBubbleCluster({
     observer.observe(element);
 
     return () => observer.disconnect();
-  }, []);
+  }, [stageMinHeight]);
 
   useEffect(() => {
     setBubbleLayout(() => {
@@ -327,8 +336,9 @@ function SelectedAppBubbleCluster({
     >
       <div
         ref={stageRef}
-        className="relative mx-auto h-full min-h-[22rem] w-full max-w-[34rem] overflow-hidden"
+        className="relative mx-auto h-full w-full max-w-[34rem] overflow-hidden"
         data-testid="selected-app-orbit-stage"
+        style={{ minHeight: stageMinHeight }}
       >
         <div className="pointer-events-none absolute inset-6 rounded-full border border-white/30 opacity-50" />
         {selectedCount > 6 && (
@@ -391,8 +401,8 @@ function SelectedAppBubbleCluster({
                         {app.size}
                       </span>
                     )}
-                    <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-white/65 bg-white/45 text-slate-400 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                      <X className="h-3 w-3" />
+                    <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-rose-200/90 bg-white/95 text-rose-600 opacity-80 shadow-[0_8px_20px_rgba(244,63,94,0.24)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                      <X className="h-4 w-4" strokeWidth={2.8} />
                     </span>
                   </span>
                 </motion.button>
@@ -1038,9 +1048,7 @@ export function UninstallPage() {
   if (stage === 'selection') {
     const filteredApps = getFilteredAndSortedApps();
     const filteredIndices = filteredApps.map(app => apps.indexOf(app));
-    const allAppsSelected = apps.length > 0 && selectedApps.size === apps.length;
     const RefreshIcon = isRefreshingApps ? Loader : RefreshCw;
-    const SelectAllIcon = allAppsSelected ? Square : CheckSquare;
     
     return (
       <div className={UNINSTALL_SHELL}>
@@ -1061,19 +1069,20 @@ export function UninstallPage() {
                 variant="secondary"
                 icon={ArrowLeft}
                 onClick={reset}
-                size="sm"
-                className="rounded-full border border-white/70 bg-white/70 px-4 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white"
+                className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]"
               >
                 Back
               </Button>
               <Button
-                onClick={proceedToConfirmation}
-                disabled={selectedApps.size === 0}
-                size="sm"
-                className="gap-2 rounded-full bg-rose-500 px-5 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600"
+                variant="secondary"
+                icon={RefreshIcon}
+                onClick={startScan}
+                disabled={isRefreshingApps}
+                aria-label={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
+                title={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
+                className={`rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-rose-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)] ${isRefreshingApps ? '[&_svg]:animate-spin' : ''}`}
               >
-                Continue
-                <ArrowRight className="w-4 h-4" />
+                Refresh
               </Button>
             </div>
           </div>
@@ -1098,26 +1107,6 @@ export function UninstallPage() {
                 </button>
               )}
             </div>
-            <Button
-              variant="secondary"
-              icon={RefreshIcon}
-              onClick={startScan}
-              disabled={isRefreshingApps}
-              size="sm"
-              aria-label={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
-              title={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
-              className={`h-12 w-12 rounded-full bg-white/45 p-0 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60 [&_svg]:h-4 [&_svg]:w-4 ${isRefreshingApps ? '[&_svg]:animate-spin' : ''}`}
-            />
-            <Button
-              variant="secondary"
-              icon={SelectAllIcon}
-              onClick={() => allAppsSelected ? deselectAll() : selectAll()}
-              size="sm"
-              aria-label={allAppsSelected ? 'Deselect all applications' : 'Select all applications'}
-              title={allAppsSelected ? 'Deselect all' : 'Select all'}
-              className="h-12 w-12 rounded-full bg-white/45 p-0 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.08)] hover:bg-white/60 [&_svg]:h-4 [&_svg]:w-4"
-            />
-             
             <div className={`flex items-center gap-2 px-4 py-3 ${MUTED_PILL}`}>
               <ArrowUpDown className="w-4 h-4 text-slate-400" />
               <select
@@ -1139,13 +1128,28 @@ export function UninstallPage() {
         </div>
 
         <div className="relative flex-1 min-h-0 overflow-hidden px-2 pb-2">
-          <div className="grid h-full min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(17rem,0.82fr)_minmax(24rem,1.18fr)]">
-            <SelectedAppBubbleCluster
-              apps={apps}
-              appIcons={appIcons}
-              selectedAppIndexes={selectedAppIndexes}
-              onToggle={toggleApp}
-            />
+          <div className="grid h-full min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(20rem,1.05fr)_minmax(20rem,0.95fr)]">
+            <div className="flex min-h-0 flex-col gap-3">
+              <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem]">
+                <SelectedAppBubbleCluster
+                  apps={apps}
+                  appIcons={appIcons}
+                  selectedAppIndexes={selectedAppIndexes}
+                  onToggle={toggleApp}
+                />
+              </div>
+              <Button
+                onClick={proceedToConfirmation}
+                disabled={selectedApps.size === 0}
+                icon={Trash2}
+                className="mx-auto min-w-[min(370px,80%)] justify-center gap-3 rounded-full bg-rose-500 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] font-black shadow-[0_18px_50px_rgba(239,35,60,0.25)] hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-white/80 disabled:shadow-none [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
+              >
+                Uninstall Apps
+                <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-black">
+                  {selectedApps.size}
+                </span>
+              </Button>
+            </div>
 
             <div className="relative min-h-0 overflow-hidden rounded-[1.75rem] p-2">
               <div

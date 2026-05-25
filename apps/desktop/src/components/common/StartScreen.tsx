@@ -256,7 +256,7 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
             <img
               src="./assets/images/start-here-bg.png"
               alt="Start here"
-              className="pointer-events-none absolute top-0 left-[clamp(2rem,6vw,6rem)] w-[clamp(7.5rem,11vw,10.5rem)] object-contain"
+              className="pointer-events-none absolute top-[-1.5rem] left-[clamp(4rem,10vw,12rem)] w-[clamp(7.5rem,11vw,10.5rem)] object-contain"
               draggable={false}
             />
             <Button
