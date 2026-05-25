@@ -1,18 +1,10 @@
-// Storage utility using localStorage for persisting app state
-// localStorage is simpler and more reliable than IndexedDB for this use case
+// Storage utility using Electron for app-wide state and localStorage as a browser/test fallback.
+
+import type { MyMacMetricsCache } from '@/types';
 
 const HAS_SEEN_HOME_PAGE = 'mole-has-seen-home-page';
 const PREFERRED_PAGE = 'mole-preferred-page';
 const MY_MAC_METRICS = 'mole-my-mac-metrics';
-
-export interface MyMacMetricsCache {
-  metrics: string;
-  history?: string;
-  batteryHistory?: string;
-  cpuHistory?: string;
-  memoryHistory?: string;
-  timestamp: number;
-}
 
 export async function hasSeenHomePage(): Promise<boolean> {
   try {
@@ -49,6 +41,11 @@ export async function setPreferredPage(page: string): Promise<void> {
 }
 
 export async function getMyMacMetrics(): Promise<MyMacMetricsCache | null> {
+  if (window.moleDesktop?.myMacCache) {
+    const cache = await window.moleDesktop.myMacCache.get();
+    if (cache) return cache;
+  }
+
   try {
     const data = localStorage.getItem(MY_MAC_METRICS);
     if (!data) return null;
@@ -62,6 +59,12 @@ export async function getMyMacMetrics(): Promise<MyMacMetricsCache | null> {
 }
 
 export async function setMyMacMetrics(metrics: string, history: string, batteryHistory: string): Promise<void> {
+  if (window.moleDesktop?.myMacCache) {
+    const result = await window.moleDesktop.myMacCache.set({ metrics, history, batteryHistory });
+    if (result.ok) return;
+    console.error('Failed to write MyMac metrics to desktop cache:', result.message);
+  }
+
   try {
     localStorage.setItem(MY_MAC_METRICS, JSON.stringify({
       metrics,

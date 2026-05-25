@@ -56,6 +56,10 @@ contextBridge.exposeInMainWorld("moleDesktop", {
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
   openSettingsWindow: () => ipcRenderer.invoke("mole:settings:open"),
   getSettingsProfile: () => ipcRenderer.invoke("mole:settings:profile"),
+  myMacCache: {
+    get: () => ipcRenderer.invoke("mole:my-mac-cache:get"),
+    set: (cache) => ipcRenderer.invoke("mole:my-mac-cache:set", cache),
+  },
 
   // Touch ID configuration
   touchid: {

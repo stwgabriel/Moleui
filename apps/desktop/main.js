@@ -9,6 +9,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = !app.isPackaged;
 const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-purple.png");
+const MY_MAC_METRICS_FILE = "my-mac-metrics.json";
+const BATTERY_SAMPLE_INTERVAL_MS = 6 * 60 * 1000;
+const MAX_BATTERY_HISTORY = 24 * 60;
 
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("enable-gpu-rasterization");
@@ -19,6 +22,8 @@ nativeTheme.themeSource = "light";
 // Store active processes for cancellation
 const activeProcesses = new Map();
 const appIconCache = new Map();
+let batterySamplerInterval = null;
+let batterySampleInFlight = false;
 
 function withTimeout(promise, timeoutMs, message) {
   return Promise.race([
@@ -285,6 +290,173 @@ function runMole(args, options = {}) {
   });
 }
 
+function myMacMetricsPath() {
+  return path.join(app.getPath("userData"), MY_MAC_METRICS_FILE);
+}
+
+function readMyMacMetricsCache() {
+  try {
+    const filePath = myMacMetricsPath();
+    if (!fs.existsSync(filePath)) return null;
+
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.metrics !== "string" || typeof parsed.timestamp !== "number") return null;
+
+    return {
+      metrics: parsed.metrics,
+      history: typeof parsed.history === "string" ? parsed.history : undefined,
+      batteryHistory: typeof parsed.batteryHistory === "string" ? parsed.batteryHistory : undefined,
+      timestamp: parsed.timestamp,
+    };
+  } catch (error) {
+    console.error("Failed to read My Mac metrics cache:", error);
+    return null;
+  }
+}
+
+function writeMyMacMetricsCache(cache) {
+  try {
+    const filePath = myMacMetricsPath();
+    const nextCache = {
+      metrics: String(cache.metrics || ""),
+      history: typeof cache.history === "string" ? cache.history : undefined,
+      batteryHistory: typeof cache.batteryHistory === "string" ? cache.batteryHistory : undefined,
+      timestamp: typeof cache.timestamp === "number" ? cache.timestamp : Date.now(),
+    };
+
+    if (!nextCache.metrics) {
+      return { ok: false, message: "Metrics payload is required" };
+    }
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(nextCache), "utf8");
+    return { ok: true };
+  } catch (error) {
+    console.error("Failed to write My Mac metrics cache:", error);
+    return { ok: false, message: error.message };
+  }
+}
+
+function getBatteryPercent(metrics) {
+  const percent = metrics?.batteries?.[0]?.percent;
+  if (typeof percent === "number" && Number.isFinite(percent)) {
+    return Math.max(0, Math.min(percent, 100));
+  }
+  return null;
+}
+
+function makeBatteryHistoryPoint(metrics, t) {
+  const battery = metrics?.batteries?.[0];
+  const percent = getBatteryPercent(metrics);
+  if (!battery || percent == null) return null;
+
+  return {
+    t,
+    battery: percent,
+    status: battery.status || "Unknown",
+    timeLeft: battery.time_left,
+  };
+}
+
+function parseBatteryHistory(value) {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+
+    const history = parsed.filter((point) => (
+      point &&
+      typeof point === "object" &&
+      typeof point.t === "number" &&
+      typeof point.battery === "number" &&
+      typeof point.status === "string"
+    ));
+
+    return history.length > MAX_BATTERY_HISTORY
+      ? history.slice(history.length - MAX_BATTERY_HISTORY)
+      : history;
+  } catch {
+    return [];
+  }
+}
+
+function appendBatteryHistory(history, metrics, t) {
+  const point = makeBatteryHistoryPoint(metrics, t);
+  if (!point) return history;
+
+  const previous = history[history.length - 1];
+  if (!previous) return [point];
+
+  const percentChanged = point.battery !== previous.battery;
+  const statusChanged = point.status !== previous.status;
+  const sampleDue = t - previous.t >= BATTERY_SAMPLE_INTERVAL_MS;
+
+  if (!percentChanged && !statusChanged && !sampleDue) return history;
+
+  const nextHistory = [...history, point];
+  return nextHistory.length > MAX_BATTERY_HISTORY
+    ? nextHistory.slice(nextHistory.length - MAX_BATTERY_HISTORY)
+    : nextHistory;
+}
+
+async function sampleBatteryMetrics() {
+  if (batterySampleInFlight) return;
+  batterySampleInFlight = true;
+
+  try {
+    const result = await runMole(["status", "--json", "--process-limit", "0"]);
+    if (!result.ok) {
+      console.warn("Background battery sample failed:", result.stderr || result.exitCode);
+      return;
+    }
+
+    const metrics = JSON.parse(result.stdout);
+    const cache = readMyMacMetricsCache();
+    const batteryHistory = appendBatteryHistory(parseBatteryHistory(cache?.batteryHistory), metrics, Date.now());
+
+    writeMyMacMetricsCache({
+      metrics: result.stdout,
+      history: cache?.history,
+      batteryHistory: JSON.stringify(batteryHistory),
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    console.error("Background battery sample failed:", error);
+  } finally {
+    batterySampleInFlight = false;
+  }
+}
+
+function startBatterySampler() {
+  if (batterySamplerInterval) return;
+
+  void sampleBatteryMetrics();
+  batterySamplerInterval = setInterval(() => {
+    void sampleBatteryMetrics();
+  }, BATTERY_SAMPLE_INTERVAL_MS);
+}
+
+function configureMacStartupService() {
+  if (process.platform !== "darwin" || !app.isPackaged) return;
+
+  app.setLoginItemSettings({
+    openAtLogin: true,
+    openAsHidden: true,
+  });
+}
+
+function wasOpenedAsHiddenLoginItem() {
+  if (process.platform !== "darwin") return false;
+
+  try {
+    return Boolean(app.getLoginItemSettings().wasOpenedAsHidden);
+  } catch {
+    return false;
+  }
+}
+
 function normalizeAnalyzePath(input = "/") {
   const rawPath = String(input || "/").trim() || "/";
   const homePath = app.getPath("home");
@@ -407,7 +579,8 @@ function configureApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function createWindow() {
+function createWindow(options = {}) {
+  const shouldShow = options.show !== false;
   const window = new BrowserWindow({
     width: 1280,
     height: 920,
@@ -433,9 +606,11 @@ function createWindow() {
     window.loadFile(path.join(__dirname, "dist", "index.html"));
   }
 
-  window.once("ready-to-show", () => {
-    window.show();
-  });
+  if (shouldShow) {
+    window.once("ready-to-show", () => {
+      window.show();
+    });
+  }
 
   return window;
 }
@@ -715,6 +890,15 @@ ipcMain.handle("mole:runtime", async () => ({
   executable: moleExecutable(),
 }));
 
+ipcMain.handle("mole:my-mac-cache:get", async () => readMyMacMetricsCache());
+
+ipcMain.handle("mole:my-mac-cache:set", async (_event, cache = {}) => writeMyMacMetricsCache({
+  metrics: cache.metrics,
+  history: cache.history,
+  batteryHistory: cache.batteryHistory,
+  timestamp: Date.now(),
+}));
+
 ipcMain.handle("mole:open-external", async (_event, url) => {
   const allowedUrls = new Set([
     "https://github.com/stwgabriel/moleui",
@@ -813,6 +997,10 @@ ipcMain.handle("mole:signal-process", async (_event, pid, signal) => {
 
 app.whenReady().then(() => {
   configureApplicationMenu();
+  configureMacStartupService();
+  startBatterySampler();
+
+  const openedAsHidden = wasOpenedAsHiddenLoginItem();
 
   if (process.platform === "darwin") {
     const appIcon = nativeImage.createFromPath(appIconPath);
@@ -820,11 +1008,21 @@ app.whenReady().then(() => {
     if (!appIcon.isEmpty()) {
       app.dock.setIcon(appIcon);
     }
+
+    if (openedAsHidden) {
+      app.dock.hide();
+    }
   }
 
-  mainWindow = createWindow();
+  if (!openedAsHidden) {
+    mainWindow = createWindow();
+  }
 
   app.on("activate", () => {
+    if (process.platform === "darwin") {
+      app.dock.show();
+    }
+
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow();
     }

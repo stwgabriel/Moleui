@@ -14,6 +14,9 @@ Thumbs.db
 node_modules
 .mole-runtime
 
+#web
+.next
+
 # Editor files
 *~
 *.swp
@@ -97,3 +100,36 @@ coverage.html
 session.json
 run_tests.ps1
 mole_guidelines.md
+apps/web/.next/app-build-manifest.json
+apps/web/.next/build-manifest.json
+apps/web/.next/trace
+apps/web/.next/cache/webpack/client-production/0.pack
+apps/web/.next/cache/webpack/client-production/1.pack
+apps/web/.next/cache/webpack/client-production/index.pack
+apps/web/.next/cache/webpack/client-production/index.pack.old
+apps/web/.next/cache/webpack/server-production/0.pack
+apps/web/.next/cache/webpack/server-production/1.pack
+apps/web/.next/cache/webpack/server-production/index.pack
+apps/web/.next/cache/webpack/server-production/index.pack.old
+apps/web/.next/server/app-paths-manifest.json
+apps/web/.next/server/interception-route-rewrite-manifest.js
+apps/web/.next/server/middleware-build-manifest.js
+apps/web/.next/server/middleware-react-loadable-manifest.js
+apps/web/.next/server/next-font-manifest.js
+apps/web/.next/server/pages-manifest.json
+apps/web/.next/server/server-reference-manifest.js
+apps/web/.next/server/server-reference-manifest.json
+apps/web/.next/server/webpack-runtime.js
+apps/web/.next/server/app/page_client-reference-manifest.js
+apps/web/.next/server/app/page.js
+apps/web/.next/server/vendor-chunks/bun.js
+apps/web/.next/static/chunks/app-pages-internals.js
+apps/web/.next/static/chunks/main-app.js
+apps/web/.next/static/chunks/polyfills.js
+apps/web/.next/static/chunks/webpack.js
+apps/web/.next/static/chunks/app/layout.js
+apps/web/.next/static/chunks/app/page.js
+apps/web/.next/static/css/app/layout.css
+apps/web/.next/static/development/_buildManifest.js
+apps/web/.next/static/development/_ssgManifest.js
+apps/web/.next/static/webpack/633457081244afec._.hot-update.json

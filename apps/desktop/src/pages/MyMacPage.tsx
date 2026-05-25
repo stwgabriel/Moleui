@@ -27,14 +27,13 @@ import {
   getBatteryPercent,
   getBatteryPrediction,
   isBatteryCharging,
-  isBatteryDraining,
   makeBatteryHistoryPoint,
   type BatteryChartPoint,
   type BatteryHistoryPoint,
 } from '@/utils/batteryPrediction';
 
 const MAX_HISTORY = 30;
-const BATTERY_SAMPLE_INTERVAL = 60_000;
+const BATTERY_SAMPLE_INTERVAL = 6 * 60_000;
 const PROCESS_MENU_WIDTH = 232;
 const PROCESS_MENU_HEIGHT = 276;
 const PROCESS_MENU_MARGIN = 8;
@@ -100,15 +99,27 @@ function getHeatColor(percent: number): string {
 }
 
 function getTemperatureValue(metrics: SystemMetrics): string {
-  if (metrics.thermal?.cpu_temp != null) return `${metrics.thermal.cpu_temp.toFixed(0)}°C`;
-  if (metrics.cpu.temperature != null) return `${metrics.cpu.temperature.toFixed(0)}°C`;
-  if (metrics.thermal?.system_power != null) return `${metrics.thermal.system_power}W`;
+  if (metrics.thermal?.cpu_temp != null && metrics.thermal.cpu_temp > 0) {
+    return `${metrics.thermal.cpu_temp.toFixed(0)}°C`;
+  }
+  if (metrics.cpu.temperature != null && metrics.cpu.temperature > 0) {
+    return `${metrics.cpu.temperature.toFixed(0)}°C`;
+  }
+  if (metrics.thermal?.battery_temp != null && metrics.thermal.battery_temp > 0) {
+    return `${metrics.thermal.battery_temp.toFixed(0)}°C`;
+  }
+  if (metrics.thermal?.system_power != null && metrics.thermal.system_power > 0) {
+    return `${metrics.thermal.system_power}W`;
+  }
   return '—';
 }
 
 function getGPUTemperatureValue(metrics: SystemMetrics): string {
   if (metrics.thermal?.gpu_temp != null && metrics.thermal.gpu_temp > 0) {
     return `${metrics.thermal.gpu_temp.toFixed(0)}°C`;
+  }
+  if (metrics.thermal?.battery_temp != null && metrics.thermal.battery_temp > 0) {
+    return `${metrics.thermal.battery_temp.toFixed(0)}°C`;
   }
 
   return '—';
@@ -164,13 +175,9 @@ function appendBatteryHistory(history: BatteryHistoryPoint[], metrics: SystemMet
   if (!previous) return [point];
 
   const percentChanged = point.battery !== previous.battery;
-  const percentDropped = point.battery < previous.battery;
   const statusChanged = point.status !== previous.status;
   const sampleDue = t - previous.t >= BATTERY_SAMPLE_INTERVAL;
-  const charging = isBatteryCharging(point.status) && point.battery < 99.5;
-  const activeBattery = isBatteryDraining(point.status) || charging || percentDropped || percentChanged;
 
-  if (!activeBattery && !statusChanged) return history;
   if (!percentChanged && !statusChanged && !sampleDue) return history;
 
   return trimHistory([...history, point], MAX_BATTERY_HISTORY);

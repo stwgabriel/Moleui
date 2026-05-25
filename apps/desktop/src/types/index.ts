@@ -8,10 +8,23 @@ export interface MoleResult {
   stderr: string;
 }
 
+export interface MyMacMetricsCache {
+  metrics: string;
+  history?: string;
+  batteryHistory?: string;
+  cpuHistory?: string;
+  memoryHistory?: string;
+  timestamp: number;
+}
+
 export interface MoleDesktopAPI {
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
   openSettingsWindow?: () => Promise<{ ok: boolean; message?: string }>;
   getSettingsProfile?: () => Promise<{ deviceName: string; user: { name: string; email: string } }>;
+  myMacCache?: {
+    get: () => Promise<MyMacMetricsCache | null>;
+    set: (cache: Pick<MyMacMetricsCache, 'metrics' | 'history' | 'batteryHistory'>) => Promise<{ ok: boolean; message?: string }>;
+  };
   touchid?: {
     status: () => Promise<MoleResult>;
     enable: () => Promise<MoleResult>;

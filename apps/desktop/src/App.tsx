@@ -131,7 +131,7 @@ function App() {
               key={currentPage}
               className={cn(
                 'absolute inset-0',
-                animationDirection === 'left' ? 'slide-in-right' : 'slide-in-left'
+                animationDirection === 'left' ? 'slide-in-up' : 'slide-in-down'
               )}
             >
               <Suspense fallback={<PageLoadingFallback />}>

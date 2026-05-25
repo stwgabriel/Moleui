@@ -285,8 +285,12 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 	usageBar := progressBar(cpu.Usage)
 
 	headerText := fmt.Sprintf("%5.1f%%", cpu.Usage)
-	if thermal.CPUTemp > 0 {
-		headerText += fmt.Sprintf(" @ %s°C", colorizeTemp(thermal.CPUTemp))
+	tempVal := thermal.CPUTemp
+	if tempVal <= 0 {
+		tempVal = thermal.BatteryTemp
+	}
+	if tempVal > 0 {
+		headerText += fmt.Sprintf(" @ %s°C", colorizeTemp(tempVal))
 	}
 
 	lines = append(lines, fmt.Sprintf("Total  %s  %s", usageBar, headerText))

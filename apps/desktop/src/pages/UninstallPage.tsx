@@ -336,11 +336,11 @@ function SelectedAppBubbleCluster({
     >
       <div
         ref={stageRef}
-        className="relative mx-auto h-full w-full max-w-[34rem] overflow-hidden"
+        className="relative mx-auto h-full w-full  overflow-hidden"
         data-testid="selected-app-orbit-stage"
         style={{ minHeight: stageMinHeight }}
       >
-        <div className="pointer-events-none absolute inset-6 rounded-full border border-white/30 opacity-50" />
+        <div className="pointer-events-none absolute w-full inset-6 rounded-full border border-white/30 opacity-50" />
         {selectedCount > 6 && (
           <div className="pointer-events-none absolute inset-1 rounded-[40%] border border-white/20 opacity-45" />
         )}
@@ -1060,9 +1060,30 @@ export function UninstallPage() {
               <h2 className="max-w-xl text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
                 Select Applications to Uninstall
               </h2>
-              <p className="text-sm font-semibold text-slate-500">
-                {selectedApps.size} of {apps.length} selected
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-sm font-semibold text-slate-500">
+                  {selectedApps.size} of {apps.length} selected
+                </p>
+                {apps.length > 0 && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAll}
+                      className="text-xs font-bold text-rose-500 hover:text-rose-600 transition-colors"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-slate-300 text-xs">|</span>
+                    <button
+                      type="button"
+                      onClick={deselectAll}
+                      className="text-xs font-bold text-slate-500 hover:text-slate-600 transition-colors"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
               <Button
