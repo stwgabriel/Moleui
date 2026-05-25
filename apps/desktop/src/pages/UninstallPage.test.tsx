@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { UninstallPage } from './UninstallPage';
 
 function mockLocalStorage() {
@@ -91,11 +91,77 @@ describe('UninstallPage', () => {
       ]),
     );
 
-    render(<UninstallPage />);
+    const { container } = render(<UninstallPage />);
 
     expect(screen.getByText('App 1')).toBeInTheDocument();
     expect(screen.getAllByText('App 2').length).toBeGreaterThan(0);
     expect(screen.getByText('2 of 2')).toBeInTheDocument();
     expect(screen.queryByText(/Removing App 2/i)).not.toBeInTheDocument();
+
+    const animation = container.querySelector('[data-testid="uninstall-removal-animation"]');
+    expect(animation).toBeInTheDocument();
+    expect(animation?.querySelector('.animate-uninstall-strip-into-receiver')).toBeInTheDocument();
+    expect(animation?.querySelector('.animate-uninstall-receiver-lid')).toBeInTheDocument();
+    expect(animation?.querySelector('.uninstall-animation-removal-field')).toBeInTheDocument();
+  });
+
+  it('renders selected applications as glass bubbles and removes them from the cluster', () => {
+    localStorage.setItem('mole-uninstall-stage', JSON.stringify('selection'));
+    localStorage.setItem(
+      'mole-uninstall-apps',
+      JSON.stringify([
+        {
+          name: 'Figma',
+          bundle_id: 'com.figma.Desktop',
+          source: 'Application',
+          uninstall_name: 'Figma',
+          path: '/Applications/Figma.app',
+          size: '1.2 GB',
+        },
+        {
+          name: 'Raycast',
+          bundle_id: 'com.raycast.macos',
+          source: 'Homebrew',
+          uninstall_name: 'Raycast',
+          path: '/Applications/Raycast.app',
+          size: '350 MB',
+        },
+        {
+          name: 'Linear',
+          bundle_id: 'com.linear',
+          source: 'Application',
+          uninstall_name: 'Linear',
+          path: '/Applications/Linear.app',
+          size: '700 MB',
+        },
+      ]),
+    );
+    localStorage.setItem('mole-uninstall-selected-apps', JSON.stringify([0]));
+
+    const { container } = render(<UninstallPage />);
+
+    expect(screen.getByText('1 of 3 selected')).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="selected-app-bubble-cluster"]')).toBeInTheDocument();
+    expect(within(screen.getByTestId('selected-app-center-bubble')).getByText('1 selected')).toBeInTheDocument();
+    expect(within(screen.getByTestId('selected-app-center-bubble')).getByText('1.2 GB')).toBeInTheDocument();
+    expect(screen.getAllByTestId('selected-app-bubble')).toHaveLength(1);
+    expect(screen.getByTestId('selected-app-orbit-stage')).toBeInTheDocument();
+    expect(screen.getAllByTestId('selected-app-bubble')[0]).toHaveClass('absolute', 'left-0', 'top-0', 'aspect-square');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Raycast' }));
+    expect(screen.getAllByTestId('selected-app-bubble')).toHaveLength(2);
+    expect(screen.getByText('2 of 3 selected')).toBeInTheDocument();
+    expect(within(screen.getByTestId('selected-app-center-bubble')).getByText('2 selected')).toBeInTheDocument();
+    expect(within(screen.getByTestId('selected-app-center-bubble')).getByText('1.54 GB')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Linear' }));
+    expect(screen.getAllByTestId('selected-app-bubble')).toHaveLength(3);
+    expect(screen.getByText('3 of 3 selected')).toBeInTheDocument();
+    expect(within(screen.getByTestId('selected-app-center-bubble')).getByText('3 selected')).toBeInTheDocument();
+    expect(within(screen.getByTestId('selected-app-center-bubble')).getByText('2.23 GB')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByTestId('selected-app-bubble')[0]);
+    expect(screen.getAllByTestId('selected-app-bubble')).toHaveLength(2);
+    expect(screen.getByText('2 of 3 selected')).toBeInTheDocument();
   });
 });

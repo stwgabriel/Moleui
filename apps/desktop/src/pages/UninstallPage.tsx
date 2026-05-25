@@ -1,4 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
+import { forceCollide, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force';
+import type { SimulationNodeDatum } from 'd3-force';
+import { AnimatePresence, motion } from 'motion/react';
 import { 
   CheckCircle, AlertTriangle, Loader, ArrowRight, ArrowLeft, X, Trash2,
   Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, CheckSquare, RefreshCw, Square
@@ -7,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StartScreen } from '@/components/common/StartScreen';
 import { usePersistentState } from '@/utils/persistentState';
+import { formatBytes } from '@/utils/format';
 import type { PageConfig } from '@/types';
 
 type Stage = 'idle' | 'loading' | 'selection' | 'confirmation' | 'executing' | 'results' | 'error';
@@ -29,11 +33,26 @@ interface CommandResult {
   stderr: string;
 }
 
+interface BubbleLayoutItem {
+  x: number;
+  y: number;
+  size: number;
+}
+
+interface BubbleNode extends SimulationNodeDatum {
+  id: string;
+  kind: 'center' | 'app';
+  radius: number;
+  fx?: number | null;
+  fy?: number | null;
+}
+
 const GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
 const SOFT_CARD = 'rounded-[1.75rem] border border-white/55 bg-white/35  backdrop-blur-2xl';
 const UNINSTALL_SHELL = 'relative h-full min-h-0 overflow-hidden p-2';
 const UNINSTALL_ACCENT_BG = 'pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_88%_16%,rgba(239,68,68,0.16),transparent_34%),radial-gradient(circle_at_16%_88%,rgba(109,93,252,0.12),transparent_38%)]';
 const LIST_CARD = `relative overflow-hidden rounded-[1.5rem] p-4 ${SOFT_CARD}`;
+const APP_SELECTION_CARD = `relative overflow-hidden rounded-[1.25rem] p-3 ${SOFT_CARD}`;
 const PILL_INPUT = 'rounded-full border border-white/60 bg-white/45 text-slate-950 shadow-inner shadow-white/40 backdrop-blur-xl placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/35 focus:border-rose-300 transition-all';
 const MUTED_PILL = 'rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 backdrop-blur-xl';
 
@@ -56,10 +75,10 @@ function stripPersistedIcon(app: App) {
   return appWithoutIcon;
 }
 
-const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; size?: 'sm' | 'md' }) {
+const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; size?: 'sm' | 'md' | 'lg' }) {
   const [failed, setFailed] = useState(false);
-  const iconClassName = size === 'sm' ? 'w-6 h-6 rounded-lg' : 'w-10 h-10 rounded-xl';
-  const fallbackIconClassName = size === 'sm' ? 'w-3.5 h-3.5' : 'w-5 h-5';
+  const iconClassName = size === 'sm' ? 'w-6 h-6 rounded-lg' : size === 'lg' ? 'w-16 h-16 rounded-[1.35rem]' : 'w-10 h-10 rounded-xl';
+  const fallbackIconClassName = size === 'sm' ? 'w-3.5 h-3.5' : size === 'lg' ? 'w-8 h-8' : 'w-5 h-5';
 
   useEffect(() => {
     setFailed(false);
@@ -85,41 +104,303 @@ const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; si
 
 function AppRemovalAnimation({ progressPercent }: { progressPercent: number }) {
   return (
-    <div className="relative mx-auto h-44 w-72 overflow-hidden" aria-hidden="true">
-      <div className="absolute left-1/2 top-20 h-12 w-px -translate-x-1/2 bg-gradient-to-b from-rose-300/70 via-rose-300/30 to-transparent" />
-      <div className="absolute left-1/2 top-[4.4rem] h-2 w-2 animate-uninstall-file-dot rounded-full bg-rose-300 shadow-[0_0_16px_rgba(244,63,94,0.35)]" />
-      <div className="absolute left-[46%] top-[4.9rem] h-1.5 w-1.5 animate-uninstall-file-dot rounded-full bg-rose-400 shadow-[0_0_14px_rgba(244,63,94,0.32)] [animation-delay:180ms]" />
-      <div className="absolute left-[54%] top-[5.15rem] h-1.5 w-1.5 animate-uninstall-file-dot rounded-full bg-red-300 shadow-[0_0_14px_rgba(248,113,113,0.32)] [animation-delay:360ms]" />
+    <div
+      className="relative mx-auto h-56 w-[25rem] max-w-full overflow-hidden"
+      aria-hidden="true"
+      data-testid="uninstall-removal-animation"
+    >
+      <div className="absolute bottom-7 left-1/2 h-5 w-72 -translate-x-1/2 rounded-full bg-slate-950/10 blur-xl" />
+      <div className="uninstall-animation-removal-field absolute left-[7.4rem] top-[5.75rem] h-20 w-44 rotate-[8deg] rounded-full border border-rose-200/55 bg-[linear-gradient(90deg,rgba(255,255,255,0.08),rgba(244,63,94,0.18),rgba(255,255,255,0.04))] shadow-[0_0_42px_rgba(244,63,94,0.14)]" />
 
-      <div className="absolute left-1/2 top-2 h-20 w-32 animate-uninstall-app-card rounded-3xl border border-white/70 bg-white/85 p-3 shadow-[0_18px_48px_rgba(244,63,94,0.16)] backdrop-blur-xl">
-        <div className="flex h-full flex-col justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-rose-200/70 bg-rose-100/50">
-              <Package className="h-4 w-4 text-rose-500" />
+      <div className="absolute left-10 top-8 h-[5.6rem] w-40 animate-uninstall-source-card rounded-[1.55rem] border border-white/70 bg-white/85 p-3 shadow-[0_24px_64px_rgba(244,63,94,0.14)] backdrop-blur-2xl">
+        <div className="absolute -inset-px rounded-[1.55rem] bg-[linear-gradient(135deg,rgba(255,255,255,0.8),transparent_52%,rgba(244,63,94,0.12))]" />
+        <div className="relative flex h-full flex-col justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-rose-200/80 bg-rose-50/80 shadow-inner shadow-white/70">
+              <Package className="h-[1.05rem] w-[1.05rem] text-rose-500" />
             </div>
-            <div className="min-w-0">
-              <div className="h-1.5 w-10 rounded-full bg-slate-200/80" />
-              <div className="mt-1.5 h-1.5 w-7 rounded-full bg-slate-100" />
+            <div className="min-w-0 space-y-1.5">
+              <div className="h-1.5 w-16 rounded-full bg-slate-200/85" />
+              <div className="h-1.5 w-10 rounded-full bg-slate-100/95" />
             </div>
           </div>
-          <div className="h-2 w-20 rounded-full bg-rose-100/80" />
+          <div className="relative h-2 w-28 overflow-hidden rounded-full bg-gradient-to-r from-rose-100 via-red-100 to-transparent">
+            <div className="animate-uninstall-card-scan h-full w-9 rounded-full bg-gradient-to-r from-transparent via-rose-400/80 to-transparent" />
+          </div>
         </div>
       </div>
 
-      <div className="absolute bottom-2 left-1/2 h-24 w-24 -translate-x-1/2">
-        <div className="absolute left-1/2 top-2 h-3 w-16 -translate-x-1/2 animate-uninstall-bin-lid rounded-full border border-slate-300/70 bg-slate-800 shadow-[0_12px_22px_rgba(15,23,42,0.16)]" />
-        <div className="absolute bottom-2 left-1/2 h-[4.6rem] w-[4.35rem] -translate-x-1/2 overflow-hidden rounded-b-2xl rounded-t-lg border border-slate-300/70 bg-slate-900/90 shadow-[0_18px_42px_rgba(15,23,42,0.20)]">
+      <div className="absolute left-[6.7rem] top-[6.25rem] h-2 w-24 animate-uninstall-strip-into-receiver rounded-full bg-white/90 shadow-[0_8px_20px_rgba(244,63,94,0.18)]" style={{ animationDelay: '-1.86s' }} />
+      <div className="absolute left-[6.9rem] top-[7.1rem] h-1.5 w-20 animate-uninstall-strip-into-receiver rounded-full bg-rose-200/90 shadow-[0_8px_18px_rgba(244,63,94,0.16)]" style={{ animationDelay: '-1.28s' }} />
+      <div className="absolute left-[6.4rem] top-[7.85rem] h-1.5 w-16 animate-uninstall-strip-into-receiver rounded-full bg-slate-200/95 shadow-[0_8px_16px_rgba(15,23,42,0.08)]" style={{ animationDelay: '-0.7s' }} />
+      <div className="absolute left-[7.25rem] top-[8.55rem] h-1.5 w-14 animate-uninstall-strip-into-receiver rounded-full bg-red-200/90 shadow-[0_8px_18px_rgba(248,113,113,0.16)]" style={{ animationDelay: '-0.14s' }} />
+
+      <div className="absolute right-12 bottom-8 h-28 w-28">
+        <div className="absolute left-1/2 top-2 h-4 w-[4.7rem] -translate-x-1/2 animate-uninstall-receiver-lid rounded-full border border-slate-400/40 bg-slate-800 shadow-[0_14px_24px_rgba(15,23,42,0.18)]" />
+        <div className="absolute bottom-2 left-1/2 h-[5.7rem] w-[4.9rem] -translate-x-1/2 overflow-hidden rounded-[1.35rem] border border-slate-500/25 bg-slate-900/90 shadow-[0_26px_56px_rgba(15,23,42,0.24)]">
+          <div className="absolute inset-x-2 top-2 h-3 rounded-full bg-white/[0.08]" />
           <div
-            className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-rose-500 via-rose-400 to-rose-200 opacity-90 transition-all duration-500"
-            style={{ height: `${Math.max(12, progressPercent)}%` }}
+            className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-red-500 via-rose-400 to-rose-200 opacity-95 transition-all duration-500"
+            style={{ height: `${Math.max(10, progressPercent)}%` }}
           />
-          <div className="absolute inset-x-3 top-3 space-y-2">
-            <div className="h-1 rounded-full bg-white/20" />
-            <div className="h-1 rounded-full bg-white/15" />
-            <div className="h-1 rounded-full bg-white/10" />
+          <div className="absolute inset-x-4 top-6 space-y-2">
+            <div className="h-1 rounded-full bg-white/[0.24]" />
+            <div className="h-1 rounded-full bg-white/[0.18]" />
+            <div className="h-1 rounded-full bg-white/[0.12]" />
+          </div>
+          <div className="absolute bottom-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-white/10 bg-slate-950/35">
+            <Trash2 className="h-4 w-4 text-white/70" />
           </div>
         </div>
-        <div className="absolute bottom-0 left-1/2 h-2 w-20 -translate-x-1/2 rounded-full bg-slate-900/10 blur-sm" />
+        <div className="absolute bottom-0 left-1/2 h-2 w-24 -translate-x-1/2 rounded-full bg-slate-950/[0.12] blur-sm" />
+      </div>
+    </div>
+  );
+}
+
+function parseAppSizeToBytes(sizeStr: string): number {
+  const match = sizeStr.match(/^([\d.]+)\s*([A-Za-z]+)$/);
+  if (!match) return 0;
+
+  const value = parseFloat(match[1]);
+  const unit = match[2].toUpperCase();
+  const multipliers: { [key: string]: number } = {
+    B: 1,
+    KB: 1024,
+    MB: 1024 * 1024,
+    GB: 1024 * 1024 * 1024,
+    TB: 1024 * 1024 * 1024 * 1024,
+  };
+
+  return value * (multipliers[unit] || 0);
+}
+
+function getCenterBubbleSize(count: number) {
+  if (count === 0) return 144;
+  if (count <= 8) return 136;
+  if (count <= 18) return 124;
+  return 112;
+}
+
+function getAppBubbleSize(count: number, stageWidth: number, stageHeight: number) {
+  const available = Math.min(stageWidth, stageHeight);
+  const target = count <= 1 ? 144 : count <= 3 ? 132 : count <= 6 ? 116 : count <= 10 ? 102 : count <= 16 ? 92 : count <= 24 ? 84 : 76;
+  return Math.max(72, Math.min(target, available * 0.28));
+}
+
+function getPackedBubbleLayout(appIds: string[], stageWidth: number, stageHeight: number, previousLayout?: Record<string, BubbleLayoutItem>) {
+  const count = appIds.length;
+  const width = Math.max(stageWidth, 320);
+  const height = Math.max(stageHeight, 352);
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const centerSize = getCenterBubbleSize(count);
+  const appSize = getAppBubbleSize(count, width, height);
+  const centerRadius = centerSize / 2;
+  const appRadius = appSize / 2;
+  const padding = count > 12 ? 3 : 5;
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const nodes: BubbleNode[] = [
+    {
+      id: 'center',
+      kind: 'center',
+      radius: centerRadius,
+      x: centerX,
+      y: centerY,
+      fx: centerX,
+      fy: centerY,
+    },
+  ];
+
+  for (let position = 0; position < count; position += 1) {
+    const id = appIds[position];
+    const previousPosition = previousLayout?.[id];
+    const angle = -Math.PI / 2 + position * goldenAngle;
+    const seededRadius = centerRadius + appRadius + padding + Math.sqrt(position) * appRadius * 0.82;
+
+    nodes.push({
+      id,
+      kind: 'app',
+      radius: appRadius,
+      x: previousPosition?.x ?? centerX + Math.cos(angle) * seededRadius,
+      y: previousPosition?.y ?? centerY + Math.sin(angle) * seededRadius,
+    });
+  }
+
+  const keepInsideBounds = () => {
+    nodes.forEach(node => {
+      if (node.kind === 'center') return;
+
+      const radius = node.radius + padding;
+      node.x = Math.max(radius, Math.min(width - radius, node.x ?? centerX));
+      node.y = Math.max(radius, Math.min(height - radius, node.y ?? centerY));
+    });
+  };
+
+  const simulation = forceSimulation(nodes)
+    .force('x', forceX<BubbleNode>(centerX).strength(node => node.kind === 'center' ? 1 : 0.085))
+    .force('y', forceY<BubbleNode>(centerY).strength(node => node.kind === 'center' ? 1 : 0.085))
+    .force('charge', forceManyBody<BubbleNode>().strength(node => node.kind === 'center' ? 0 : -1.5))
+    .force('collide', forceCollide<BubbleNode>().radius(node => node.radius + padding).strength(1).iterations(8))
+    .force('bounds', () => keepInsideBounds())
+    .stop();
+
+  for (let tick = 0; tick < 220; tick += 1) simulation.tick();
+  keepInsideBounds();
+
+  return nodes.reduce<Record<string, BubbleLayoutItem>>((layout, node) => {
+    layout[node.id] = {
+      x: node.x ?? centerX,
+      y: node.y ?? centerY,
+      size: node.radius * 2,
+    };
+    return layout;
+  }, {});
+}
+
+function SelectedAppBubbleCluster({
+  apps,
+  appIcons,
+  selectedAppIndexes,
+  onToggle,
+}: {
+  apps: App[];
+  appIcons: Record<string, string>;
+  selectedAppIndexes: number[];
+  onToggle: (index: number) => void;
+}) {
+  const selectedAppItems = selectedAppIndexes
+    .map(index => ({ index, app: apps[index] }))
+    .filter((item): item is { index: number; app: App } => Boolean(item.app));
+  const selectedCount = selectedAppItems.length;
+  const selectedAppIds = selectedAppItems.map(({ app, index }) => `${app.path}-${index}`);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageSize, setStageSize] = useState({ width: 544, height: 560 });
+  const layoutRef = useRef<Record<string, BubbleLayoutItem>>({});
+  const [bubbleLayout, setBubbleLayout] = useState<Record<string, BubbleLayoutItem>>(() => getPackedBubbleLayout([], 544, 560));
+  const isDense = selectedCount > 8;
+  const selectedSize = selectedAppItems.reduce((total, { app }) => total + parseAppSizeToBytes(app.size), 0);
+  const selectedSizeLabel = selectedCount === 0 ? 'No apps selected' : formatBytes(selectedSize);
+  const selectedLayoutKey = selectedAppItems.map(({ app, index }) => `${index}:${app.path}:${app.size}`).join('|');
+  const bubbleTransition = { type: 'spring', stiffness: 180, damping: 28, mass: 0.7 } as const;
+
+  useEffect(() => {
+    const element = stageRef.current;
+    if (!element) return;
+
+    const updateStageSize = () => {
+      const rect = element.getBoundingClientRect();
+      setStageSize(currentSize => {
+        const nextWidth = Math.round(rect.width) || 544;
+        const nextHeight = Math.round(rect.height) || 560;
+
+        return currentSize.width === nextWidth && currentSize.height === nextHeight
+          ? currentSize
+          : { width: nextWidth, height: nextHeight };
+      });
+    };
+
+    updateStageSize();
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(updateStageSize);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    setBubbleLayout(() => {
+      const nextLayout = getPackedBubbleLayout(selectedAppIds, stageSize.width, stageSize.height, layoutRef.current);
+      layoutRef.current = nextLayout;
+      return nextLayout;
+    });
+  }, [selectedCount, selectedLayoutKey, stageSize.width, stageSize.height]);
+
+  const centerLayout = bubbleLayout.center ?? getPackedBubbleLayout([], stageSize.width, stageSize.height).center;
+
+  return (
+    <div
+      className="relative h-full min-h-[15rem] overflow-y-auto overflow-x-hidden custom-scrollbar"
+      data-testid="selected-app-bubble-cluster"
+    >
+      <div
+        ref={stageRef}
+        className="relative mx-auto h-full min-h-[22rem] w-full max-w-[34rem] overflow-hidden"
+        data-testid="selected-app-orbit-stage"
+      >
+        <div className="pointer-events-none absolute inset-6 rounded-full border border-white/30 opacity-50" />
+        {selectedCount > 6 && (
+          <div className="pointer-events-none absolute inset-1 rounded-[40%] border border-white/20 opacity-45" />
+        )}
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30 blur-3xl" />
+        <motion.div
+          className="uninstall-orbit-bubble absolute left-0 top-0 z-20 flex flex-col items-center justify-center gap-2 rounded-full px-4 text-center"
+          data-testid="selected-app-center-bubble"
+          style={{ width: centerLayout.size, height: centerLayout.size }}
+          initial={{ x: centerLayout.x - centerLayout.size / 2, y: centerLayout.y - centerLayout.size / 2, scale: 0.94, opacity: 0 }}
+          animate={{ x: centerLayout.x - centerLayout.size / 2, y: centerLayout.y - centerLayout.size / 2, scale: 1, opacity: 1 }}
+          transition={bubbleTransition}
+        >
+          <Package className="h-9 w-9 text-slate-400/70" />
+          <span className="relative text-xs font-black text-slate-950">
+            {selectedCount === 0 ? 'Select apps' : `${selectedCount} selected`}
+          </span>
+          <span className="relative max-w-full truncate text-[11px] font-bold text-slate-500">
+            {selectedSizeLabel}
+          </span>
+        </motion.div>
+        <AnimatePresence initial={false}>
+          {selectedCount > 0 && (
+            <>
+            {selectedAppItems.map(({ app, index }, position) => {
+              const layout = bubbleLayout[`${app.path}-${index}`];
+              if (!layout) return null;
+
+              const iconSize = isDense ? 'sm' : selectedCount === 1 ? 'lg' : 'md';
+
+              return (
+                <motion.button
+                  key={`${app.path}-${index}`}
+                  type="button"
+                  className="uninstall-orbit-bubble group absolute left-0 top-0 z-10 flex aspect-square items-center justify-center rounded-full text-center outline-none focus-visible:ring-2 focus-visible:ring-rose-400/45"
+                  style={{
+                    width: layout.size,
+                    height: layout.size,
+                  }}
+                  initial={{ x: centerLayout.x - layout.size / 2, y: centerLayout.y - layout.size / 2, scale: 0.72, opacity: 0, filter: 'blur(6px)' }}
+                  animate={{ x: layout.x - layout.size / 2, y: layout.y - layout.size / 2, scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ scale: [1, 1.08, 0.62], opacity: [1, 1, 0], filter: 'blur(7px)', transition: { duration: 0.22, ease: 'easeOut' } }}
+                  transition={{ ...bubbleTransition, delay: Math.min(position * 0.018, 0.16) }}
+                  whileHover={{ scale: 1.018 }}
+                  whileTap={{ scale: 0.985 }}
+                  onClick={() => onToggle(index)}
+                  aria-label={`Deselect ${app.name}`}
+                  data-testid="selected-app-bubble"
+                >
+                  <span
+                    className="relative flex h-full w-full flex-col items-center justify-center gap-2 rounded-full px-3"
+                  >
+                    <AppIcon icon={appIcons[app.path]} size={iconSize} />
+                    <span className={`relative max-w-full truncate font-bold text-slate-950 drop-shadow-[0_1px_0_rgba(255,255,255,0.55)] ${isDense ? 'text-[10px]' : 'text-xs'}`}>
+                      {app.name}
+                    </span>
+                    {!isDense && (
+                      <span className="relative max-w-[86%] truncate text-[10px] font-semibold text-slate-500">
+                        {app.size}
+                      </span>
+                    )}
+                    <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-white/65 bg-white/45 text-slate-400 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                      <X className="h-3 w-3" />
+                    </span>
+                  </span>
+                </motion.button>
+              );
+            })}
+            </>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -522,21 +803,7 @@ export function UninstallPage() {
 
   // Parse size string to bytes for sorting
   const parseSizeToBytes = (sizeStr: string): number => {
-    const match = sizeStr.match(/^([\d.]+)\s*([A-Za-z]+)$/);
-    if (!match) return 0;
-    
-    const value = parseFloat(match[1]);
-    const unit = match[2].toUpperCase();
-    
-    const multipliers: { [key: string]: number } = {
-      'B': 1,
-      'KB': 1024,
-      'MB': 1024 * 1024,
-      'GB': 1024 * 1024 * 1024,
-      'TB': 1024 * 1024 * 1024 * 1024,
-    };
-    
-    return value * (multipliers[unit] || 0);
+    return parseAppSizeToBytes(sizeStr);
   };
 
   // Filter and sort apps
@@ -871,72 +1138,93 @@ export function UninstallPage() {
           )}
         </div>
 
-        <div className="relative flex-1 min-h-0 overflow-hidden rounded-[1.75rem] p-2">
-          <div
-            ref={appListRef}
-            onScroll={(event) => {
-              const nextShadows = getScrollShadows(event.currentTarget);
-              setAppListShadows(previousShadows => previousShadows.top === nextShadows.top && previousShadows.bottom === nextShadows.bottom ? previousShadows : nextShadows);
-            }}
-            className="h-full overflow-hidden overflow-y-auto rounded-[1rem] p-4 custom-scrollbar"
-          >
-            {filteredApps.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="p-4 rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 mb-4 backdrop-blur-xl">
-                <Search className="w-8 h-8 text-slate-400" />
+        <div className="relative flex-1 min-h-0 overflow-hidden px-2 pb-2">
+          <div className="grid h-full min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(17rem,0.82fr)_minmax(24rem,1.18fr)]">
+            <SelectedAppBubbleCluster
+              apps={apps}
+              appIcons={appIcons}
+              selectedAppIndexes={selectedAppIndexes}
+              onToggle={toggleApp}
+            />
+
+            <div className="relative min-h-0 overflow-hidden rounded-[1.75rem] p-2">
+              <div
+                ref={appListRef}
+                onScroll={(event) => {
+                  const nextShadows = getScrollShadows(event.currentTarget);
+                  setAppListShadows(previousShadows => previousShadows.top === nextShadows.top && previousShadows.bottom === nextShadows.bottom ? previousShadows : nextShadows);
+                }}
+                className="h-full overflow-hidden overflow-y-auto rounded-[1rem] p-3 custom-scrollbar"
+              >
+                {filteredApps.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <div className="p-4 rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 mb-4 backdrop-blur-xl">
+                    <Search className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-950 mb-1">
+                    No applications found
+                  </h3>
+                  <p className="text-sm font-medium text-slate-600">
+                    Try adjusting your search query
+                  </p>
+                </div>
+                ) : (
+                <div className="space-y-2">
+                  {filteredApps.map((app, displayIndex) => {
+                    const originalIndex = filteredIndices[displayIndex];
+                    const isSelected = selectedApps.has(originalIndex);
+                    return (
+                      <Card
+                        key={originalIndex}
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={isSelected}
+                        aria-label={`${isSelected ? 'Deselect' : 'Select'} ${app.name}`}
+                        className={`${APP_SELECTION_CARD} shadow-sm cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/45 ${
+                          isSelected ? 'ring-2 ring-rose-400 bg-white/55' : ''
+                        }`}
+                        onClick={() => toggleApp(originalIndex)}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return;
+                          event.preventDefault();
+                          toggleApp(originalIndex);
+                        }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleApp(originalIndex)}
+                            className="sr-only"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <AppIcon icon={appIcons[app.path]} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-bold text-slate-950">{app.name}</div>
+                            <div className="truncate text-xs font-medium text-slate-500">{app.path}</div>
+                          </div>
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            app.source === 'Homebrew' 
+                              ? 'bg-red-500/10 text-red-500'
+                              : 'bg-white/45 text-slate-600'
+                          }`}>
+                            {app.source}
+                          </span>
+                          <span className="min-w-[4rem] shrink-0 text-right text-xs font-bold text-slate-600">
+                            {app.size}
+                          </span>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+                )}
               </div>
-              <h3 className="text-lg font-bold text-slate-950 mb-1">
-                No applications found
-              </h3>
-              <p className="text-sm font-medium text-slate-600">
-                Try adjusting your search query
-              </p>
+              <div className="pointer-events-none absolute inset-2 overflow-hidden rounded-[1.5rem]">
+                <div className={`absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-slate-950/12 to-transparent transition-opacity duration-200 ${appListShadows.top ? 'opacity-100' : 'opacity-0'}`} />
+                <div className={`absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/14 to-transparent transition-opacity duration-200 ${appListShadows.bottom ? 'opacity-100' : 'opacity-0'}`} />
+              </div>
             </div>
-            ) : (
-            <div className="space-y-2">
-              {filteredApps.map((app, displayIndex) => {
-                const originalIndex = filteredIndices[displayIndex];
-                return (
-                  <Card
-                    key={originalIndex}
-                    className={`${LIST_CARD} shadow-sm cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 ${
-                      selectedApps.has(originalIndex) ? 'ring-2 ring-rose-400 bg-white/55' : ''
-                    }`}
-                    onClick={() => toggleApp(originalIndex)}
-                  >
-                    <div className="flex items-center gap-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedApps.has(originalIndex)}
-                        onChange={() => toggleApp(originalIndex)}
-                        className="sr-only"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <AppIcon icon={appIcons[app.path]} />
-                      <div className="flex-1">
-                        <div className="font-bold text-slate-950">{app.name}</div>
-                        <div className="text-sm font-medium text-slate-500 truncate">{app.path}</div>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        app.source === 'Homebrew' 
-                          ? 'bg-red-500/10 text-red-500'
-                          : 'bg-white/45 text-slate-600'
-                      }`}>
-                        {app.source}
-                      </span>
-                      <span className="text-sm font-bold text-slate-600 min-w-[80px] text-right">
-                        {app.size}
-                      </span>
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-            )}
-          </div>
-          <div className="pointer-events-none absolute inset-2 overflow-hidden rounded-[1.5rem]">
-            <div className={`absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-slate-950/12 to-transparent transition-opacity duration-200 ${appListShadows.top ? 'opacity-100' : 'opacity-0'}`} />
-            <div className={`absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/14 to-transparent transition-opacity duration-200 ${appListShadows.bottom ? 'opacity-100' : 'opacity-0'}`} />
           </div>
         </div>
         </div>

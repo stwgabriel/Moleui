@@ -19,6 +19,7 @@ import type { PageConfig } from '@/types';
 type Stage = 'idle' | 'scanning' | 'results' | 'error';
 type AnalyzeMode = 'disk' | 'home' | 'downloads' | 'custom';
 type QuickAnalyzeMode = Exclude<AnalyzeMode, 'custom'>;
+type NavigationAnimationDirection = 'down' | 'up';
 
 interface AnalyzeEntry {
   name: string;
@@ -103,6 +104,10 @@ function pathForAnalyzeMode(mode: AnalyzeMode, customPath: string) {
 
 function modeForPath(path: string): AnalyzeMode {
   return QUICK_PATHS.find((item) => item.path === path)?.mode ?? 'custom';
+}
+
+function getPathDepth(path: string) {
+  return path.split('/').filter(Boolean).length;
 }
 
 function sumSizes(items: Array<{ size: number }>) {
@@ -221,9 +226,11 @@ function formatEntryDate(entry: Pick<AnalyzeEntry, 'last_access'>) {
 function DiskUsageProportionGraph({
   items,
   totalSize,
+  isLoading = false,
 }: {
   items: TreemapItem[];
   totalSize: number;
+  isLoading?: boolean;
 }) {
   const visibleItems = items.filter((item) => item.size > 0).slice(0, 8);
   const totalStorageLabel = formatBytes(totalSize);
@@ -236,13 +243,13 @@ function DiskUsageProportionGraph({
     <div className="rounded-[1.35rem] border border-white/55 bg-white/42 p-5 shadow-[0_18px_54px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="text-[0.78rem] font-black uppercase tracking-[0.24em] text-slate-500">Disk usage</div>
-        <div className="shrink-0 rounded-full border border-white/65 bg-white/55 px-3 py-1 font-mono text-[11px] font-black text-slate-600 shadow-sm">
-          Total storage {totalStorageLabel}
+        <div className="shrink-0 font-mono text-[11px] font-black text-slate-600">
+          Total {totalStorageLabel}
         </div>
       </div>
       <div
         aria-label="Disk usage proportions"
-        className="flex h-6 overflow-hidden rounded-full bg-slate-900/10 shadow-inner shadow-slate-900/10"
+        className="relative flex h-6 overflow-hidden rounded-full bg-slate-900/10 shadow-inner shadow-slate-900/10"
       >
         {visibleItems.map((item) => {
           const showInlineLabel = item.percentage >= 9;
@@ -265,6 +272,7 @@ function DiskUsageProportionGraph({
             </div>
           );
         })}
+        {isLoading && <div className="analyze-disk-usage-flow" />}
       </div>
       <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-3 xl:grid-cols-4">
         {visibleItems.slice(0, 4).map((item) => (
@@ -272,6 +280,18 @@ function DiskUsageProportionGraph({
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.color }} />
             <span className="truncate text-xs font-black text-slate-700">{item.name}</span>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AnalyzePanelLoadingOverlay() {
+  return (
+    <div className="analyze-panel-loading-overlay absolute inset-0 z-30 flex items-center justify-center rounded-[1.35rem] bg-white/30 p-6 text-center shadow-inner shadow-white/30 backdrop-blur-2xl" aria-live="polite">
+      <div className="analyze-apple-spinner" aria-label="Loading folder" role="status">
+        {Array.from({ length: 8 }, (_, index) => (
+          <span key={index} style={{ transform: `rotate(${index * 45}deg) translateY(-1.28rem)` }} />
         ))}
       </div>
     </div>
@@ -329,8 +349,12 @@ export function AnalyzePage() {
   const [appIcons, setAppIcons] = useState<AppIconMap>({});
   const fileListScrollRef = useRef<HTMLDivElement | null>(null);
   const [fileListScrollShadows, setFileListScrollShadows] = useState({ top: false, bottom: false });
+  const [enteringResultPath, setEnteringResultPath] = useState<string | null>(null);
+  const [enteringResultDirection, setEnteringResultDirection] = useState<NavigationAnimationDirection>('down');
 
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const previousResultPathRef = useRef<string | null>(result?.path ?? null);
+  const pendingNavigationDirectionRef = useRef<NavigationAnimationDirection>('down');
 
   const updateFileListScrollShadows = useCallback(() => {
     const element = fileListScrollRef.current;
@@ -407,6 +431,20 @@ export function AnalyzePage() {
   }, [inlineScanPath, result, showFiles, showFolders, stage, updateFileListScrollShadows]);
 
   useEffect(() => {
+    if (stage !== 'results' || !result?.path) return;
+
+    const previousPath = previousResultPathRef.current;
+    previousResultPathRef.current = result.path;
+
+    if (!previousPath || previousPath === result.path) return;
+
+    setEnteringResultDirection(pendingNavigationDirectionRef.current);
+    setEnteringResultPath(result.path);
+    const timeout = window.setTimeout(() => setEnteringResultPath(null), 520);
+    return () => window.clearTimeout(timeout);
+  }, [result?.path, stage]);
+
+  useEffect(() => {
     if (stage !== 'results' || !result || !isApplicationsPath(result.path)) return;
 
     const appPaths = result.entries.filter(isMacAppEntry).map((entry) => entry.path);
@@ -453,10 +491,14 @@ export function AnalyzePage() {
       pushHistory = true,
       skipCache = false,
       display,
-    }: { pushHistory?: boolean; skipCache?: boolean; display?: 'page' | 'inline' | 'background' } = {},
+      transitionDirection,
+    }: { pushHistory?: boolean; skipCache?: boolean; display?: 'page' | 'inline' | 'background'; transitionDirection?: NavigationAnimationDirection } = {},
   ) => {
     const targetPath = path ?? pathForAnalyzeMode(selectedMode, pathInput);
     const scanDisplay = display ?? (stage === 'results' && result ? 'inline' : 'page');
+    pendingNavigationDirectionRef.current = transitionDirection ?? (
+      result?.path && getPathDepth(targetPath) < getPathDepth(result.path) ? 'up' : 'down'
+    );
 
     if ((inlineScanPath || isBackgroundRefreshing) && scanDisplay !== 'page') return;
 
@@ -602,7 +644,7 @@ export function AnalyzePage() {
   const navigateUp = useCallback(() => {
     if (!result?.path || result.path === '/') return;
     const parentPath = result.path.replace(/\/[^/]+\/?$/, '') || '/';
-    startScan(parentPath);
+    startScan(parentPath, { transitionDirection: 'up' });
   }, [result?.path]);
 
   // Navigate back through history
@@ -862,6 +904,10 @@ export function AnalyzePage() {
     const currentPathLabel = result.path === '/' ? 'Macintosh HD' : pathParts[pathParts.length - 1] ?? result.path;
     const isViewingApplications = isApplicationsPath(result.path);
     const applicationEntries = sortedListEntries.filter(isMacAppEntry);
+    const isContentEntering = enteringResultPath === result.path;
+    const contentEnterClass = isContentEntering
+      ? enteringResultDirection === 'up' ? 'analyze-content-enter-up' : 'analyze-content-enter-down'
+      : '';
 
     return (
       <div className="relative h-full overflow-y-auto p-6 xl:overflow-hidden">
@@ -923,16 +969,10 @@ export function AnalyzePage() {
               onClick={() => {
                 const targetPath = result.path;
                 resultCacheRef.current.clear();
-                setStage('scanning');
-                setView('start');
-                setResult(null);
                 setProgress(0);
                 setCurrentFile('');
                 setError(null);
-                setNavHistory([]);
-                setInlineScanPath('');
-                setIsBackgroundRefreshing(false);
-                void startScan(targetPath, { skipCache: true, pushHistory: false, display: 'page' });
+                void startScan(targetPath, { skipCache: true, pushHistory: false, display: 'inline' });
               }}
               className="h-9 rounded-full px-3"
             >
@@ -1001,78 +1041,175 @@ export function AnalyzePage() {
           </div>
         </div>
 
-        <div className="grid h-[calc(100%-5.35rem)] min-h-[42rem] grid-cols-1 gap-6 xl:min-h-0 xl:grid-cols-[450px_minmax(0,1fr)]">
-          <div className="flex min-h-0 flex-col gap-5">
-            <DiskUsageProportionGraph items={treemapItems} totalSize={result.total_size} />
+        <div className="grid h-[calc(100%-5.35rem)] min-h-[42rem] grid-cols-1 gap-6 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_450px]">
+          <div data-testid="storage-map-panel" className="relative min-h-[34rem] overflow-hidden rounded-[1.2rem] xl:min-h-0">
+            <div className={`relative h-full rounded-[1.35rem] ${contentEnterClass}`}>
+              {filteredEntries.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 text-center">
+                  <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
+                  <p className="font-semibold text-slate-600">No entries match the current filters.</p>
+                </div>
+              ) : isViewingApplications && applicationEntries.length > 0 ? (
+                <div className="h-full overflow-y-auto rounded-[1.35rem] border border-white/45 bg-white/25 p-3 shadow-inner shadow-white/20 custom-scrollbar">
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(7.25rem,1fr))] gap-3">
+                    {applicationEntries.map((entry) => {
+                      const appIcon = appIcons[entry.path];
+                      const iconCategory = getFileIconCategory(entry);
+                      const FallbackIcon = iconCategory.icon;
 
-            <div className="min-h-[31rem] flex-1 xl:min-h-0">
+                      return (
+                        <button
+                          key={entry.path}
+                          type="button"
+                          onContextMenu={(event) => openItemContextMenu(event, entry)}
+                          onClick={() => {
+                            setScanPath(entry.path);
+                            startScan(entry.path);
+                          }}
+                          className="group flex min-h-[8.75rem] max-h-[11rem] min-w-[7.25rem] flex-col items-center justify-center overflow-hidden rounded-[1.1rem] border border-white/62 bg-white/46 p-3 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] transition hover:bg-white/70 hover:shadow-[0_18px_44px_rgba(15,23,42,0.14)]"
+                          title={`${entry.name} - ${formatBytes(entry.size)}`}
+                        >
+                          <span className="mb-3 flex h-24 w-24 min-h-12 min-w-12 max-w-full items-center justify-center rounded-2xl bg-white/35 p-2 shadow-inner shadow-white/50">
+                            {appIcon ? (
+                              <img
+                                src={appIcon}
+                                alt=""
+                                className="h-[clamp(3rem,7vw,5.5rem)] w-[clamp(3rem,7vw,5.5rem)] min-w-12 max-w-24 object-contain drop-shadow-[0_10px_18px_rgba(15,23,42,0.18)]"
+                                draggable={false}
+                              />
+                            ) : (
+                              <FallbackIcon className={`h-10 w-10 ${iconCategory.iconClassName}`} />
+                            )}
+                          </span>
+                          <span className="w-full truncate text-sm font-black text-slate-950">{entry.name.replace(/\.app$/, '')}</span>
+                          <span className="mt-1 font-mono text-[11px] font-bold text-slate-500">{formatBytes(entry.size)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                treemapRects.map((rect) => {
+                  const showDetails = rect.width > 12 && rect.height > 10;
+                  const showLargeLabel = rect.width > 21 && rect.height > 15;
+                  const iconCategory = getFileIconCategory(rect);
+                  const RectIcon = iconCategory.icon;
+                  return (
+                    <button
+                      key={rect.path}
+                      type="button"
+                      aria-disabled={!rect.is_dir || rect.isOther}
+                      onContextMenu={(event) => openItemContextMenu(event, rect)}
+                      onClick={() => {
+                        if (rect.is_dir && !rect.isOther) {
+                          setScanPath(rect.path);
+                          startScan(rect.path);
+                        }
+                      }}
+                      className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition duration-300 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
+                      style={{
+                        left: `${rect.x}%`,
+                        top: `${rect.y}%`,
+                        width: `${rect.width}%`,
+                        height: `${rect.height}%`,
+                        background: `linear-gradient(145deg, ${rect.color}, ${rect.color}df)`,
+                      }}
+                      title={`${rect.name} - ${formatBytes(rect.size)} - ${rect.percentage.toFixed(1)}%`}
+                    >
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_26%_18%,rgba(255,255,255,0.26),transparent_42%)] opacity-90" />
+                      {!showLargeLabel && (
+                        <div className="absolute inset-x-2 top-2 z-[1] truncate rounded-md bg-black/12 px-1.5 py-0.5 text-[10px] font-black leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
+                          {rect.name}
+                        </div>
+                      )}
+                      {showDetails && (
+                        <div className="relative flex h-full flex-col items-center justify-center text-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
+                          {showLargeLabel && (
+                            <div className="mb-4 flex max-w-full items-center gap-2">
+                              <RectIcon className="h-5 w-5 shrink-0" />
+                              <span className="truncate text-xl font-black tracking-wide">{rect.name}</span>
+                            </div>
+                          )}
+                          <div className="font-mono text-sm font-black tracking-wide sm:text-base">{formatBytes(rect.size)}</div>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {inlineScanPath && <AnalyzePanelLoadingOverlay />}
+          </div>
+
+          <div data-testid="disk-usage-list-panel" className="flex min-h-0 flex-col gap-5">
+            <DiskUsageProportionGraph items={treemapItems} totalSize={result.total_size} isLoading={Boolean(inlineScanPath)} />
+
+            <div className="relative min-h-[31rem] flex-1 overflow-hidden rounded-[1.35rem] xl:min-h-0">
               <div className="flex h-full min-h-0 flex-col">
+                <div data-testid="file-list-summary" className="mb-4 flex items-center justify-between px-2 font-mono text-xs font-black text-slate-500">
+                  <span>{sortedListEntries.length} items</span>
+                  <span>{formatBytes(filteredSize)} total</span>
+                </div>
+
                 <div className="relative min-h-0 flex-1">
                   <div
                     ref={fileListScrollRef}
                     onScroll={updateFileListScrollShadows}
                     className="h-full overflow-hidden overflow-y-auto rounded-[1.35rem] pr-1 custom-scrollbar"
                   >
-                    {inlineScanPath ? (
-                      <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 p-8 text-center shadow-inner shadow-white/20">
-                        <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-analyze/10">
-                          <Spinner size="lg" />
-                          <Search className="absolute inset-0 m-auto h-5 w-5 text-analyze" />
+                    <div className={`min-h-full ${contentEnterClass}`}>
+                      {filteredEntries.length === 0 ? (
+                        <div className="flex h-full min-h-[20rem] flex-col items-center justify-center text-center">
+                          <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
+                          <p className="font-semibold text-slate-600">No entries match the current filters.</p>
                         </div>
-                        <h3 className="text-xl font-black text-slate-950">Scanning folder</h3>
-                        <p className="mt-2 max-w-md truncate font-mono text-sm font-bold text-slate-500">{inlineScanPath}</p>
-                      </div>
-                    ) : filteredEntries.length === 0 ? (
-                      <div className="flex h-full flex-col items-center justify-center text-center">
-                        <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
-                        <p className="font-semibold text-slate-600">No entries match the current filters.</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2.5 pb-2">
-                        {sortedListEntries.map((entry) => {
-                        const percentage = result.total_size > 0 ? (entry.size / result.total_size) * 100 : 0;
-                        const entryDate = formatEntryDate(entry);
-                        const iconCategory = getFileIconCategory(entry);
-                        const EntryIcon = iconCategory.icon;
-                        return (
-                          <button
-                            key={entry.path}
-                            type="button"
-                            data-testid="file-management-row"
-                            aria-disabled={!entry.is_dir}
-                            onContextMenu={(event) => openItemContextMenu(event, entry)}
-                            onClick={() => {
-                              if (entry.is_dir) {
-                                setScanPath(entry.path);
-                                startScan(entry.path);
-                              }
-                            }}
-                            className={`group relative w-full overflow-hidden rounded-[1.35rem] border border-white/50 bg-white/30 p-3 text-left shadow-sm transition hover:bg-white/46 ${!entry.is_dir ? 'cursor-default' : ''}`}
-                          >
-                            <div
-                              className="absolute inset-y-0 left-0 rounded-[1.35rem] bg-violet-200/38 transition-[width] duration-300"
-                              style={{ width: `${Math.min(100, Math.max(3, percentage))}%` }}
-                            />
-                            <div className="relative flex items-center gap-3">
-                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-inner shadow-white/30 ${iconCategory.backgroundClassName}`} title={iconCategory.label}>
-                                <EntryIcon className={`h-[1.125rem] w-[1.125rem] ${iconCategory.iconClassName}`} />
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-base font-black text-slate-950">{entry.name}</span>
-                                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] font-bold text-slate-500">
-                                  <span>{formatBytes(entry.size)}</span>
-                                  {entryDate && <span>{entryDate}</span>}
-                                </span>
-                              </span>
-                              {entry.is_dir && (
-                                <ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-700" />
-                              )}
-                            </div>
-                          </button>
-                        );
-                        })}
-                      </div>
-                    )}
+                      ) : (
+                        <div className="space-y-2.5 pb-2">
+                          {sortedListEntries.map((entry) => {
+                            const percentage = result.total_size > 0 ? (entry.size / result.total_size) * 100 : 0;
+                            const entryDate = formatEntryDate(entry);
+                            const iconCategory = getFileIconCategory(entry);
+                            const EntryIcon = iconCategory.icon;
+                            return (
+                              <button
+                                key={entry.path}
+                                type="button"
+                                data-testid="file-management-row"
+                                aria-disabled={!entry.is_dir}
+                                onContextMenu={(event) => openItemContextMenu(event, entry)}
+                                onClick={() => {
+                                  if (entry.is_dir) {
+                                    setScanPath(entry.path);
+                                    startScan(entry.path);
+                                  }
+                                }}
+                                className={`group relative w-full overflow-hidden rounded-[1.35rem] border border-white/50 bg-white/30 p-3 text-left shadow-sm transition hover:bg-white/46 ${!entry.is_dir ? 'cursor-default' : ''}`}
+                              >
+                                <div
+                                  className="absolute inset-y-0 left-0 rounded-[1.35rem] bg-violet-200/38 transition-[width] duration-300"
+                                  style={{ width: `${Math.min(100, Math.max(3, percentage))}%` }}
+                                />
+                                <div className="relative flex items-center gap-3">
+                                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-inner shadow-white/30 ${iconCategory.backgroundClassName}`} title={iconCategory.label}>
+                                    <EntryIcon className={`h-[1.125rem] w-[1.125rem] ${iconCategory.iconClassName}`} />
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-base font-black text-slate-950">{entry.name}</span>
+                                    <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] font-bold text-slate-500">
+                                      <span>{formatBytes(entry.size)}</span>
+                                      {entryDate && <span>{entryDate}</span>}
+                                    </span>
+                                  </span>
+                                  {entry.is_dir && (
+                                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-700" />
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div
                     className={`pointer-events-none absolute inset-x-0 top-0 h-8 rounded-t-[1.35rem] bg-gradient-to-b from-slate-900/7 to-transparent transition-opacity duration-200 ${fileListScrollShadows.top ? 'opacity-100' : 'opacity-0'}`}
@@ -1081,118 +1218,9 @@ export function AnalyzePage() {
                     className={`pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-[1.35rem] bg-gradient-to-t from-slate-900/8 to-transparent transition-opacity duration-200 ${fileListScrollShadows.bottom ? 'opacity-100' : 'opacity-0'}`}
                   />
                 </div>
-
-                <div className="mt-4 flex items-center justify-between px-2 font-mono text-xs font-black text-slate-500">
-                  <span>{sortedListEntries.length} items</span>
-                  <span>{formatBytes(filteredSize)} total</span>
-                </div>
               </div>
+              {inlineScanPath && <AnalyzePanelLoadingOverlay />}
             </div>
-          </div>
-
-          <div className="relative min-h-[34rem] overflow-hidden rounded-[1.2rem] xl:min-h-0">
-            {inlineScanPath ? (
-              <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 p-8 text-center shadow-inner shadow-white/20">
-                <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-analyze/10">
-                  <Spinner size="lg" />
-                  <Search className="absolute inset-0 m-auto h-5 w-5 text-analyze" />
-                </div>
-                <h3 className="text-xl font-black text-slate-950">Scanning folder</h3>
-                <p className="mt-2 max-w-md truncate font-mono text-sm font-bold text-slate-500">{inlineScanPath}</p>
-              </div>
-            ) : filteredEntries.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 text-center">
-                <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
-                <p className="font-semibold text-slate-600">No entries match the current filters.</p>
-              </div>
-            ) : isViewingApplications && applicationEntries.length > 0 ? (
-              <div className="h-full overflow-y-auto rounded-[1.35rem] border border-white/45 bg-white/25 p-3 shadow-inner shadow-white/20 custom-scrollbar">
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(7.25rem,1fr))] gap-3">
-                  {applicationEntries.map((entry) => {
-                    const appIcon = appIcons[entry.path];
-                    const iconCategory = getFileIconCategory(entry);
-                    const FallbackIcon = iconCategory.icon;
-
-                    return (
-                      <button
-                        key={entry.path}
-                        type="button"
-                        onContextMenu={(event) => openItemContextMenu(event, entry)}
-                        onClick={() => {
-                          setScanPath(entry.path);
-                          startScan(entry.path);
-                        }}
-                        className="group flex min-h-[8.75rem] max-h-[11rem] min-w-[7.25rem] flex-col items-center justify-center overflow-hidden rounded-[1.1rem] border border-white/62 bg-white/46 p-3 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] transition hover:bg-white/70 hover:shadow-[0_18px_44px_rgba(15,23,42,0.14)]"
-                        title={`${entry.name} - ${formatBytes(entry.size)}`}
-                      >
-                        <span className="mb-3 flex h-24 w-24 min-h-12 min-w-12 max-w-full items-center justify-center rounded-2xl bg-white/35 p-2 shadow-inner shadow-white/50">
-                          {appIcon ? (
-                            <img
-                              src={appIcon}
-                              alt=""
-                              className="h-[clamp(3rem,7vw,5.5rem)] w-[clamp(3rem,7vw,5.5rem)] min-w-12 max-w-24 object-contain drop-shadow-[0_10px_18px_rgba(15,23,42,0.18)]"
-                              draggable={false}
-                            />
-                          ) : (
-                            <FallbackIcon className={`h-10 w-10 ${iconCategory.iconClassName}`} />
-                          )}
-                        </span>
-                        <span className="w-full truncate text-sm font-black text-slate-950">{entry.name.replace(/\.app$/, '')}</span>
-                        <span className="mt-1 font-mono text-[11px] font-bold text-slate-500">{formatBytes(entry.size)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              treemapRects.map((rect) => {
-                const showDetails = rect.width > 12 && rect.height > 10;
-                const showLargeLabel = rect.width > 21 && rect.height > 15;
-                const iconCategory = getFileIconCategory(rect);
-                const RectIcon = iconCategory.icon;
-                return (
-                  <button
-                    key={rect.path}
-                    type="button"
-                    aria-disabled={!rect.is_dir || rect.isOther}
-                    onContextMenu={(event) => openItemContextMenu(event, rect)}
-                    onClick={() => {
-                      if (rect.is_dir && !rect.isOther) {
-                        setScanPath(rect.path);
-                        startScan(rect.path);
-                      }
-                    }}
-                    className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition duration-300 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
-                    style={{
-                      left: `${rect.x}%`,
-                      top: `${rect.y}%`,
-                      width: `${rect.width}%`,
-                      height: `${rect.height}%`,
-                      background: `linear-gradient(145deg, ${rect.color}, ${rect.color}df)`,
-                    }}
-                    title={`${rect.name} - ${formatBytes(rect.size)} - ${rect.percentage.toFixed(1)}%`}
-                  >
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_26%_18%,rgba(255,255,255,0.26),transparent_42%)] opacity-90" />
-                    {!showLargeLabel && (
-                      <div className="absolute inset-x-2 top-2 z-[1] truncate rounded-md bg-black/12 px-1.5 py-0.5 text-[10px] font-black leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
-                        {rect.name}
-                      </div>
-                    )}
-                    {showDetails && (
-                      <div className="relative flex h-full flex-col items-center justify-center text-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
-                        {showLargeLabel && (
-                          <div className="mb-4 flex max-w-full items-center gap-2">
-                            <RectIcon className="h-5 w-5 shrink-0" />
-                            <span className="truncate text-xl font-black tracking-wide">{rect.name}</span>
-                          </div>
-                        )}
-                        <div className="font-mono text-sm font-black tracking-wide sm:text-base">{formatBytes(rect.size)}</div>
-                      </div>
-                    )}
-                  </button>
-                );
-              })
-            )}
           </div>
         </div>
 
@@ -1216,7 +1244,7 @@ export function AnalyzePage() {
               className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-rose-600 transition hover:bg-rose-500/10"
             >
               <Trash2 className="h-4 w-4" />
-              Delete {contextMenu.item.is_dir ? 'Folder' : 'File'}
+              Move {contextMenu.item.is_dir ? 'Folder' : 'File'} to Trash
             </button>
           </div>
         )}

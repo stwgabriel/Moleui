@@ -218,6 +218,113 @@ body {
   animation: spin-slow 8s linear infinite;
 }
 
+@keyframes analyze-apple-spinner {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes analyze-disk-usage-flow {
+  0% { background-position: 180% 50%; }
+  100% { background-position: -80% 50%; }
+}
+
+.analyze-panel-loading-overlay {
+  -webkit-backdrop-filter: blur(26px) saturate(170%);
+  backdrop-filter: blur(26px) saturate(170%);
+}
+
+.analyze-apple-spinner {
+  position: relative;
+  width: 4.75rem;
+  height: 4.75rem;
+  animation: analyze-apple-spinner 920ms steps(8) infinite;
+}
+
+.analyze-apple-spinner span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.44rem;
+  height: 1.52rem;
+  margin-left: -0.22rem;
+  margin-top: -0.76rem;
+  border-radius: 9999px;
+  background: #4f5961;
+  transform-origin: 50% 50%;
+}
+
+.analyze-apple-spinner span:nth-child(1) { opacity: 0.95; }
+.analyze-apple-spinner span:nth-child(2) { opacity: 0.88; }
+.analyze-apple-spinner span:nth-child(3) { opacity: 0.78; }
+.analyze-apple-spinner span:nth-child(4) { opacity: 0.68; }
+.analyze-apple-spinner span:nth-child(5) { opacity: 0.55; }
+.analyze-apple-spinner span:nth-child(6) { opacity: 0.45; }
+.analyze-apple-spinner span:nth-child(7) { opacity: 0.36; }
+.analyze-apple-spinner span:nth-child(8) { opacity: 0.28; }
+
+.analyze-disk-usage-flow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(105deg, transparent 0%, rgba(255, 255, 255, 0.55) 12%, transparent 24%),
+    linear-gradient(90deg, rgba(14, 165, 233, 0.46), rgba(168, 85, 247, 0.5), rgba(236, 72, 153, 0.46), rgba(245, 158, 11, 0.42), rgba(34, 197, 94, 0.42), rgba(14, 165, 233, 0.46));
+  background-size: 220% 100%, 260% 100%;
+  mix-blend-mode: screen;
+  opacity: 0.8;
+  animation: analyze-disk-usage-flow 1.65s linear infinite;
+}
+
+@keyframes analyze-content-enter-down {
+  0% {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+    filter: blur(8px);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1.014) translateY(0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes analyze-content-enter-up {
+  0% {
+    opacity: 0;
+    transform: scale(1.06) translateY(-12px);
+    filter: blur(8px);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(0.988) translateY(5px);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+.analyze-content-enter-down,
+.analyze-content-enter-up {
+  transform-origin: 50% 48%;
+  will-change: transform, opacity, filter;
+}
+
+.analyze-content-enter-down {
+  animation: analyze-content-enter-down 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.analyze-content-enter-up {
+  animation: analyze-content-enter-up 540ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Pulse Glow - Optimize */
 @keyframes pulse-glow-icon {
   0%, 100% {
@@ -257,55 +364,170 @@ body {
   animation: shake 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-@keyframes uninstall-app-card {
-  0%, 18% {
-    transform: translate3d(-50%, 0, 0) scale(1);
-    opacity: 1;
-  }
-  56% {
-    transform: translate3d(-50%, 50px, 0) scale(0.86);
-    opacity: 1;
-  }
-  78%, 100% {
-    transform: translate3d(-50%, 76px, 0) scale(0.52);
-    opacity: 0;
-  }
-}
-
-.animate-uninstall-app-card {
-  animation: uninstall-app-card 2.7s cubic-bezier(0.45, 0, 0.2, 1) infinite;
-}
-
-@keyframes uninstall-file-dot {
-  0%, 22% {
-    transform: translate3d(-50%, 0, 0) scale(0.6);
-    opacity: 0;
+@keyframes uninstall-source-card {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
   }
   36% {
+    transform: translate3d(0, 2px, 0) scale(0.985);
+  }
+  58% {
+    transform: translate3d(2px, 1px, 0) scale(0.975);
+  }
+}
+
+.animate-uninstall-source-card {
+  animation: uninstall-source-card 3.2s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+@keyframes uninstall-card-scan {
+  0%, 14% {
+    transform: translateX(-120%) scaleX(0.7);
+    opacity: 0;
+  }
+  28% {
     opacity: 1;
   }
-  78%, 100% {
-    transform: translate3d(-50%, 56px, 0) scale(1);
+  68% {
+    transform: translateX(320%) scaleX(1);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(420%) scaleX(0.6);
     opacity: 0;
   }
 }
 
-.animate-uninstall-file-dot {
-  animation: uninstall-file-dot 2.1s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+.animate-uninstall-card-scan {
+  animation: uninstall-card-scan 2.8s cubic-bezier(0.45, 0, 0.2, 1) infinite;
 }
 
-@keyframes uninstall-bin-lid {
-  0%, 46%, 100% {
+@keyframes uninstall-removal-field {
+  0%, 100% {
+    background-position: 0% 50%;
+    box-shadow: 0 0 34px rgba(244, 63, 94, 0.10);
+    opacity: 0.62;
+  }
+  50% {
+    background-position: 100% 50%;
+    box-shadow: 0 0 56px rgba(244, 63, 94, 0.20);
+    opacity: 1;
+  }
+}
+
+.uninstall-animation-removal-field {
+  background-size: 220% 100%;
+  animation: uninstall-removal-field 2.8s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+@keyframes uninstall-strip-into-receiver {
+  0%, 16% {
+    transform: translate3d(0, 0, 0) scaleX(0.7);
+    opacity: 0;
+  }
+  24% {
+    transform: translate3d(6px, -1px, 0) scaleX(1);
+    opacity: 1;
+  }
+  72% {
+    transform: translate3d(168px, 50px, 0) scaleX(0.45) scaleY(0.8);
+    opacity: 1;
+  }
+  88%, 100% {
+    transform: translate3d(192px, 63px, 0) scaleX(0.12) scaleY(0.7);
+    opacity: 0;
+  }
+}
+
+.animate-uninstall-strip-into-receiver {
+  transform-origin: right center;
+  animation: uninstall-strip-into-receiver 2.8s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+@keyframes uninstall-receiver-lid {
+  0%, 44%, 100% {
     transform: translateX(-50%) translateY(0) rotate(0deg);
   }
-  60%, 72% {
-    transform: translateX(-50%) translateY(-5px) rotate(-6deg);
+  58%, 74% {
+    transform: translateX(-50%) translateY(-7px) rotate(-9deg);
   }
 }
 
-.animate-uninstall-bin-lid {
-  transform-origin: 20% 50%;
-  animation: uninstall-bin-lid 2.7s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+.animate-uninstall-receiver-lid {
+  transform-origin: 18% 50%;
+  animation: uninstall-receiver-lid 2.8s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+@keyframes uninstall-bubble-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.48);
+    filter: blur(8px);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1.08);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.uninstall-bubble-pop {
+  animation: uninstall-bubble-pop 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.uninstall-orbit-bubble {
+  background:
+    radial-gradient(circle at 31% 23%, rgba(255, 255, 255, 0.95) 0 8%, rgba(255, 255, 255, 0.48) 9% 22%, transparent 23%),
+    radial-gradient(circle at 66% 76%, rgba(244, 63, 94, 0.15), transparent 42%),
+    radial-gradient(circle at 34% 32%, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.28) 44%, rgba(255, 255, 255, 0.10) 72%);
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  box-shadow:
+    0 28px 80px rgba(15, 23, 42, 0.13),
+    0 12px 38px rgba(244, 63, 94, 0.09),
+    inset 0 1px 2px rgba(255, 255, 255, 0.92),
+    inset 12px 18px 38px rgba(255, 255, 255, 0.34),
+    inset -16px -18px 36px rgba(109, 93, 252, 0.08);
+  backdrop-filter: blur(22px) saturate(145%);
+}
+
+.uninstall-orbit-bubble::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse at 30% 18%, rgba(255, 255, 255, 0.88), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.42), transparent 48%);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.uninstall-orbit-bubble::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 105%, rgba(255, 255, 255, 0.45), transparent 36%);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+@keyframes uninstall-bubble-float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(var(--bubble-drift-x, 4px), var(--bubble-drift-y, -8px), 0) rotate(var(--bubble-rotate, 1deg));
+  }
+}
+
+.uninstall-bubble-float {
+  animation: uninstall-bubble-float 4.8s ease-in-out infinite;
 }
 
 /* Sparkle - Smart Care */

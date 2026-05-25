@@ -111,18 +111,18 @@ describe('AnalyzePage', () => {
     render(<AnalyzePage />);
 
     expect(screen.getByRole('button', { name: /filter results/i })).toBeInTheDocument();
-    expect(screen.getAllByTitle(/movie.mov - 400 b/i).length).toBeGreaterThan(0);
-    expect(screen.queryByLabelText(/disk usage proportions/i)).not.toBeInTheDocument();
+    expect(screen.getAllByTitle(/files under 1 mb - 500 b/i).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/disk usage proportions/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /filter results/i }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /files/i }));
+    fireEvent.click(screen.getByRole('button', { name: /files\s*2/i }));
 
-    expect(screen.queryAllByTitle(/movie.mov - 400 b/i)).toHaveLength(0);
+    expect(screen.queryAllByTitle(/files under 1 mb - 500 b/i)).toHaveLength(0);
     expect(screen.getAllByTitle(/documents - 600 b/i).length).toBeGreaterThan(0);
     expect(screen.queryByText('Other')).not.toBeInTheDocument();
   });
 
-  it('switches to file management list mode and sorts by date', () => {
+  it('places the storage map left of the disk usage list and shows the list totals above the rows', () => {
     storage.set('mole-analyze-stage', JSON.stringify('results'));
     storage.set('mole-analyze-result', JSON.stringify({
       path: '/Users/example',
@@ -131,23 +131,48 @@ describe('AnalyzePage', () => {
       entries: [
         { name: 'Documents', path: '/Users/example/Documents', size: 600, is_dir: true, last_access: '2026-05-10T10:00:00Z' },
         { name: 'movie.mov', path: '/Users/example/movie.mov', size: 400, is_dir: false, last_access: '2026-05-12T10:00:00Z' },
-        { name: 'archive.zip', path: '/Users/example/archive.zip', size: 100, is_dir: false },
       ],
       large_files: [],
     }));
 
     render(<AnalyzePage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /file management list/i }));
-    expect(screen.getByRole('heading', { name: /file management/i })).toBeInTheDocument();
-    expect(screen.getByText('60.0% of parent')).toBeInTheDocument();
+    const storageMap = screen.getByTestId('storage-map-panel');
+    const diskUsageList = screen.getByTestId('disk-usage-list-panel');
+    expect(storageMap.compareDocumentPosition(diskUsageList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const summary = screen.getByTestId('file-list-summary');
+    const firstRow = screen.getAllByTestId('file-management-row')[0];
+    expect(summary).toHaveTextContent('2 items');
+    expect(summary).toHaveTextContent('1000 B total');
+    expect(summary.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    expect(screen.getByText('Total 1000 B')).toBeInTheDocument();
+    expect(screen.queryByText(/Total storage/i)).not.toBeInTheDocument();
+  });
+
+  it('shows file management rows sorted by size', () => {
+    storage.set('mole-analyze-stage', JSON.stringify('results'));
+    storage.set('mole-analyze-result', JSON.stringify({
+      path: '/Users/example',
+      overview: false,
+      total_size: 3000000,
+      entries: [
+        { name: 'Documents', path: '/Users/example/Documents', size: 1500000, is_dir: true, last_access: '2026-05-10T10:00:00Z' },
+        { name: 'movie.mov', path: '/Users/example/movie.mov', size: 1200000, is_dir: false, last_access: '2026-05-12T10:00:00Z' },
+        { name: 'archive.zip', path: '/Users/example/archive.zip', size: 300000, is_dir: false },
+      ],
+      large_files: [],
+    }));
+
+    render(<AnalyzePage />);
+
     expect(screen.getByLabelText(/disk usage proportions/i)).toBeInTheDocument();
     expect(screen.queryByText('Date unavailable')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /sort by date/i }));
-
     const rows = screen.getAllByTestId('file-management-row');
-    expect(rows[0]).toHaveTextContent('movie.mov');
-    expect(rows[1]).toHaveTextContent('Documents');
+    expect(rows[0]).toHaveTextContent('Documents');
+    expect(rows[1]).toHaveTextContent('movie.mov');
+    expect(rows[2]).toHaveTextContent('archive.zip');
   });
 });

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, shell } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, shell } from "electron";
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,6 +10,9 @@ const __dirname = path.dirname(__filename);
 const isDev = !app.isPackaged;
 const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-purple.png");
 
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("enable-zero-copy");
 app.setName("Moleui Desktop");
 nativeTheme.themeSource = "light";
 
@@ -347,6 +350,61 @@ end tell
 `;
 
   return runAppleScript(script);
+}
+
+function configureApplicationMenu() {
+  const template = [
+    ...(process.platform === "darwin"
+      ? [{
+        label: app.name,
+        submenu: [
+          { role: "about" },
+          {
+            label: "Settings...",
+            accelerator: "CmdOrCtrl+,",
+            click: () => createSettingsWindow(BrowserWindow.getFocusedWindow() ?? mainWindow),
+          },
+          { type: "separator" },
+          { role: "hide" },
+          { type: "separator" },
+          { role: "quit" },
+        ],
+      }]
+      : []),
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "close" },
+      ],
+    },
+  ];
+
+  if (isDev) {
+    template.push({
+      label: "Developer",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { type: "separator" },
+        { role: "toggleDevTools" },
+      ],
+    });
+  }
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function createWindow() {
@@ -754,6 +812,8 @@ ipcMain.handle("mole:signal-process", async (_event, pid, signal) => {
 });
 
 app.whenReady().then(() => {
+  configureApplicationMenu();
+
   if (process.platform === "darwin") {
     const appIcon = nativeImage.createFromPath(appIconPath);
 
