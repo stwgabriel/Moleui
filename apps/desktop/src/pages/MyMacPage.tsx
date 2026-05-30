@@ -3,6 +3,8 @@ import {
   ArrowRight,
   Battery,
   Clock3,
+  Maximize2,
+  Minimize2,
   MoreHorizontal,
   Search,
   Settings2,
@@ -37,6 +39,7 @@ const BATTERY_SAMPLE_INTERVAL = 6 * 60_000;
 const PROCESS_MENU_WIDTH = 232;
 const PROCESS_MENU_HEIGHT = 276;
 const PROCESS_MENU_MARGIN = 8;
+const PROCESS_DONUT_COLORS = ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
 const GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
 const ACTION_CARD = 'group relative flex items-center gap-5 rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left  backdrop-blur-2xl overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
 
@@ -73,6 +76,17 @@ interface ProcessMenuState {
   y: number;
 }
 
+interface ProcessDonutItem {
+  pid: number;
+  name: string;
+  cpu: number;
+  value: number;
+  color: string;
+  topFivePercent?: number;
+  icon?: string;
+  iconMissing?: boolean;
+}
+
 function DetailRow({ icon: Icon, label, value }: DetailRowProps) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-slate-900/10 py-3 last:border-b-0">
@@ -82,6 +96,71 @@ function DetailRow({ icon: Icon, label, value }: DetailRowProps) {
       </div>
       <span className="max-w-[58%] truncate text-right font-semibold text-slate-900">{value}</span>
     </div>
+  );
+}
+
+function ProcessAppIcon({ process, icon, iconMissing }: { process: ProcessInfo; icon?: string; iconMissing?: boolean }) {
+  const initial = process.name.trim().charAt(0).toUpperCase() || '?';
+
+  return (
+    <span
+      className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/70 bg-white/75 text-[11px] font-black text-violet-500 shadow-sm backdrop-blur-xl"
+      title={process.name}
+      aria-hidden="true"
+    >
+      {icon ? (
+        <img src={icon} alt="" className="h-5 w-5 object-contain" draggable={false} />
+      ) : iconMissing ? (
+        initial
+      ) : (
+        <span className="h-2 w-2 rounded-full bg-slate-400/45" />
+      )}
+    </span>
+  );
+}
+
+function ProcessDonutIconLabel(props: any) {
+  const { cx, cy, midAngle, innerRadius, outerRadius, payload } = props;
+  const item = payload as ProcessDonutItem;
+
+  const radius = Number(innerRadius) + (Number(outerRadius) - Number(innerRadius)) / 2;
+  const radians = -Number(midAngle) * (Math.PI / 180);
+  const iconSize = 22;
+  const x = Number(cx) + Math.cos(radians) * radius;
+  const y = Number(cy) + Math.sin(radians) * radius;
+  const initial = item.name.trim().charAt(0).toUpperCase() || '?';
+  const percent = item.topFivePercent == null ? '' : `${item.topFivePercent.toFixed(0)}%`;
+
+  return (
+    <g transform={`translate(${x}, ${y})`}>
+      <rect x={-19} y={-20} width={38} height={40} rx={14} fill="rgba(255,255,255,0.92)" stroke="rgba(255,255,255,0.95)" strokeWidth={1.5} />
+      {item.icon ? (
+        <image
+          href={item.icon}
+          x={-iconSize / 2}
+          y={-17}
+          width={iconSize}
+          height={iconSize}
+          preserveAspectRatio="xMidYMid meet"
+        />
+      ) : item.iconMissing ? (
+        <text
+          dominantBaseline="central"
+          textAnchor="middle"
+          fill={item.color}
+          fontSize={12}
+          fontWeight={800}
+          y={-6}
+        >
+          {initial}
+        </text>
+      ) : (
+        <circle r={4} cy={-6} fill="rgba(100,116,139,0.32)" />
+      )}
+      <text dominantBaseline="central" textAnchor="middle" fill="#475569" fontSize={9} fontWeight={800} y={12}>
+        {percent}
+      </text>
+    </g>
   );
 }
 
@@ -239,8 +318,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const [pinnedPids, setPinnedPids] = useState<number[]>([]);
   const [processSort, setProcessSort] = useState<ProcessSort>({ key: 'cpu', direction: 'desc' });
   const [processMenu, setProcessMenu] = useState<ProcessMenuState | null>(null);
+  const [processIcons, setProcessIcons] = useState<Record<number, string>>({});
+  const [processIconMisses, setProcessIconMisses] = useState<Record<number, boolean>>({});
+  const [isProcessExpanded, setIsProcessExpanded] = useState(false);
   const historyRef = useRef<HistoryPoint[]>([]);
   const batteryHistoryRef = useRef<BatteryHistoryPoint[]>([]);
+  const requestedProcessIconsRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
 
   const fetchMetrics = useCallback(async (isInitial = false) => {
@@ -342,6 +425,66 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
     };
   }, [processMenu]);
 
+  useEffect(() => {
+    if (!metrics || !window.moleDesktop?.getProcessIcons) return;
+
+    const sourceProcesses = metrics.processes?.length ? metrics.processes : metrics.top_processes ?? [];
+    const processesByCpu = [...sourceProcesses].sort((a, b) => b.cpu - a.cpu).slice(0, 32);
+    const processesByMemory = [...sourceProcesses].sort((a, b) => b.memory - a.memory).slice(0, 32);
+    const processesForIcons = Array.from(
+      new Map([...processesByCpu, ...processesByMemory].map((proc) => [proc.pid, proc])).values(),
+    );
+    const processesNeedingIcons = processesForIcons.filter((proc) => {
+      const requestKey = `${proc.pid}:${proc.command ?? ''}:${proc.name}`;
+      return (proc.command || proc.name) && !processIcons[proc.pid] && !processIconMisses[proc.pid] && !requestedProcessIconsRef.current.has(requestKey);
+    });
+
+    if (processesNeedingIcons.length === 0) return;
+
+    processesNeedingIcons.forEach((proc) => requestedProcessIconsRef.current.add(`${proc.pid}:${proc.command ?? ''}:${proc.name}`));
+
+    let isCancelled = false;
+
+    async function loadProcessIcons() {
+      try {
+        const result = await window.moleDesktop.getProcessIcons?.(processesNeedingIcons.map((proc) => ({
+          pid: proc.pid,
+          name: proc.name,
+          command: proc.command,
+        })));
+
+        if (!isCancelled && result?.ok) {
+          setProcessIcons((currentIcons) => ({ ...currentIcons, ...result.icons }));
+          setProcessIconMisses((currentMisses) => {
+            const nextMisses = { ...currentMisses };
+            const missingPids = result.missing?.length
+              ? result.missing
+              : processesNeedingIcons
+                .map((proc) => proc.pid)
+                .filter((pid) => !result.icons[pid]);
+
+            missingPids.forEach((pid) => {
+              nextMisses[pid] = true;
+            });
+            Object.keys(result.icons).forEach((pid) => {
+              delete nextMisses[Number(pid)];
+            });
+
+            return nextMisses;
+          });
+        }
+      } catch (err) {
+        if (!isCancelled) console.error('Failed to load process icons:', err);
+      }
+    }
+
+    void loadProcessIcons();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [metrics, processIcons, processIconMisses]);
+
   const openProcessMenuAt = (process: ProcessInfo, x: number, y: number) => {
     const maxX = Math.max(PROCESS_MENU_MARGIN, window.innerWidth - PROCESS_MENU_WIDTH - PROCESS_MENU_MARGIN);
     const maxY = Math.max(PROCESS_MENU_MARGIN, window.innerHeight - PROCESS_MENU_HEIGHT - PROCESS_MENU_MARGIN);
@@ -428,6 +571,39 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const batteryChartHistory = getBatteryChartData(batteryHistory, batteryPrediction, now);
   const batteryCharging = battery ? isBatteryCharging(battery.status) : false;
   const batteryPredictionStroke = batteryPrediction.direction === 'down' ? '#f97316' : '#22c55e';
+  const allProcesses = metrics?.processes?.length ? metrics.processes : metrics?.top_processes ?? [];
+  const orderedProcesses = [...allProcesses].sort((a, b) => {
+    const aPinned = pinnedPids.indexOf(a.pid);
+    const bPinned = pinnedPids.indexOf(b.pid);
+    if (aPinned >= 0 || bPinned >= 0) {
+      if (aPinned === -1) return 1;
+      if (bPinned === -1) return -1;
+      return aPinned - bPinned;
+    }
+    const sortValue = processSort.direction === 'desc'
+      ? b[processSort.key] - a[processSort.key]
+      : a[processSort.key] - b[processSort.key];
+    if (sortValue !== 0) return sortValue;
+    return a.pid - b.pid;
+  });
+  const topCpuProcesses = [...allProcesses]
+    .sort((a, b) => b.cpu - a.cpu)
+    .slice(0, 5);
+  const topProcessCpu = topCpuProcesses.reduce((sum, proc) => sum + Math.max(proc.cpu, 0), 0);
+  const topProcessDonutData = topProcessCpu > 0 ? [
+    ...topCpuProcesses
+      .filter((proc) => proc.cpu > 0)
+    .map((proc, index) => ({
+      pid: proc.pid,
+      name: proc.name,
+      cpu: proc.cpu,
+      value: Math.max(proc.cpu, 0),
+      color: PROCESS_DONUT_COLORS[index % PROCESS_DONUT_COLORS.length],
+      topFivePercent: (Math.max(proc.cpu, 0) / topProcessCpu) * 100,
+      icon: processIcons[proc.pid],
+      iconMissing: processIconMisses[proc.pid],
+    })),
+  ] : [];
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
@@ -439,7 +615,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
           </Card>
         ) : metrics && (
           <div
-            className="grid min-h-0  gap-2 grid-cols-[1fr_1fr_1.15fr]"
+            className="grid h-full min-h-0 gap-2 grid-cols-[1fr_1fr_0.5fr_0.5fr]"
             style={{ gridTemplateRows: 'repeat(2, minmax(0, 1.25fr)) repeat(2, minmax(0, 0.75fr))' }}
           >
             {/* Mac Info - Row 1-2, Col 1 */}
@@ -644,265 +820,294 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               <ArrowRight className="relative h-5 w-5 text-slate-500 transition-transform duration-200 group-hover:translate-x-1" />
             </button>
 
-            {/* RAM + Storage - Row 1, Col 3 */}
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 col-start-3 row-start-1">
-              {/* RAM */}
-              <Card className={`min-h-44 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-                <div className="flex h-full flex-col">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-xl font-bold text-slate-950">RAM</div>
-                    <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.memory.used_percent) }}>
-                      {metrics.memory.used_percent.toFixed(0)}%
-                    </div>
-                  </div>
-                  <div className="relative flex min-h-0 flex-1 items-center justify-center py-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { value: metrics.memory.used_percent },
-                            { value: 100 - metrics.memory.used_percent },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius="58%"
-                          outerRadius="80%"
-                          startAngle={90}
-                          endAngle={-270}
-                          dataKey="value"
-                          strokeWidth={0}
-                          isAnimationActive={false}
-                        >
-                          <Cell fill={getHeatColor(metrics.memory.used_percent)} />
-                          <Cell fill="rgba(148, 163, 184, 0.16)" />
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    {/* Center label */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <span className="text-base font-bold text-slate-950 leading-none">{metrics.memory.used_percent.toFixed(0)}%</span>
-                    </div>
-                  </div>
-                  <div className="mt-auto space-y-0.5 text-center">
-                    <div className="text-xs font-medium text-slate-500">{formatBytes(metrics.memory.used)} / {formatBytes(metrics.memory.total)}</div>
-                    {metrics.memory.swap_total != null && metrics.memory.swap_total > 0 && (
-                      <div className="text-xs font-medium text-amber-500">
-                        swap {formatBytes(metrics.memory.swap_used ?? 0)}
-                      </div>
-                    )}
+            {/* RAM - Row 1, half Col 3 */}
+            <Card className={`min-h-44 col-start-3 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
+              <div className="flex h-full flex-col">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-xl font-bold text-slate-950">RAM</div>
+                  <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.memory.used_percent) }}>
+                    {metrics.memory.used_percent.toFixed(0)}%
                   </div>
                 </div>
-              </Card>
-              {/* Storage */}
-              <Card className={`min-h-44 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-                <div className="flex h-full flex-col">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-xl font-bold text-slate-950">Storage</div>
-                    <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.disks?.[0]?.used_percent ?? 0) }}>
-                      {(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%
-                    </div>
-                  </div>
-                  <div className="relative flex min-h-0 flex-1 items-center justify-center py-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { value: metrics.disks?.[0]?.used_percent ?? 0 },
-                            { value: 100 - (metrics.disks?.[0]?.used_percent ?? 0) },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius="58%"
-                          outerRadius="80%"
-                          startAngle={90}
-                          endAngle={-270}
-                          dataKey="value"
-                          strokeWidth={0}
-                          isAnimationActive={false}
-                        >
-                          <Cell fill={getHeatColor(metrics.disks?.[0]?.used_percent ?? 0)} />
-                          <Cell fill="rgba(148, 163, 184, 0.16)" />
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <span className="text-base font-bold text-slate-950 leading-none">{(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%</span>
-                    </div>
-                  </div>
-                  <div className="mt-auto text-center">
-                    <div className="text-xs font-medium text-slate-500">{formatBytes(metrics.disks?.[0]?.used || 0)} / {formatBytes(metrics.disks?.[0]?.total || 0)}</div>
+                <div className="relative flex min-h-0 flex-1 items-center justify-center py-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { value: metrics.memory.used_percent },
+                          { value: 100 - metrics.memory.used_percent },
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="58%"
+                        outerRadius="80%"
+                        startAngle={90}
+                        endAngle={-270}
+                        dataKey="value"
+                        strokeWidth={0}
+                        isAnimationActive={false}
+                      >
+                        <Cell fill={getHeatColor(metrics.memory.used_percent)} />
+                        <Cell fill="rgba(148, 163, 184, 0.16)" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {/* Center label */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-base font-bold text-slate-950 leading-none">{metrics.memory.used_percent.toFixed(0)}%</span>
                   </div>
                 </div>
-              </Card>
-            </div>
+                <div className="mt-auto space-y-0.5 text-center">
+                  <div className="text-xs font-medium text-slate-500">{formatBytes(metrics.memory.used)} / {formatBytes(metrics.memory.total)}</div>
+                  {metrics.memory.swap_total != null && metrics.memory.swap_total > 0 && (
+                    <div className="text-xs font-medium text-amber-500">
+                      swap {formatBytes(metrics.memory.swap_used ?? 0)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
 
-            {/* Network + Battery - Row 2, Col 3 */}
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 col-start-3 row-start-2">
-              <Card className={`min-h-36 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-                <div className="flex h-full flex-col">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-xl font-bold text-slate-950">Network</div>
-                  </div>
-                  <div className="min-h-0 flex-1 py-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="rxGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                          </linearGradient>
-                          <linearGradient id="txGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <YAxis hide />
-                        <Tooltip
-                          content={({ active, payload }) =>
-                            active && payload?.length ? (
-                              <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md space-y-0.5 backdrop-blur-xl">
-                                <div className="text-blue-500">↓ {(payload[0]?.value as number)?.toFixed(2)} MB/s</div>
-                                <div className="text-emerald-500">↑ {(payload[1]?.value as number)?.toFixed(2)} MB/s</div>
-                              </div>
-                            ) : null
-                          }
-                        />
-                        <Area type="monotone" dataKey="rx" stroke="#3b82f6" strokeWidth={1.5} fill="url(#rxGrad)" dot={false} isAnimationActive={false} />
-                        <Area type="monotone" dataKey="tx" stroke="#10b981" strokeWidth={1.5} fill="url(#txGrad)" dot={false} isAnimationActive={false} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-auto flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-blue-500">↓ {networkTotals.rx.toFixed(2)} MB/s</span>
-                    <span className="text-xs font-medium text-emerald-500">↑ {networkTotals.tx.toFixed(2)} MB/s</span>
+            {/* Storage - Row 1, half Col 4 */}
+            <Card className={`min-h-44 col-start-4 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
+              <div className="flex h-full flex-col">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-xl font-bold text-slate-950">Storage</div>
+                  <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.disks?.[0]?.used_percent ?? 0) }}>
+                    {(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%
                   </div>
                 </div>
-              </Card>
-              <Card className={`min-h-36 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
-                <div className="flex h-full flex-col">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-xl font-bold text-slate-950">Battery</div>
-                    <div className="text-sm font-semibold text-emerald-500">{batteryPercent == null ? '—' : `${batteryPercent.toFixed(0)}%`}</div>
+                <div className="relative flex min-h-0 flex-1 items-center justify-center py-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { value: metrics.disks?.[0]?.used_percent ?? 0 },
+                          { value: 100 - (metrics.disks?.[0]?.used_percent ?? 0) },
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="58%"
+                        outerRadius="80%"
+                        startAngle={90}
+                        endAngle={-270}
+                        dataKey="value"
+                        strokeWidth={0}
+                        isAnimationActive={false}
+                      >
+                        <Cell fill={getHeatColor(metrics.disks?.[0]?.used_percent ?? 0)} />
+                        <Cell fill="rgba(148, 163, 184, 0.16)" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-base font-bold text-slate-950 leading-none">{(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%</span>
                   </div>
-                  <div className="relative min-h-0 flex-1 py-2">
-                    {batteryCharging && (
-                      <div className="pointer-events-none absolute right-2 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-200/80 bg-emerald-100/80 text-emerald-500 shadow-[0_8px_20px_rgba(16,185,129,0.25)] backdrop-blur-xl" aria-label="Battery charging">
-                        <Zap className="h-4 w-4 fill-emerald-400/30" aria-hidden="true" />
-                      </div>
-                    )}
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 14 }}>
-                        <defs>
-                          <linearGradient id="batteryGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
-                            <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid vertical horizontal={false} stroke="rgba(15, 23, 42, 0.09)" strokeDasharray="1 5" />
-                        <XAxis
-                          dataKey="t"
-                          type="number"
-                          domain={[batteryDayBounds.start, batteryDayBounds.end]}
-                          ticks={batteryHourTicks}
-                          interval={0}
-                          tickFormatter={(value) => formatBatteryHourTick(Number(value), batteryDayBounds.start)}
-                          axisLine={false}
-                          tickLine={false}
-                          tickMargin={4}
-                          tick={{ fill: '#94a3b8', fontSize: 9 }}
-                        />
-                        <YAxis domain={[0, 100]} hide />
-                        <Tooltip
-                          content={({ active, payload }) => {
-                            const item = payload?.find((entry) => entry.value != null);
-                            const point = item?.payload as BatteryChartPoint | undefined;
+                </div>
+                <div className="mt-auto text-center">
+                  <div className="text-xs font-medium text-slate-500">{formatBytes(metrics.disks?.[0]?.used || 0)} / {formatBytes(metrics.disks?.[0]?.total || 0)}</div>
+                </div>
+              </div>
+            </Card>
 
-                            return active && item?.value != null ? (
-                              <div className="space-y-0.5 rounded-lg border border-white/70 bg-white/80 px-2 py-1 text-xs shadow-md backdrop-blur-xl">
-                                <div>{(item.value as number).toFixed(0)}% {point?.forecast ? 'predicted' : 'battery'}</div>
-                                {point && <div className="text-slate-500">{point.status} · {new Date(point.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
-                              </div>
-                            ) : null;
-                          }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="battery"
-                          stroke="#22c55e"
-                          strokeWidth={2}
-                          fill="url(#batteryGrad)"
-                          dot={false}
-                          isAnimationActive={false}
-                          connectNulls
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="predictedBattery"
-                          stroke={batteryPredictionStroke}
-                          strokeWidth={2}
-                          strokeDasharray="5 5"
-                          fill="transparent"
-                          fillOpacity={0}
-                          dot={false}
-                          activeDot={false}
-                          isAnimationActive={false}
-                          connectNulls
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-auto flex flex-col gap-0.5 text-xs font-medium text-slate-500">
-                    <div className="truncate">{batteryPrediction.label}</div>
-                    <div className="truncate text-[11px] text-slate-400">{batteryPrediction.detail}</div>
-                  </div>
+            {/* Network - Row 2, half Col 3 */}
+            <Card className={`min-h-36 col-start-3 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
+              <div className="flex h-full flex-col">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-xl font-bold text-slate-950">Network</div>
                 </div>
-              </Card>
-            </div>
+                <div className="min-h-0 flex-1 py-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="rxGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="txGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <YAxis hide />
+                      <Tooltip
+                        content={({ active, payload }) =>
+                          active && payload?.length ? (
+                            <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md space-y-0.5 backdrop-blur-xl">
+                              <div className="text-blue-500">↓ {(payload[0]?.value as number)?.toFixed(2)} MB/s</div>
+                              <div className="text-emerald-500">↑ {(payload[1]?.value as number)?.toFixed(2)} MB/s</div>
+                            </div>
+                          ) : null
+                        }
+                      />
+                      <Area type="monotone" dataKey="rx" stroke="#3b82f6" strokeWidth={1.5} fill="url(#rxGrad)" dot={false} isAnimationActive={false} />
+                      <Area type="monotone" dataKey="tx" stroke="#10b981" strokeWidth={1.5} fill="url(#txGrad)" dot={false} isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-auto flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-blue-500">↓ {networkTotals.rx.toFixed(2)} MB/s</span>
+                  <span className="text-xs font-medium text-emerald-500">↑ {networkTotals.tx.toFixed(2)} MB/s</span>
+                </div>
+              </div>
+            </Card>
+
+            {/* Battery - Row 2, half Col 4 */}
+            <Card className={`min-h-36 col-start-4 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
+              <div className="flex h-full flex-col">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-xl font-bold text-slate-950">Battery</div>
+                  <div className="text-sm font-semibold text-emerald-500">{batteryPercent == null ? '—' : `${batteryPercent.toFixed(0)}%`}</div>
+                </div>
+                <div className="relative min-h-0 flex-1 py-2">
+                  {batteryCharging && (
+                    <div className="pointer-events-none absolute right-2 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-200/80 bg-emerald-100/80 text-emerald-500 shadow-[0_8px_20px_rgba(16,185,129,0.25)] backdrop-blur-xl" aria-label="Battery charging">
+                      <Zap className="h-4 w-4 fill-emerald-400/30" aria-hidden="true" />
+                    </div>
+                  )}
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 14 }}>
+                      <defs>
+                        <linearGradient id="batteryGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical horizontal={false} stroke="rgba(15, 23, 42, 0.09)" strokeDasharray="1 5" />
+                      <XAxis
+                        dataKey="t"
+                        type="number"
+                        domain={[batteryDayBounds.start, batteryDayBounds.end]}
+                        ticks={batteryHourTicks}
+                        interval={0}
+                        tickFormatter={(value) => formatBatteryHourTick(Number(value), batteryDayBounds.start)}
+                        axisLine={false}
+                        tickLine={false}
+                        tickMargin={4}
+                        tick={{ fill: '#94a3b8', fontSize: 9 }}
+                      />
+                      <YAxis domain={[0, 100]} hide />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          const item = payload?.find((entry) => entry.value != null);
+                          const point = item?.payload as BatteryChartPoint | undefined;
+
+                          return active && item?.value != null ? (
+                            <div className="space-y-0.5 rounded-lg border border-white/70 bg-white/80 px-2 py-1 text-xs shadow-md backdrop-blur-xl">
+                              <div>{(item.value as number).toFixed(0)}% {point?.forecast ? 'predicted' : 'battery'}</div>
+                              {point && <div className="text-slate-500">{point.status} · {new Date(point.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
+                            </div>
+                          ) : null;
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="battery"
+                        stroke="#22c55e"
+                        strokeWidth={2}
+                        fill="url(#batteryGrad)"
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="predictedBattery"
+                        stroke={batteryPredictionStroke}
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                        fill="transparent"
+                        fillOpacity={0}
+                        dot={false}
+                        activeDot={false}
+                        isAnimationActive={false}
+                        connectNulls
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-auto flex flex-col gap-0.5 text-xs font-medium text-slate-500">
+                  <div className="truncate">{batteryPrediction.label}</div>
+                  <div className="truncate text-[11px] text-slate-400">{batteryPrediction.detail}</div>
+                </div>
+              </div>
+            </Card>
 
             {/* Processes - Row 3-4, All Columns */}
-            <Card className={`min-h-72 col-span-3 row-start-3 row-span-2 rounded-[1.75rem] p-4 ${GLASS_CARD}`}>
-              <div className="flex flex-col h-full">
-                <div className="mb-2 grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-end gap-3 px-2">
-                  <div className="text-xl font-bold text-slate-950">All Processes</div>
-                  <div className="grid grid-cols-2 items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <Card className={`relative col-span-4 row-start-3 row-span-2 min-h-0 rounded-[1.75rem] overflow-visible ${isProcessExpanded ? 'z-40' : 'z-0'} ${GLASS_CARD}`}>
+              <div className={`absolute inset-x-0 bottom-0 grid grid-cols-[20rem_minmax(0,1fr)] gap-4 rounded-[1.75rem] border border-white/60 p-4 transition-[height,background-color,box-shadow] duration-300 ease-out ${isProcessExpanded ? 'h-[calc(100%+18rem)] max-h-[calc(100vh-1rem)] bg-white/90 shadow-[0_24px_80px_rgba(15,23,42,0.16)] backdrop-blur-2xl' : 'h-full bg-white/20 shadow-[0_18px_58px_rgba(109,93,252,0.12)] backdrop-blur-2xl'}`}>
+                <div className="relative flex min-h-0 overflow-visible p-1">
+                  <div className="relative h-full min-h-0 flex-1">
+                    {topProcessDonutData.length > 0 ? (
+                      <>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={topProcessDonutData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius="46%"
+                              outerRadius="82%"
+                              paddingAngle={3}
+                              cornerRadius={8}
+                              dataKey="value"
+                              label={ProcessDonutIconLabel}
+                              labelLine={false}
+                              stroke="rgba(255,255,255,0.78)"
+                              strokeWidth={3}
+                              isAnimationActive={false}
+                            >
+                              {topProcessDonutData.map((proc) => (
+                                <Cell key={proc.pid} fill={proc.color} />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full border border-white/70 bg-white/80 text-center shadow-[0_18px_42px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+                            <span className="text-sm font-black text-slate-950">{topProcessCpu.toFixed(0)}</span>
+                            <span className="mt-1 text-xs font-semibold text-slate-500">CPU</span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm font-medium text-slate-500">No process data</div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex min-h-0 flex-col">
+                  <div className="mb-2 grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-end gap-3 px-2">
+                    <div className="text-xl font-bold text-slate-950">All Processes</div>
+                    <div className="grid grid-cols-2 items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <button
+                        type="button"
+                        className="text-left transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                        aria-sort={processSort.key === 'cpu' ? (processSort.direction === 'desc' ? 'descending' : 'ascending') : 'none'}
+                        onClick={() => toggleProcessSort('cpu')}
+                      >
+                        CPU{sortIndicator('cpu')}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-left transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                        aria-sort={processSort.key === 'memory' ? (processSort.direction === 'desc' ? 'descending' : 'ascending') : 'none'}
+                        onClick={() => toggleProcessSort('memory')}
+                      >
+                        MEM{sortIndicator('memory')}
+                      </button>
+                    </div>
                     <button
                       type="button"
-                      className="text-left transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-                      aria-sort={processSort.key === 'cpu' ? (processSort.direction === 'desc' ? 'descending' : 'ascending') : 'none'}
-                      onClick={() => toggleProcessSort('cpu')}
+                      className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/70 bg-white/70 text-slate-600 shadow-sm transition hover:bg-white hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                      aria-label={isProcessExpanded ? 'Collapse all processes' : 'Expand all processes'}
+                      aria-expanded={isProcessExpanded}
+                      onClick={() => setIsProcessExpanded((expanded) => !expanded)}
                     >
-                      CPU{sortIndicator('cpu')}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-left transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-                      aria-sort={processSort.key === 'memory' ? (processSort.direction === 'desc' ? 'descending' : 'ascending') : 'none'}
-                      onClick={() => toggleProcessSort('memory')}
-                    >
-                      MEM{sortIndicator('memory')}
+                      {isProcessExpanded ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
                     </button>
                   </div>
-                  <div aria-hidden="true" />
-                </div>
-                <div className="flex-1 overflow-auto pr-1 custom-scrollbar">
-                  {(() => {
-                    const allProcesses = metrics.processes?.length ? metrics.processes : metrics.top_processes ?? [];
-                    const orderedProcesses = [...allProcesses].sort((a, b) => {
-                      const aPinned = pinnedPids.indexOf(a.pid);
-                      const bPinned = pinnedPids.indexOf(b.pid);
-                      if (aPinned >= 0 || bPinned >= 0) {
-                        if (aPinned === -1) return 1;
-                        if (bPinned === -1) return -1;
-                        return aPinned - bPinned;
-                      }
-                      const sortValue = processSort.direction === 'desc'
-                        ? b[processSort.key] - a[processSort.key]
-                        : a[processSort.key] - b[processSort.key];
-                      if (sortValue !== 0) return sortValue;
-                      return a.pid - b.pid;
-                    });
-
-                    return orderedProcesses.map((proc, idx) => {
+                  <div className="flex-1 overflow-auto pr-1 custom-scrollbar">
+                    {orderedProcesses.map((proc, idx) => {
                       const cpuBar = Math.min(proc.cpu, 100);
                       const isPinned = pinnedPids.includes(proc.pid);
                       return (
@@ -911,8 +1116,9 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                           className="grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 border-b border-slate-900/10 px-2 py-1.5 last:border-b-0 hover:rounded-xl hover:bg-violet-500/10"
                           onContextMenu={(event) => handleProcessContextMenu(event, proc)}
                         >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${isPinned ? 'bg-violet-500 text-white' : 'bg-slate-900/10 text-slate-600'}`}>{idx + 1}</span>
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span className={`w-5 shrink-0 text-center text-xs font-bold tabular-nums ${isPinned ? 'text-violet-600' : 'text-slate-400'}`}>{idx + 1}</span>
+                            <ProcessAppIcon process={proc} icon={processIcons[proc.pid]} iconMissing={processIconMisses[proc.pid]} />
                             <div className="min-w-0">
                               <div className="truncate text-sm font-medium text-slate-700">{proc.name}</div>
                               <div className="text-[11px] font-medium text-slate-400">PID {proc.pid}</div>
@@ -938,8 +1144,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                           </button>
                         </div>
                       );
-                    });
-                  })()}
+                    })}
+                  </div>
                 </div>
               </div>
             </Card>

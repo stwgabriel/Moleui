@@ -8,8 +8,9 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = !app.isPackaged;
-const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-purple.png");
+const appIconPath = path.join(__dirname, "public", "assets", "base", isDev ? "molui-dark.png" : "molui-purple.png");
 const MY_MAC_METRICS_FILE = "my-mac-metrics.json";
+const BACKGROUND_SYSTEMS_FILE = "background-systems.json";
 const BATTERY_SAMPLE_INTERVAL_MS = 6 * 60 * 1000;
 const MAX_BATTERY_HISTORY = 24 * 60;
 
@@ -24,6 +25,7 @@ const activeProcesses = new Map();
 const appIconCache = new Map();
 let batterySamplerInterval = null;
 let batterySampleInFlight = false;
+let openedAsHiddenLoginItem = false;
 
 function withTimeout(promise, timeoutMs, message) {
   return Promise.race([
@@ -294,6 +296,105 @@ function myMacMetricsPath() {
   return path.join(app.getPath("userData"), MY_MAC_METRICS_FILE);
 }
 
+function backgroundSystemsPath() {
+  return path.join(app.getPath("userData"), BACKGROUND_SYSTEMS_FILE);
+}
+
+function readBackgroundSystemRuns() {
+  try {
+    const filePath = backgroundSystemsPath();
+    if (!fs.existsSync(filePath)) return {};
+
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!parsed || typeof parsed !== "object") return {};
+
+    const runsBySystem = {};
+    for (const [systemId, runs] of Object.entries(parsed)) {
+      if (!Array.isArray(runs)) continue;
+
+      runsBySystem[systemId] = runs.filter((run) => (
+        run &&
+        typeof run === "object" &&
+        typeof run.startedAt === "string" &&
+        typeof run.finishedAt === "string" &&
+        typeof run.ok === "boolean"
+      )).slice(0, 3);
+    }
+
+    return runsBySystem;
+  } catch (error) {
+    console.error("Failed to read background system runs:", error);
+    return {};
+  }
+}
+
+function writeBackgroundSystemRuns(runsBySystem) {
+  try {
+    const filePath = backgroundSystemsPath();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(runsBySystem), "utf8");
+  } catch (error) {
+    console.error("Failed to write background system runs:", error);
+  }
+}
+
+function makeBackgroundRun(startedAt, ok, message) {
+  const finishedAt = Date.now();
+  return {
+    startedAt: new Date(startedAt).toISOString(),
+    finishedAt: new Date(finishedAt).toISOString(),
+    ok,
+    durationMs: finishedAt - startedAt,
+    message,
+  };
+}
+
+function recordBackgroundSystemRun(systemId, run) {
+  const runsBySystem = readBackgroundSystemRuns();
+  const currentRuns = Array.isArray(runsBySystem[systemId]) ? runsBySystem[systemId] : [];
+  runsBySystem[systemId] = [run, ...currentRuns].slice(0, 3);
+  writeBackgroundSystemRuns(runsBySystem);
+}
+
+function isLoginItemEnabled() {
+  if (process.platform !== "darwin") return false;
+
+  try {
+    return Boolean(app.getLoginItemSettings().openAtLogin);
+  } catch {
+    return false;
+  }
+}
+
+function getBackgroundSystems() {
+  const runsBySystem = readBackgroundSystemRuns();
+  const batteryRuns = runsBySystem["battery-sampler"] || [];
+  const loginRuns = runsBySystem["login-item"] || [];
+
+  return [
+    {
+      id: "battery-sampler",
+      name: "Battery metrics sampler",
+      description: "Refreshes cached system and battery metrics while Moleui is open.",
+      enabled: Boolean(batterySamplerInterval),
+      active: batterySampleInFlight,
+      schedule: "Every 6 minutes",
+      lastRun: batteryRuns[0] || null,
+      recentRuns: batteryRuns.slice(0, 3),
+    },
+    {
+      id: "login-item",
+      name: "Launch at login helper",
+      description: "Starts Moleui hidden after macOS login so background metrics stay warm.",
+      enabled: isLoginItemEnabled(),
+      active: openedAsHiddenLoginItem,
+      schedule: "On macOS login",
+      lastRun: loginRuns[0] || null,
+      recentRuns: loginRuns.slice(0, 3),
+    },
+  ];
+}
+
 function readMyMacMetricsCache() {
   try {
     const filePath = myMacMetricsPath();
@@ -404,11 +505,16 @@ function appendBatteryHistory(history, metrics, t) {
 async function sampleBatteryMetrics() {
   if (batterySampleInFlight) return;
   batterySampleInFlight = true;
+  const startedAt = Date.now();
 
   try {
     const result = await runMole(["status", "--json", "--process-limit", "0"]);
     if (!result.ok) {
       console.warn("Background battery sample failed:", result.stderr || result.exitCode);
+      recordBackgroundSystemRun(
+        "battery-sampler",
+        makeBackgroundRun(startedAt, false, result.stderr || `Exited with code ${result.exitCode}`),
+      );
       return;
     }
 
@@ -422,8 +528,10 @@ async function sampleBatteryMetrics() {
       batteryHistory: JSON.stringify(batteryHistory),
       timestamp: Date.now(),
     });
+    recordBackgroundSystemRun("battery-sampler", makeBackgroundRun(startedAt, true, "Updated battery metrics cache"));
   } catch (error) {
     console.error("Background battery sample failed:", error);
+    recordBackgroundSystemRun("battery-sampler", makeBackgroundRun(startedAt, false, error.message));
   } finally {
     batterySampleInFlight = false;
   }
@@ -485,6 +593,101 @@ function existingProcessPath(commandPath) {
     return firstToken;
   }
   return "";
+}
+
+function addUniquePath(paths, filePath) {
+  if (filePath && !paths.includes(filePath)) paths.push(filePath);
+}
+
+function appBundlePath(filePath) {
+  const appBundleMatch = String(filePath || "").match(/^(.+?\.app)(?:\/|$)/);
+  return appBundleMatch?.[1] ?? "";
+}
+
+function normalizeAppLookupName(value) {
+  return String(value || "")
+    .replace(/\.app$/i, "")
+    .replace(/\b(helper|renderer|gpu|plugin|extension)\b.*$/i, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+}
+
+function findNamedApplicationPaths(processName) {
+  const lookupName = normalizeAppLookupName(processName);
+  if (!lookupName) return [];
+
+  const appDirs = [
+    "/Applications",
+    path.join(os.homedir(), "Applications"),
+    "/Applications/Utilities",
+    "/System/Applications",
+    "/System/Applications/Utilities",
+  ];
+  const matches = [];
+
+  for (const appDir of appDirs) {
+    try {
+      for (const entry of fs.readdirSync(appDir, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !entry.name.endsWith(".app")) continue;
+
+        const appName = normalizeAppLookupName(entry.name);
+        if (appName === lookupName || appName.startsWith(lookupName) || lookupName.startsWith(appName)) {
+          addUniquePath(matches, path.join(appDir, entry.name));
+        }
+      }
+    } catch {
+      // Some system application folders may not exist on older macOS versions.
+    }
+  }
+
+  return matches;
+}
+
+function execFileOutput(file, args, timeoutMs) {
+  return withTimeout(new Promise((resolve) => {
+    execFile(file, args, (error, stdout) => {
+      resolve(error ? "" : String(stdout || "").trim());
+    });
+  }), timeoutMs, `${file} timed out`).catch(() => "");
+}
+
+async function getProcessAppBundlePath(pid) {
+  if (process.platform !== "darwin" || !Number.isFinite(pid)) return "";
+
+  const script = `
+tell application "System Events"
+  set matchingProcesses to (every process whose unix id is ${Number(pid)})
+  if (count of matchingProcesses) is 0 then return ""
+  try
+    return POSIX path of (application file of item 1 of matchingProcesses as alias)
+  on error
+    return ""
+  end try
+end tell
+`;
+
+  const bundlePath = await execFileOutput("osascript", ["-e", script], 1200);
+  return bundlePath.endsWith(".app/") ? bundlePath.slice(0, -1) : bundlePath;
+}
+
+async function processIconPaths(processInfo) {
+  const paths = [];
+  const pid = Number(processInfo?.pid);
+  const processPath = existingProcessPath(processInfo?.command);
+
+  addUniquePath(paths, await getProcessAppBundlePath(pid));
+  addUniquePath(paths, appBundlePath(processPath));
+  addUniquePath(paths, processPath);
+  findNamedApplicationPaths(processInfo?.name).forEach((appPath) => addUniquePath(paths, appPath));
+
+  return paths;
+}
+
+function processIconPath(commandPath) {
+  const processPath = existingProcessPath(commandPath);
+  if (!processPath) return "";
+
+  return appBundlePath(processPath) || processPath;
 }
 
 function existingFileActionPath(inputPath) {
@@ -585,7 +788,7 @@ function createWindow(options = {}) {
     width: 1280,
     height: 920,
     minWidth: 1280,
-    minHeight: 840,
+    minHeight: 790,
     show: false,
     titleBarStyle: "hidden",
     trafficLightPosition: {
@@ -668,6 +871,40 @@ function createSettingsWindow(parentWindow) {
 
 ipcMain.handle("mole:status", async () => runMole(["status", "--json", "--process-limit", "0"]));
 
+ipcMain.handle("mole:process:icons", async (_event, processes) => {
+  if (!Array.isArray(processes)) {
+    return { ok: false, icons: {}, message: "Invalid processes" };
+  }
+
+  const resolvedProcessIconEntries = await mapWithConcurrency(processes, 8, async (proc) => ({
+    pid: proc?.pid,
+    iconPaths: await processIconPaths(proc),
+  }));
+  const processIconEntries = resolvedProcessIconEntries.filter(({ pid, iconPaths }) => Number.isFinite(pid) && iconPaths.length > 0);
+
+  const uniqueIconPaths = [...new Set(processIconEntries.flatMap(({ iconPaths }) => iconPaths))];
+  const iconResults = await mapWithConcurrency(uniqueIconPaths, 8, async (iconPath) => {
+    const result = await getAppIconData(iconPath);
+    return [iconPath, result];
+  });
+  const iconsByPath = new Map(iconResults.filter(([, result]) => result.ok && result.icon));
+  const icons = {};
+  const missing = resolvedProcessIconEntries
+    .filter(({ pid, iconPaths }) => Number.isFinite(pid) && iconPaths.length === 0)
+    .map(({ pid }) => pid);
+
+  for (const { pid, iconPaths } of processIconEntries) {
+    const result = iconPaths.map((iconPath) => iconsByPath.get(iconPath)).find((iconResult) => iconResult?.icon);
+    if (result?.icon) {
+      icons[pid] = result.icon;
+    } else {
+      missing.push(pid);
+    }
+  }
+
+  return { ok: true, icons, missing };
+});
+
 ipcMain.handle("mole:settings:open", async (event) => {
   const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
   createSettingsWindow(parentWindow);
@@ -685,6 +922,8 @@ ipcMain.handle("mole:settings:profile", async () => {
     },
   };
 });
+
+ipcMain.handle("mole:background-systems:list", async () => getBackgroundSystems());
 
 ipcMain.handle("mole:uninstall:list", async (event) => {
   return runMole(["uninstall", "--list"], {
@@ -1001,6 +1240,14 @@ app.whenReady().then(() => {
   startBatterySampler();
 
   const openedAsHidden = wasOpenedAsHiddenLoginItem();
+  openedAsHiddenLoginItem = openedAsHidden;
+
+  if (openedAsHidden) {
+    recordBackgroundSystemRun(
+      "login-item",
+      makeBackgroundRun(Date.now(), true, "Started hidden after macOS login"),
+    );
+  }
 
   if (process.platform === "darwin") {
     const appIcon = nativeImage.createFromPath(appIconPath);

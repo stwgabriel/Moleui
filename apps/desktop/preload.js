@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld("moleDesktop", {
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
   openSettingsWindow: () => ipcRenderer.invoke("mole:settings:open"),
   getSettingsProfile: () => ipcRenderer.invoke("mole:settings:profile"),
+  getBackgroundSystems: () => ipcRenderer.invoke("mole:background-systems:list"),
   myMacCache: {
     get: () => ipcRenderer.invoke("mole:my-mac-cache:get"),
     set: (cache) => ipcRenderer.invoke("mole:my-mac-cache:set", cache),
@@ -75,6 +76,7 @@ contextBridge.exposeInMainWorld("moleDesktop", {
   deletePath: (path) => ipcRenderer.invoke("mole:delete-path", path),
   openActivityMonitor: () => ipcRenderer.invoke("mole:open-activity-monitor"),
   signalProcess: (pid, signal) => ipcRenderer.invoke("mole:signal-process", pid, signal),
+  getProcessIcons: (processes) => ipcRenderer.invoke("mole:process:icons", processes),
 
   // Clean command
   clean: {

@@ -17,10 +17,30 @@ export interface MyMacMetricsCache {
   timestamp: number;
 }
 
+export interface BackgroundSystemRun {
+  startedAt: string;
+  finishedAt: string;
+  ok: boolean;
+  durationMs: number;
+  message: string;
+}
+
+export interface BackgroundSystemStatus {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  active: boolean;
+  schedule: string;
+  lastRun: BackgroundSystemRun | null;
+  recentRuns: BackgroundSystemRun[];
+}
+
 export interface MoleDesktopAPI {
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
   openSettingsWindow?: () => Promise<{ ok: boolean; message?: string }>;
   getSettingsProfile?: () => Promise<{ deviceName: string; user: { name: string; email: string } }>;
+  getBackgroundSystems?: () => Promise<BackgroundSystemStatus[]>;
   myMacCache?: {
     get: () => Promise<MyMacMetricsCache | null>;
     set: (cache: Pick<MyMacMetricsCache, 'metrics' | 'history' | 'batteryHistory'>) => Promise<{ ok: boolean; message?: string }>;
@@ -37,6 +57,7 @@ export interface MoleDesktopAPI {
   deletePath: (path: string) => Promise<{ ok: boolean; message?: string }>;
   openActivityMonitor: () => Promise<{ ok: boolean; message?: string }>;
   signalProcess: (pid: number, signal: 'SIGTERM' | 'SIGKILL') => Promise<{ ok: boolean; message?: string }>;
+  getProcessIcons?: (processes: Array<{ pid: number; name?: string; command?: string }>) => Promise<{ ok: boolean; icons: Record<number, string>; missing?: number[]; message?: string }>;
   runStatus: () => Promise<MoleResult>;
   uninstall: {
     list: () => Promise<MoleResult>;

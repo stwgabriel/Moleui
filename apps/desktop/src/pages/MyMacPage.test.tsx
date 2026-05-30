@@ -1,5 +1,7 @@
+import { render, screen, waitFor } from '@testing-library/react';
 import { getBatteryChartData, getBatteryPrediction } from '@/utils/batteryPrediction';
 import type { SystemMetrics } from '@/types';
+import { MyMacPage } from './MyMacPage';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -70,5 +72,113 @@ describe('getBatteryPrediction', () => {
     expect(forecastPoints).toHaveLength(2);
     expect(finalForecastPoint.t).toBe(prediction.targetTime);
     expect(finalForecastPoint.predictedBattery).toBe(100);
+  });
+});
+
+function findCard(label: string): HTMLElement {
+  let element = screen.getByText(label).parentElement;
+
+  while (element && !element.className.includes('bg-white/45')) {
+    element = element.parentElement;
+  }
+
+  if (!element) throw new Error(`Card not found for ${label}`);
+  return element;
+}
+
+function mockLocalStorage() {
+  const storage = new Map<string, string>();
+
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn((key: string) => storage.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      storage.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      storage.delete(key);
+    }),
+    clear: vi.fn(() => {
+      storage.clear();
+    }),
+  });
+}
+
+function mockMoleDesktop(metrics: SystemMetrics) {
+  window.moleDesktop = {
+    getRuntimeInfo: vi.fn(),
+    openExternal: vi.fn(),
+    copyText: vi.fn(),
+    revealPath: vi.fn(),
+    openPathInFinder: vi.fn(),
+    deletePath: vi.fn(),
+    openActivityMonitor: vi.fn(),
+    signalProcess: vi.fn(),
+    runStatus: vi.fn().mockResolvedValue({
+      ok: true,
+      command: 'mo status --json',
+      exitCode: 0,
+      stdout: JSON.stringify(metrics),
+      stderr: '',
+    }),
+    clean: {
+      execute: vi.fn(),
+      kill: vi.fn(),
+      onStdout: vi.fn(),
+      onStderr: vi.fn(),
+      removeListeners: vi.fn(),
+    },
+    optimize: {
+      execute: vi.fn(),
+      kill: vi.fn(),
+      onStdout: vi.fn(),
+      onStderr: vi.fn(),
+      removeListeners: vi.fn(),
+    },
+    analyze: {
+      execute: vi.fn(),
+      kill: vi.fn(),
+      onStdout: vi.fn(),
+      onStderr: vi.fn(),
+      removeListeners: vi.fn(),
+    },
+    uninstall: {
+      list: vi.fn(),
+      killList: vi.fn(),
+      getAppIcon: vi.fn(),
+      getAppIcons: vi.fn(),
+      dryRun: vi.fn(),
+      execute: vi.fn(),
+      onListStdout: vi.fn(),
+      onListStderr: vi.fn(),
+      onDryRunStdout: vi.fn(),
+      onDryRunStderr: vi.fn(),
+      onExecuteStdout: vi.fn(),
+      onExecuteStderr: vi.fn(),
+      removeListeners: vi.fn(),
+    },
+  };
+}
+
+describe('MyMacPage layout', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    mockLocalStorage();
+    mockMoleDesktop(metricsWithBattery(60, 'discharging'));
+  });
+
+  it('gives Mac info and processor full columns while RAM and storage split one column', async () => {
+    render(<MyMacPage onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Processor')).toBeInTheDocument());
+
+    const processorCard = findCard('Processor');
+    const ramCard = findCard('RAM');
+    const storageCard = findCard('Storage');
+    const metricsGrid = processorCard.parentElement;
+
+    expect(metricsGrid).toHaveClass('grid-cols-[1fr_1fr_0.5fr_0.5fr]');
+    expect(processorCard).toHaveClass('col-start-2');
+    expect(ramCard).toHaveClass('col-start-3');
+    expect(storageCard).toHaveClass('col-start-4');
   });
 });
