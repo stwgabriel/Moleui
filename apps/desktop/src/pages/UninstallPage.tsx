@@ -651,7 +651,13 @@ export function UninstallPage() {
     if (!window.moleDesktop) return;
 
     try {
-      const result = await window.moleDesktop.uninstall.getAppIcons(appsToLoad.map(app => app.path));
+      const result = await window.moleDesktop.uninstall.getAppIcons(appsToLoad.map(app => ({
+        path: app.path,
+        name: app.name,
+        bundle_id: app.bundle_id,
+        uninstall_name: app.uninstall_name,
+        source: app.source,
+      })));
       if (iconLoadRunRef.current !== runId || !result.ok) return;
 
       setAppIcons(currentIcons => ({ ...currentIcons, ...result.icons }));

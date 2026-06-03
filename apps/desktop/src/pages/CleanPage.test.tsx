@@ -139,7 +139,7 @@ describe('CleanPage', () => {
   it('shows grouped cleanup results', () => {
     render(<CleanPage />);
 
-    expect(screen.getByText('Review junk before cleaning')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Review junk' })).toBeInTheDocument();
     expect(screen.queryByText('Smart Cleanup')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'System' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Application Junk' })).toBeInTheDocument();
@@ -163,6 +163,24 @@ describe('CleanPage', () => {
     expect(screen.queryByText(/will free/i)).not.toBeInTheDocument();
   });
 
+  it('runs selected clean sections in one CLI process when cleaning', async () => {
+    vi.mocked(window.moleDesktop.clean.execute).mockResolvedValue({ ok: true, stdout: '', stderr: '', exitCode: 0 } as any);
+
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /start cleaning 1\.5 GB/i }));
+
+    await waitFor(() => expect(window.moleDesktop.clean.execute).toHaveBeenCalled());
+
+    expect(vi.mocked(window.moleDesktop.clean.execute).mock.calls.map(([options]) => options)).toEqual([
+      {
+        command: 'clean',
+        dryRun: false,
+        sections: ['System', 'Browsers'],
+      },
+    ]);
+  });
+
   it('scans every cleanup section exposed by the cleanup CLI', async () => {
     localStorage.clear();
     vi.mocked(window.moleDesktop.clean.execute).mockResolvedValue({ ok: true, stdout: '', stderr: '' } as any);
@@ -176,8 +194,13 @@ describe('CleanPage', () => {
     const cleanDryRunCalls = vi.mocked(window.moleDesktop.clean.execute).mock.calls
       .map(([options]) => options)
       .filter((options) => options.command === 'clean' && options.dryRun);
+    const dryRunCommands = vi.mocked(window.moleDesktop.clean.execute).mock.calls
+      .map(([options]) => options)
+      .filter((options) => options.dryRun)
+      .map((options) => options.command);
     const scannedSections = cleanDryRunCalls.flatMap((options) => options.sections ?? []);
 
+    expect(dryRunCommands).toEqual(['clean', 'purge', 'installer']);
     expect(scannedSections).toEqual([
       'System',
       'User essentials',
@@ -245,6 +268,56 @@ describe('CleanPage', () => {
     expect(screen.getByRole('heading', { name: 'User Essentials' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Expand User Essentials' }));
     expect(screen.getByText('User app cache 174 items')).toBeInTheDocument();
+  });
+
+  it('parses purge dry-run artifacts emitted by non-interactive cleanup runs', async () => {
+    localStorage.clear();
+    vi.mocked(window.moleDesktop.clean.execute).mockImplementation(async (options) => {
+      if (options.command === 'purge') {
+        return {
+          ok: true,
+          stdout: '✓ [DRY RUN] ~/www/api/node_modules, 13.10GB\nDry run complete - no changes made\nWould free: 13.10GB | Items: 1\n',
+          stderr: '',
+          exitCode: 0,
+        } as any;
+      }
+
+      return { ok: true, stdout: '', stderr: '', exitCode: 0 } as any;
+    });
+
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /scan for junk/i }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /start cleaning 13\.1 GB/i })).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Project Artifacts' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Project Artifacts' }));
+    expect(screen.getByText(/\[DRY RUN\] ~\/www\/api\/node_modules/)).toBeInTheDocument();
+  });
+
+  it('parses installer dry-run output from all selected installer files', async () => {
+    localStorage.clear();
+    vi.mocked(window.moleDesktop.clean.execute).mockImplementation(async (options) => {
+      if (options.command === 'installer') {
+        return {
+          ok: true,
+          stdout: 'Files to be removed:\n  ✓ Mole Test.dmg , 512MB\nDry run complete - no changes made\nWould remove 1 installers, free 512.00MB\n',
+          stderr: '',
+          exitCode: 0,
+        } as any;
+      }
+
+      return { ok: true, stdout: '', stderr: '', exitCode: 0 } as any;
+    });
+
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /scan for junk/i }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /start cleaning 512 MB/i })).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Installer Files' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Installer Files' }));
+    expect(screen.getByText('Mole Test.dmg')).toBeInTheDocument();
   });
 
   it('treats dry-run exit code 2 as an empty cleanup group', async () => {

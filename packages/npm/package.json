@@ -1,7 +1,7 @@
 {
   "name": "moleui",
-  "version": "1.44.0",
-  "moleuiDesktopVersion": "0.10.0",
+  "version": "1.45.0",
+  "moleuiDesktopVersion": "0.11.0",
   "description": "Deep clean and optimize your Mac — Desktop GUI. Downloads and launches the Moleui Desktop app.",
   "keywords": [
     "macos",

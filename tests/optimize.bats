@@ -260,86 +260,42 @@ EOF
 	[[ "$output" == *"sqlite3 unavailable"* ]]
 }
 
-@test "opt_font_cache_rebuild succeeds in dry-run" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-opt_font_cache_rebuild
-EOF
-
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"Font cache cleared"* ]]
-}
-
 @test "optimize does not auto-fix Gatekeeper anymore" {
 	run grep -n "spctl --master-enable\\|SECURITY_FIXES+=([\"']gatekeeper|" "$PROJECT_ROOT/bin/optimize.sh"
 
 	[ "$status" -eq 1 ]
 }
 
-@test "opt_font_cache_rebuild skips when Firefox helpers are running" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-pgrep() {
-    case "$*" in
-        *"Firefox|org\\.mozilla\\.firefox|firefox .*contentproc|firefox .*plugin-container|firefox .*crashreporter"*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-export -f pgrep
-opt_font_cache_rebuild
-EOF
-
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"Font cache rebuild skipped · Firefox still running"* ]]
-}
-
-@test "browser_family_is_running does not treat generic renderer helpers as Zen Browser" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-pgrep() {
-    case "$*" in
-        *"renderer|gpu"*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-export -f pgrep
-if browser_family_is_running "Zen Browser"; then
-    echo "MATCHED"
-fi
-EOF
-
-	[ "$status" -eq 0 ]
-	[[ "$output" != *"MATCHED"* ]]
-}
-
-@test "opt_dock_refresh clears cache files" {
+@test "opt_dock_refresh reports refresh" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-mkdir -p "$HOME/Library/Application Support/Dock"
-touch "$HOME/Library/Application Support/Dock/test.db"
-safe_remove() { return 0; }
 opt_dock_refresh
 EOF
 
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Dock cache cleared"* ]]
 	[[ "$output" == *"Dock refreshed"* ]]
+}
+
+@test "opt_dock_refresh preserves desktoppicture.db and other db files" {
+	local dock_support="$HOME/Library/Application Support/Dock"
+	mkdir -p "$dock_support"
+	: > "$dock_support/desktoppicture.db"
+	: > "$dock_support/another.db"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+killall() { return 0; }
+export -f killall
+opt_dock_refresh
+EOF
+
+	[ "$status" -eq 0 ]
+	[ -f "$HOME/Library/Application Support/Dock/desktoppicture.db" ]
+	[ -f "$HOME/Library/Application Support/Dock/another.db" ]
 }
 
 @test "opt_prevent_network_dsstore dry-run reports enabled" {
@@ -934,7 +890,6 @@ mdutil() { echo "Indexing enabled."; }
 mdfind() { sleep 4; }
 get_epoch_seconds() { date +%s; }
 is_ac_power() { return 0; }
-browser_family_is_running() { return 1; }
 pgrep() { return 1; }
 system_profiler() { return 1; }
 plutil() { return 1; }
@@ -948,7 +903,6 @@ stop_inline_spinner() { :; }
 opt_memory_pressure_relief 2>&1 || true
 opt_network_stack_optimize 2>&1 || true
 opt_disk_permissions_repair 2>&1 || true
-opt_font_cache_rebuild 2>&1 || true
 opt_periodic_maintenance 2>&1 || true
 flush_dns_cache 2>&1 || true
 

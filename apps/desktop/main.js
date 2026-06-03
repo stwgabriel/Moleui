@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, shell } from "electron";
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +13,8 @@ const MY_MAC_METRICS_FILE = "my-mac-metrics.json";
 const BACKGROUND_SYSTEMS_FILE = "background-systems.json";
 const BATTERY_SAMPLE_INTERVAL_MS = 6 * 60 * 1000;
 const MAX_BATTERY_HISTORY = 24 * 60;
+const MAX_CLI_MONITOR_EVENTS = 1200;
+const MAX_CLI_EVENT_TEXT = 24000;
 
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("enable-gpu-rasterization");
@@ -23,9 +25,43 @@ nativeTheme.themeSource = "light";
 // Store active processes for cancellation
 const activeProcesses = new Map();
 const appIconCache = new Map();
+const cliMonitorEvents = [];
+let nextCliRunId = 1;
+let applicationSearchIndex = null;
+let systemApplicationIndex = null;
+const applicationNameLookupCache = new Map();
 let batterySamplerInterval = null;
 let batterySampleInFlight = false;
 let openedAsHiddenLoginItem = false;
+
+function trimCliEventText(text) {
+  const value = String(text || "");
+  if (value.length <= MAX_CLI_EVENT_TEXT) return value;
+  return `${value.slice(0, MAX_CLI_EVENT_TEXT)}\n...[truncated ${value.length - MAX_CLI_EVENT_TEXT} chars]`;
+}
+
+function emitCliEvent(event) {
+  const nextEvent = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    at: new Date().toISOString(),
+    ...event,
+  };
+
+  if (typeof nextEvent.text === "string") {
+    nextEvent.text = trimCliEventText(nextEvent.text);
+  }
+
+  cliMonitorEvents.push(nextEvent);
+  if (cliMonitorEvents.length > MAX_CLI_MONITOR_EVENTS) {
+    cliMonitorEvents.splice(0, cliMonitorEvents.length - MAX_CLI_MONITOR_EVENTS);
+  }
+
+  if (cliMonitorWindow && !cliMonitorWindow.isDestroyed()) {
+    cliMonitorWindow.webContents.send("mole:developer:event", nextEvent);
+  }
+
+  return nextEvent;
+}
 
 function withTimeout(promise, timeoutMs, message) {
   return Promise.race([
@@ -131,6 +167,95 @@ function getMacAppBundleIconData(appPath) {
   }
 }
 
+function parsePlistString(plist, key) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = plist.match(new RegExp(`<key>${escapedKey}<\\/key>\\s*<string>([^<]+)<\\/string>`));
+  return match?.[1]?.trim() || "";
+}
+
+function readApplicationMetadata(appPath) {
+  const appName = path.basename(appPath).replace(/\.app$/i, "");
+  const metadata = {
+    path: appPath,
+    bundleIdentifier: "",
+    executableName: "",
+    names: new Set([appName]),
+    lookupNames: new Set(),
+  };
+
+  try {
+    const infoPlistPath = path.join(appPath, "Contents", "Info.plist");
+    const infoPlist = fs.readFileSync(infoPlistPath, "utf8");
+    const displayName = parsePlistString(infoPlist, "CFBundleDisplayName");
+    const bundleName = parsePlistString(infoPlist, "CFBundleName");
+    const executableName = parsePlistString(infoPlist, "CFBundleExecutable");
+
+    metadata.bundleIdentifier = parsePlistString(infoPlist, "CFBundleIdentifier");
+    metadata.executableName = executableName;
+    [displayName, bundleName, executableName].filter(Boolean).forEach((name) => metadata.names.add(name));
+  } catch {
+    // Some bundles are not readable from the sandbox/user context. The path name still works as a lookup key.
+  }
+
+  metadata.names.forEach((name) => {
+    const lookupName = normalizeAppLookupName(name);
+    if (lookupName) metadata.lookupNames.add(lookupName);
+  });
+
+  return metadata;
+}
+
+function addMapListValue(map, key, value) {
+  if (!key) return;
+  const current = map.get(key);
+  if (current) {
+    if (!current.includes(value)) current.push(value);
+  } else {
+    map.set(key, [value]);
+  }
+}
+
+function processIconSlug(value) {
+  return String(value || "")
+    .replace(/\.app$/i, "")
+    .replace(/\b(helper|renderer|gpu|plugin|extension|service|daemon)\b.*$/i, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+}
+
+function processIconSlugCandidates(processInfo) {
+  const command = String(processInfo?.command || "");
+  const commandParts = command.split("/").filter(Boolean);
+  const appNames = commandParts
+    .filter((part) => part.endsWith(".app"))
+    .map((part) => part.replace(/\.app$/i, ""));
+  const executable = commandParts[commandParts.length - 1] || "";
+  const rawNames = [processInfo?.name, executable, ...appNames];
+
+  return [...new Set(rawNames.map(processIconSlug).filter(Boolean))];
+}
+
+function hashString(value) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function svgDataUrl(svg) {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function genericProcessIconData(processInfo) {
+  const label = (String(processInfo?.name || "System").trim().charAt(0).toUpperCase() || "S")
+    .replace(/[&<>"]/g, "");
+  const hue = hashString(String(processInfo?.name || processInfo?.pid || "system")) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="20" y1="12" x2="108" y2="116" gradientUnits="userSpaceOnUse"><stop stop-color="hsl(${hue} 70% 62%)"/><stop offset="1" stop-color="hsl(${(hue + 42) % 360} 78% 48%)"/></linearGradient></defs><rect width="128" height="128" rx="30" fill="url(#g)"/><path d="M34 42h60M34 64h60M34 86h60" stroke="white" stroke-width="10" stroke-linecap="round" opacity=".42"/><text x="64" y="76" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="800" fill="white">${label}</text></svg>`;
+  return { ok: true, icon: svgDataUrl(svg), source: "generic" };
+}
+
 async function mapWithConcurrency(items, concurrency, mapper) {
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -172,19 +297,37 @@ function ensureRuntime() {
 function runMole(args, options = {}) {
   return new Promise((resolve) => {
     let executable;
+    const runId = nextCliRunId++;
+    const command = `mole ${args.join(" ")}`;
+    const startedAt = Date.now();
 
     try {
       executable = ensureRuntime();
     } catch (error) {
+      emitCliEvent({
+        runId,
+        type: "error",
+        command,
+        text: error.message,
+        durationMs: Date.now() - startedAt,
+      });
       resolve({
         ok: false,
-        command: `mole ${args.join(" ")}`,
+        command,
         exitCode: null,
         stdout: "",
         stderr: error.message,
       });
       return;
     }
+
+    emitCliEvent({
+      runId,
+      type: "start",
+      command,
+      args,
+      processId: options.processId || null,
+    });
 
     const child = spawn(executable, args, {
       cwd: runtimeDir(),
@@ -232,6 +375,7 @@ function runMole(args, options = {}) {
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString();
       stdout += text;
+      emitCliEvent({ runId, type: "stdout", command, text });
 
       // Stream output if callback provided
       if (options.onStdout) {
@@ -242,6 +386,7 @@ function runMole(args, options = {}) {
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
       stderr += text;
+      emitCliEvent({ runId, type: "stderr", command, text });
 
       // Stream error output if callback provided
       if (options.onStderr) {
@@ -256,9 +401,16 @@ function runMole(args, options = {}) {
       if (options.processId) {
         activeProcesses.delete(options.processId);
       }
+      emitCliEvent({
+        runId,
+        type: "error",
+        command,
+        text: error.message,
+        durationMs: Date.now() - startedAt,
+      });
       resolve({
         ok: false,
-        command: `mole ${args.join(" ")}`,
+        command,
         exitCode: null,
         stdout,
         stderr: `${stderr}${error.message}`,
@@ -273,9 +425,17 @@ function runMole(args, options = {}) {
       if (options.processId) {
         activeProcesses.delete(options.processId);
       }
+      emitCliEvent({
+        runId,
+        type: killed ? "cancel" : "close",
+        command,
+        exitCode,
+        ok: exitCode === 0 && !killed,
+        durationMs: Date.now() - startedAt,
+      });
       resolve({
         ok: exitCode === 0 && !killed,
-        command: `mole ${args.join(" ")}`,
+        command,
         exitCode,
         stdout,
         stderr: killed ? `${stderr}\nProcess was cancelled by user` : stderr,
@@ -612,35 +772,157 @@ function normalizeAppLookupName(value) {
     .toLowerCase();
 }
 
-function findNamedApplicationPaths(processName) {
-  const lookupName = normalizeAppLookupName(processName);
-  if (!lookupName) return [];
+function getApplicationSearchIndex() {
+  if (applicationSearchIndex) return applicationSearchIndex;
 
-  const appDirs = [
+  const roots = [
     "/Applications",
     path.join(os.homedir(), "Applications"),
     "/Applications/Utilities",
     "/System/Applications",
     "/System/Applications/Utilities",
+    "/System/Library/CoreServices",
+    "/System/Library/CoreServices/Applications",
   ];
-  const matches = [];
+  const appPaths = [];
+  const visited = new Set();
 
-  for (const appDir of appDirs) {
+  function scanDirectory(directory, depth) {
+    if (depth < 0 || visited.has(directory)) return;
+    visited.add(directory);
+
+    let entries = [];
     try {
-      for (const entry of fs.readdirSync(appDir, { withFileTypes: true })) {
-        if (!entry.isDirectory() || !entry.name.endsWith(".app")) continue;
-
-        const appName = normalizeAppLookupName(entry.name);
-        if (appName === lookupName || appName.startsWith(lookupName) || lookupName.startsWith(appName)) {
-          addUniquePath(matches, path.join(appDir, entry.name));
-        }
-      }
+      entries = fs.readdirSync(directory, { withFileTypes: true });
     } catch {
-      // Some system application folders may not exist on older macOS versions.
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const entryPath = path.join(directory, entry.name);
+
+      if (entry.name.endsWith(".app")) {
+        addUniquePath(appPaths, entryPath);
+        continue;
+      }
+
+      if (!entry.name.startsWith(".")) {
+        scanDirectory(entryPath, depth - 1);
+      }
     }
   }
 
+  roots.forEach((root) => scanDirectory(root, 3));
+  applicationSearchIndex = appPaths;
+  return appPaths;
+}
+
+function getSystemApplicationIndex() {
+  if (systemApplicationIndex) return systemApplicationIndex;
+
+  const entries = getApplicationSearchIndex().map(readApplicationMetadata);
+  const byPath = new Map();
+  const byLookupName = new Map();
+  const byBundleIdentifier = new Map();
+
+  for (const entry of entries) {
+    byPath.set(entry.path, entry);
+    addMapListValue(byBundleIdentifier, entry.bundleIdentifier, entry.path);
+    entry.lookupNames.forEach((lookupName) => addMapListValue(byLookupName, lookupName, entry.path));
+  }
+
+  systemApplicationIndex = { entries, byPath, byLookupName, byBundleIdentifier };
+  return systemApplicationIndex;
+}
+
+function findSpotlightApplicationPaths(processName) {
+  if (process.platform !== "darwin") return [];
+
+  const lookupName = String(processName || "")
+    .replace(/\.app$/i, "")
+    .replace(/\b(helper|renderer|gpu|plugin|extension)\b.*$/i, "")
+    .trim();
+  if (!lookupName) return [];
+  const queryName = lookupName.replace(/["\\]/g, "");
+
+  try {
+    const output = execFileSync("/usr/bin/mdfind", [
+      `kMDItemContentType == "com.apple.application-bundle" && kMDItemFSName == "${queryName}.app"`,
+    ], { encoding: "utf8", timeout: 900, maxBuffer: 128 * 1024 });
+    return output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.endsWith(".app") && fs.existsSync(line));
+  } catch {
+    return [];
+  }
+}
+
+function appLookupNamesMatch(appName, lookupName) {
+  if (!appName || !lookupName) return false;
+  if (appName === lookupName) return true;
+
+  const shorter = appName.length < lookupName.length ? appName : lookupName;
+  const longer = appName.length < lookupName.length ? lookupName : appName;
+
+  // Avoid false positives like Code -> Codex while still allowing longer bundle
+  // names to match related helper processes.
+  return shorter.length >= 6 && longer.startsWith(shorter);
+}
+
+function findNamedApplicationPaths(processName) {
+  const lookupName = normalizeAppLookupName(processName);
+  if (!lookupName) return [];
+  if (applicationNameLookupCache.has(lookupName)) return applicationNameLookupCache.get(lookupName);
+
+  const matches = [];
+  const { entries, byLookupName } = getSystemApplicationIndex();
+
+  (byLookupName.get(lookupName) || []).forEach((appPath) => addUniquePath(matches, appPath));
+
+  for (const entry of entries) {
+    if ([...entry.lookupNames].some((appName) => appLookupNamesMatch(appName, lookupName))) {
+      addUniquePath(matches, entry.path);
+    }
+  }
+
+  findSpotlightApplicationPaths(processName).forEach((appPath) => addUniquePath(matches, appPath));
+
+  applicationNameLookupCache.set(lookupName, matches);
   return matches;
+}
+
+function systemApplicationIconPaths(appInfo = {}) {
+  const paths = [];
+  const appObject = appInfo && typeof appInfo === "object" ? appInfo : {};
+  const directPath = typeof appInfo === "string" ? appInfo : appObject.path;
+  const bundleId = appObject.bundle_id || appObject.bundleIdentifier || "";
+  const names = typeof appInfo === "string"
+    ? [path.basename(appInfo)]
+    : [appObject.name, appObject.uninstall_name, appObject.uninstallName, appObject.executableName].filter(Boolean);
+  const { byBundleIdentifier } = getSystemApplicationIndex();
+
+  if (directPath) {
+    const existingPath = existingProcessPath(directPath) || (fs.existsSync(directPath) ? directPath : "");
+    addUniquePath(paths, appBundlePath(existingPath) || existingPath);
+  }
+
+  (byBundleIdentifier.get(bundleId) || []).forEach((appPath) => addUniquePath(paths, appPath));
+  names.forEach((name) => findNamedApplicationPaths(name).forEach((appPath) => addUniquePath(paths, appPath)));
+
+  return paths;
+}
+
+async function getSystemApplicationIconData(appInfo = {}) {
+  const iconPaths = systemApplicationIconPaths(appInfo);
+
+  for (const iconPath of iconPaths) {
+    const result = await getAppIconData(iconPath);
+    if (result.ok && result.icon) return result;
+  }
+
+  return { ok: false, icon: "", message: "No system app icon found" };
 }
 
 function execFileOutput(file, args, timeoutMs) {
@@ -670,15 +952,62 @@ end tell
   return bundlePath.endsWith(".app/") ? bundlePath.slice(0, -1) : bundlePath;
 }
 
-async function processIconPaths(processInfo) {
-  const paths = [];
-  const pid = Number(processInfo?.pid);
-  const processPath = existingProcessPath(processInfo?.command);
+async function getProcessAppBundlePathsByPid(pids) {
+  const uniquePids = [...new Set(pids.map(Number).filter(Number.isFinite))];
+  const bundlePaths = new Map();
 
-  addUniquePath(paths, await getProcessAppBundlePath(pid));
-  addUniquePath(paths, appBundlePath(processPath));
+  if (process.platform !== "darwin" || uniquePids.length === 0) return bundlePaths;
+
+  const script = `
+set targetPids to {${uniquePids.join(",")}}
+set outputLines to {}
+tell application "System Events"
+  repeat with targetPid in targetPids
+    set pidNumber to targetPid as integer
+    set bundlePath to ""
+    set matchingProcesses to (every process whose unix id is pidNumber)
+    if (count of matchingProcesses) is greater than 0 then
+      try
+        set bundlePath to POSIX path of (application file of item 1 of matchingProcesses as alias)
+      on error
+        set bundlePath to ""
+      end try
+    end if
+    set end of outputLines to ((pidNumber as text) & tab & bundlePath)
+  end repeat
+end tell
+set AppleScript's text item delimiters to linefeed
+return outputLines as text
+`;
+
+  const output = await execFileOutput("osascript", ["-e", script], Math.min(5000, 1000 + uniquePids.length * 80));
+  for (const line of output.split(/\r?\n/)) {
+    const [pidText, rawBundlePath = ""] = line.split("\t");
+    const pid = Number(pidText);
+    const bundlePath = rawBundlePath.endsWith(".app/") ? rawBundlePath.slice(0, -1) : rawBundlePath;
+    if (Number.isFinite(pid) && bundlePath) {
+      bundlePaths.set(pid, bundlePath);
+    }
+  }
+
+  return bundlePaths;
+}
+
+function processIconPaths(processInfo, bundlePath = "") {
+  const paths = [];
+  const processPath = existingProcessPath(processInfo?.command);
+  const processBundlePath = appBundlePath(processPath);
+  const processExecutableName = processPath ? path.basename(processPath) : "";
+
+  addUniquePath(paths, bundlePath);
+  addUniquePath(paths, processBundlePath);
   addUniquePath(paths, processPath);
   findNamedApplicationPaths(processInfo?.name).forEach((appPath) => addUniquePath(paths, appPath));
+  findNamedApplicationPaths(processExecutableName).forEach((appPath) => addUniquePath(paths, appPath));
+  findNamedApplicationPaths(path.basename(processBundlePath)).forEach((appPath) => addUniquePath(paths, appPath));
+  processIconSlugCandidates(processInfo).forEach((name) => {
+    findNamedApplicationPaths(name).forEach((appPath) => addUniquePath(paths, appPath));
+  });
 
   return paths;
 }
@@ -767,17 +1096,25 @@ function configureApplicationMenu() {
     },
   ];
 
-  if (isDev) {
-    template.push({
-      label: "Developer",
-      submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { type: "separator" },
-        { role: "toggleDevTools" },
-      ],
-    });
-  }
+  template.push({
+    label: "Developer",
+    submenu: [
+      {
+        label: "CLI Monitor",
+        accelerator: "CmdOrCtrl+Shift+M",
+        click: () => createCliMonitorWindow(BrowserWindow.getFocusedWindow() ?? mainWindow),
+      },
+      ...(isDev
+        ? [
+          { type: "separator" },
+          { role: "reload" },
+          { role: "forceReload" },
+          { type: "separator" },
+          { role: "toggleDevTools" },
+        ]
+        : []),
+    ],
+  });
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -820,6 +1157,7 @@ function createWindow(options = {}) {
 
 let mainWindow;
 let settingsWindow;
+let cliMonitorWindow;
 
 function loadAppWindow(window, query = "") {
   if (isDev) {
@@ -869,6 +1207,46 @@ function createSettingsWindow(parentWindow) {
   return settingsWindow;
 }
 
+function createCliMonitorWindow(parentWindow) {
+  if (cliMonitorWindow && !cliMonitorWindow.isDestroyed()) {
+    cliMonitorWindow.focus();
+    return cliMonitorWindow;
+  }
+
+  cliMonitorWindow = new BrowserWindow({
+    width: 1040,
+    height: 760,
+    minWidth: 820,
+    minHeight: 560,
+    show: false,
+    title: "CLI Monitor",
+    titleBarStyle: "hidden",
+    trafficLightPosition: {
+      x: 18,
+      y: 6,
+    },
+    parent: parentWindow,
+    icon: appIconPath,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  loadAppWindow(cliMonitorWindow, "?window=developer");
+
+  cliMonitorWindow.once("ready-to-show", () => {
+    cliMonitorWindow.show();
+  });
+
+  cliMonitorWindow.on("closed", () => {
+    cliMonitorWindow = null;
+  });
+
+  return cliMonitorWindow;
+}
+
 ipcMain.handle("mole:status", async () => runMole(["status", "--json", "--process-limit", "0"]));
 
 ipcMain.handle("mole:process:icons", async (_event, processes) => {
@@ -876,9 +1254,11 @@ ipcMain.handle("mole:process:icons", async (_event, processes) => {
     return { ok: false, icons: {}, message: "Invalid processes" };
   }
 
+  const bundlePathsByPid = await getProcessAppBundlePathsByPid(processes.map((proc) => proc?.pid));
   const resolvedProcessIconEntries = await mapWithConcurrency(processes, 8, async (proc) => ({
     pid: proc?.pid,
-    iconPaths: await processIconPaths(proc),
+    processInfo: proc,
+    iconPaths: processIconPaths(proc, bundlePathsByPid.get(Number(proc?.pid))),
   }));
   const processIconEntries = resolvedProcessIconEntries.filter(({ pid, iconPaths }) => Number.isFinite(pid) && iconPaths.length > 0);
 
@@ -889,17 +1269,28 @@ ipcMain.handle("mole:process:icons", async (_event, processes) => {
   });
   const iconsByPath = new Map(iconResults.filter(([, result]) => result.ok && result.icon));
   const icons = {};
-  const missing = resolvedProcessIconEntries
-    .filter(({ pid, iconPaths }) => Number.isFinite(pid) && iconPaths.length === 0)
-    .map(({ pid }) => pid);
+  const missing = [];
+  const fallbackEntries = [];
 
-  for (const { pid, iconPaths } of processIconEntries) {
+  for (const { pid, processInfo, iconPaths } of processIconEntries) {
     const result = iconPaths.map((iconPath) => iconsByPath.get(iconPath)).find((iconResult) => iconResult?.icon);
     if (result?.icon) {
       icons[pid] = result.icon;
     } else {
-      missing.push(pid);
+      fallbackEntries.push({ pid, processInfo });
     }
+  }
+
+  for (const { pid, processInfo, iconPaths } of resolvedProcessIconEntries) {
+    if (!Number.isFinite(pid) || iconPaths.length > 0 || icons[pid]) continue;
+    fallbackEntries.push({ pid, processInfo });
+  }
+
+  const fallbackIcons = await mapWithConcurrency(fallbackEntries, 6, async ({ pid, processInfo }) => {
+    return [pid, genericProcessIconData(processInfo).icon];
+  });
+  for (const [pid, icon] of fallbackIcons) {
+    icons[pid] = icon;
   }
 
   return { ok: true, icons, missing };
@@ -908,6 +1299,20 @@ ipcMain.handle("mole:process:icons", async (_event, processes) => {
 ipcMain.handle("mole:settings:open", async (event) => {
   const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
   createSettingsWindow(parentWindow);
+  return { ok: true };
+});
+
+ipcMain.handle("mole:developer:open", async (event) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  createCliMonitorWindow(parentWindow);
+  return { ok: true };
+});
+
+ipcMain.handle("mole:developer:cli-events", async () => cliMonitorEvents);
+
+ipcMain.handle("mole:developer:clear-cli-events", async () => {
+  cliMonitorEvents.length = 0;
+  emitCliEvent({ type: "clear", command: "developer monitor", text: "CLI monitor cleared" });
   return { ok: true };
 });
 
@@ -954,17 +1359,23 @@ ipcMain.handle("mole:uninstall:list:kill", async () => {
 });
 
 ipcMain.handle("mole:uninstall:app-icon", async (_event, appPath) => {
-  return getAppIconData(appPath);
+  return getSystemApplicationIconData({ path: appPath });
 });
 
-ipcMain.handle("mole:uninstall:app-icons", async (_event, appPaths) => {
-  if (!Array.isArray(appPaths)) {
+ipcMain.handle("mole:uninstall:app-icons", async (_event, appItems) => {
+  if (!Array.isArray(appItems)) {
     return { ok: false, icons: {}, message: "Invalid app paths" };
   }
 
-  const uniquePaths = [...new Set(appPaths.filter((appPath) => typeof appPath === "string" && appPath))];
-  const iconResults = await mapWithConcurrency(uniquePaths, 8, async (appPath) => {
-    const result = await getAppIconData(appPath);
+  const appRequestsByKey = new Map();
+  for (const item of appItems) {
+    const appInfo = typeof item === "string" ? { path: item } : item;
+    const key = appInfo?.path;
+    if (typeof key === "string" && key) appRequestsByKey.set(key, appInfo);
+  }
+
+  const iconResults = await mapWithConcurrency([...appRequestsByKey.entries()], 8, async ([appPath, appInfo]) => {
+    const result = await getSystemApplicationIconData(appInfo);
     return [appPath, result];
   });
   const icons = {};

@@ -53,6 +53,18 @@ setup() {
 	[[ "$output" == *"DRY RUN MODE"* ]]
 }
 
+@test "installer.sh dry-run all emits selected installers without removing them" {
+	dd if=/dev/zero of="$HOME/Downloads/Mole Test.dmg" bs=1024 count=32 2>/dev/null
+
+	run env HOME="$HOME" TERM="xterm-256color" "$PROJECT_ROOT/bin/installer.sh" --dry-run --all --yes </dev/null
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"DRY RUN MODE"* ]]
+	[[ "$output" == *"Mole Test.dmg"* ]]
+	[[ "$output" == *"Installers cleaned"* || "$output" == *"Dry run complete"* ]]
+	[ -f "$HOME/Downloads/Mole Test.dmg" ]
+}
+
 # Test scan_installers_in_path function directly
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

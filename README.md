@@ -31,7 +31,7 @@
 
 Moleui Desktop brings the Moleui maintenance tools into a native-feeling Electron app for macOS.
 
-- **My Mac / Status**: View live CPU, memory, disk, network, battery, and system health information.
+- **My Mac / Status**: View live CPU, memory, disk, network, battery, system health, and grouped app/process activity.
 - **Clean**: Remove caches, logs, browser leftovers, temporary files, and other safe-to-clean junk.
 - **Uninstall**: Remove apps together with related preferences, caches, launch agents, logs, and leftover support files.
 - **Optimize**: Refresh system services, rebuild caches, reset selected maintenance state, and run common macOS tuneups.

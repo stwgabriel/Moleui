@@ -166,7 +166,6 @@ Broken Config Repair|fix_broken_configs|optimize_task
 Network Cache Refresh|network_optimization|optimize_task
 Database Optimization|sqlite_vacuum|optimize_task
 LaunchServices Repair|launch_services_rebuild|optimize_task
-Font Cache Rebuild|font_cache_rebuild|optimize_task
 Dock Refresh|dock_refresh|optimize_task
 Prevent Finder .DS_Store|prevent_network_dsstore|optimize_task
 Memory Optimization|memory_pressure_relief|optimize_task

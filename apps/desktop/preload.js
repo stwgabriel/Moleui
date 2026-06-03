@@ -55,8 +55,19 @@ function onStreamWithLog(channel, callback) {
 contextBridge.exposeInMainWorld("moleDesktop", {
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
   openSettingsWindow: () => ipcRenderer.invoke("mole:settings:open"),
+  openDeveloperWindow: () => ipcRenderer.invoke("mole:developer:open"),
   getSettingsProfile: () => ipcRenderer.invoke("mole:settings:profile"),
   getBackgroundSystems: () => ipcRenderer.invoke("mole:background-systems:list"),
+  developer: {
+    getCliEvents: () => ipcRenderer.invoke("mole:developer:cli-events"),
+    clearCliEvents: () => ipcRenderer.invoke("mole:developer:clear-cli-events"),
+    onCliEvent: (callback) => {
+      ipcRenderer.on("mole:developer:event", (_, event) => callback(event));
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners("mole:developer:event");
+    },
+  },
   myMacCache: {
     get: () => ipcRenderer.invoke("mole:my-mac-cache:get"),
     set: (cache) => ipcRenderer.invoke("mole:my-mac-cache:set", cache),

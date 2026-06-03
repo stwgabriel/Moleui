@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import {
   HardDrive, FolderOpen, File, BarChart3, Search,
   RefreshCw, X, ChevronRight, ChevronUp, Home, Download,
@@ -1224,7 +1225,7 @@ export function AnalyzePage() {
           </div>
         </div>
 
-        {contextMenu && (
+        {contextMenu && createPortal(
           <div
             className="fixed z-50 w-56 overflow-hidden rounded-2xl border border-white/60 bg-white/90 p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)] backdrop-blur-2xl"
             style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -1246,7 +1247,8 @@ export function AnalyzePage() {
               <Trash2 className="h-4 w-4" />
               Move {contextMenu.item.is_dir ? 'Folder' : 'File'} to Trash
             </button>
-          </div>
+          </div>,
+          document.body,
         )}
 
         {pendingDelete && (

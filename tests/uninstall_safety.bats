@@ -251,3 +251,22 @@ EOF
 
 	[ "$status" -eq 0 ]
 }
+
+@test "find_app_files discovers CrashReporter plists by app name" {
+	mkdir -p "$HOME/Library/Application Support/CrashReporter"
+	touch "$HOME/Library/Application Support/CrashReporter/TestApp_AAAA-BBBB.plist"
+	touch "$HOME/Library/Application Support/CrashReporter/TestApp_CCCC-DDDD.plist"
+	touch "$HOME/Library/Application Support/CrashReporter/OtherApp_EEEE-FFFF.plist"
+
+	result="$(
+		HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+find_app_files "com.example.testapp" "TestApp"
+EOF
+	)"
+
+	[[ "$result" == *"CrashReporter/TestApp_AAAA-BBBB.plist"* ]] || { echo "missed CrashReporter plist 1"; exit 1; }
+	[[ "$result" == *"CrashReporter/TestApp_CCCC-DDDD.plist"* ]] || { echo "missed CrashReporter plist 2"; exit 1; }
+	[[ "$result" != *"OtherApp_EEEE-FFFF.plist"* ]] || { echo "leaked unrelated CrashReporter plist"; exit 1; }
+}

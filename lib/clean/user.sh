@@ -764,7 +764,7 @@ clean_support_app_data() {
     # Clean system-level idle/aerial screensaver videos (macOS re-downloads as needed).
     local sys_idle_assets_dir="/Library/Application Support/com.apple.idleassetsd/Customer"
     # Skip sudo operations during tests to avoid password prompts
-    if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
+    if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]] && has_sudo_session; then
         if sudo test -d "$sys_idle_assets_dir" 2> /dev/null; then
             safe_sudo_find_delete "$sys_idle_assets_dir" "*" "$support_age_days" "f" || true
         fi

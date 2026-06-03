@@ -414,7 +414,7 @@ readonly DATA_PROTECTED_BUNDLES=(
 
     # Launcher & Automation
     "com.runningwithcrayons.Alfred"
-    "com.raycast.macos"
+    "com.raycast.*"
     "com.blacktree.Quicksilver"
     "com.stairways.keyboardmaestro.*"
     "com.manytricks.Butler"
@@ -1197,7 +1197,6 @@ find_app_files() {
         "$HOME/Library/Application Support/$app_name"
         "$HOME/Library/Caches/$app_name"
         "$HOME/Library/Logs/$app_name"
-        "$HOME/Library/Application Support/CrashReporter/$app_name"
         "$HOME/Library/Services/$app_name.workflow"
         "$HOME/Library/QuickLook/$app_name.qlgenerator"
         "$HOME/Library/Internet Plug-Ins/$app_name.plugin"
@@ -1575,6 +1574,16 @@ find_app_files() {
         [[ -d "$vscode_global" ]] && while IFS= read -r -d '' p; do
             files_to_clean+=("$p")
         done < <(command find "$vscode_global" -maxdepth 1 -type d -iname "*raycast*" -print0 2> /dev/null)
+    fi
+
+    # CrashReporter plists are files named AppName_UUID.plist, not directories.
+    local crash_reporter_dir="$HOME/Library/Application Support/CrashReporter"
+    if [[ -d "$crash_reporter_dir" && ${#nospace_name} -ge 3 ]]; then
+        while IFS= read -r -d '' cr; do
+            files_to_clean+=("$cr")
+        done < <(command find "$crash_reporter_dir" -maxdepth 1 -type f \
+            \( -name "${app_name}_*.plist" -o -name "${nospace_name}_*.plist" \) \
+            -print0 2> /dev/null)
     fi
 
     # Output results

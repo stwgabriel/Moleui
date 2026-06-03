@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SettingsWindow } from './SettingsWindow';
 
 describe('SettingsWindow', () => {
@@ -46,11 +46,15 @@ describe('SettingsWindow', () => {
   });
 
   it('shows the placeholder device account and Touch ID setting', async () => {
-    render(<SettingsWindow />);
+    const { container } = render(<SettingsWindow />);
 
     expect(await screen.findByRole('heading', { level: 1, name: /settings/i })).toBeInTheDocument();
-    expect(screen.getAllByText('Gabriel-MacBook-Pro')).toHaveLength(2);
+    const accountPanel = screen.getByRole('region', { name: /account/i });
+    expect(within(accountPanel).getAllByText('Gabriel-MacBook-Pro')).toHaveLength(2);
     expect(screen.getByText('Touch ID')).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="settings-window"]')).toHaveClass('h-screen', 'overflow-hidden');
+    expect(container.querySelector('[data-testid="settings-content"]')).toHaveClass('overflow-y-auto', 'custom-scrollbar');
+    expect(screen.getByRole('navigation', { name: /settings categories/i })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(window.moleDesktop.getSettingsProfile).toHaveBeenCalledTimes(1);
@@ -60,7 +64,7 @@ describe('SettingsWindow', () => {
   it('shows background systems with status and recent runs', async () => {
     render(<SettingsWindow />);
 
-    fireEvent.click(screen.getByRole('button', { name: /background systems/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^background$/i }));
 
     expect(await screen.findByRole('heading', { level: 2, name: /background systems/i })).toBeInTheDocument();
     expect(screen.getByText('Battery metrics sampler')).toBeInTheDocument();

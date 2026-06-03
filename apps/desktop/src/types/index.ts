@@ -36,11 +36,39 @@ export interface BackgroundSystemStatus {
   recentRuns: BackgroundSystemRun[];
 }
 
+export interface CliMonitorEvent {
+  id: string;
+  at: string;
+  runId?: number;
+  type: 'start' | 'stdout' | 'stderr' | 'close' | 'cancel' | 'error' | 'clear';
+  command: string;
+  text?: string;
+  exitCode?: number | null;
+  ok?: boolean;
+  durationMs?: number;
+  processId?: string | null;
+}
+
+export interface AppIconRequest {
+  path: string;
+  name?: string;
+  bundle_id?: string;
+  uninstall_name?: string;
+  source?: string;
+}
+
 export interface MoleDesktopAPI {
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
   openSettingsWindow?: () => Promise<{ ok: boolean; message?: string }>;
+  openDeveloperWindow?: () => Promise<{ ok: boolean; message?: string }>;
   getSettingsProfile?: () => Promise<{ deviceName: string; user: { name: string; email: string } }>;
   getBackgroundSystems?: () => Promise<BackgroundSystemStatus[]>;
+  developer?: {
+    getCliEvents: () => Promise<CliMonitorEvent[]>;
+    clearCliEvents: () => Promise<{ ok: boolean; message?: string }>;
+    onCliEvent: (callback: (event: CliMonitorEvent) => void) => void;
+    removeListeners: () => void;
+  };
   myMacCache?: {
     get: () => Promise<MyMacMetricsCache | null>;
     set: (cache: Pick<MyMacMetricsCache, 'metrics' | 'history' | 'batteryHistory'>) => Promise<{ ok: boolean; message?: string }>;
@@ -63,7 +91,7 @@ export interface MoleDesktopAPI {
     list: () => Promise<MoleResult>;
     killList: () => Promise<{ ok: boolean; message: string }>;
     getAppIcon: (appPath: string) => Promise<{ ok: boolean; icon: string; message?: string }>;
-    getAppIcons: (appPaths: string[]) => Promise<{ ok: boolean; icons: Record<string, string>; message?: string }>;
+    getAppIcons: (apps: Array<string | AppIconRequest>) => Promise<{ ok: boolean; icons: Record<string, string>; message?: string }>;
     dryRun: (appNames: string[]) => Promise<MoleResult>;
     execute: (appNames: string[]) => Promise<MoleResult>;
     onListStdout: (callback: (data: string) => void) => void;
@@ -184,6 +212,7 @@ export interface SystemMetrics {
     pid: number;
     cpu: number;
     memory: number;
+    memory_bytes?: number;
     command?: string;
   }>;
   top_processes?: Array<{
@@ -191,6 +220,7 @@ export interface SystemMetrics {
     pid: number;
     cpu: number;
     memory: number;
+    memory_bytes?: number;
     command?: string;
   }>;
   hardware?: HardwareInfo;

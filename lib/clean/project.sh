@@ -1630,12 +1630,12 @@ clean_project_artifacts() {
         fi
         if [[ -t 1 ]]; then
             stop_inline_spinner
-            if [[ "$removal_recorded" == "true" ]]; then
-                if [[ "$dry_run_mode" == "1" ]]; then
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} [DRY RUN] $display_item_path${NC}, ${GREEN}$size_human${NC}"
-                else
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $display_item_path${NC}, ${GREEN}$size_human${NC}"
-                fi
+        fi
+        if [[ "$removal_recorded" == "true" ]]; then
+            if [[ "$dry_run_mode" == "1" ]]; then
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} [DRY RUN] $display_item_path${NC}, ${GREEN}$size_human${NC}"
+            else
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} $display_item_path${NC}, ${GREEN}$size_human${NC}"
             fi
         fi
     done

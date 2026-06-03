@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowRight,
   Battery,
+  ChevronDown,
+  ChevronUp,
   Clock3,
-  Maximize2,
-  Minimize2,
   MoreHorizontal,
   Search,
   Settings2,
@@ -39,9 +40,12 @@ const BATTERY_SAMPLE_INTERVAL = 6 * 60_000;
 const PROCESS_MENU_WIDTH = 232;
 const PROCESS_MENU_HEIGHT = 276;
 const PROCESS_MENU_MARGIN = 8;
-const PROCESS_DONUT_COLORS = ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
+const PROCESS_DONUT_OTHER_ID = 'other-processes';
+const PROCESS_DONUT_OTHER_COLOR = '#d1d5db';
+const GRAPH_EDGE_FADE = '[mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]';
 const GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
 const ACTION_CARD = 'group relative flex items-center gap-5 rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left  backdrop-blur-2xl overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+const CARD_TOP_VALUE = 'text-xl font-bold leading-none text-right';
 
 interface HistoryPoint {
   t: number;
@@ -77,41 +81,55 @@ interface ProcessMenuState {
 }
 
 interface ProcessDonutItem {
-  pid: number;
+  id: string;
   name: string;
   cpu: number;
   value: number;
   color: string;
-  topFivePercent?: number;
+  totalPercent?: number;
   icon?: string;
   iconMissing?: boolean;
+  isOther?: boolean;
+}
+
+interface ProcessAppGroup {
+  id: string;
+  name: string;
+  processes: ProcessInfo[];
+  totalCpu: number;
+  totalMemory: number;
+  iconProcess: ProcessInfo;
+  icon?: string;
+  iconMissing?: boolean;
+  pinnedRank: number;
 }
 
 function DetailRow({ icon: Icon, label, value }: DetailRowProps) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-slate-900/10 py-3 last:border-b-0">
-      <div className="flex items-center gap-3 text-slate-600">
-        <Icon className="h-5 w-5 text-slate-500" aria-hidden="true" />
-        <span className="font-medium">{label}</span>
+    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-900/10 py-3 last:border-b-0">
+      <div className="flex min-w-0 items-center gap-2.5 text-slate-600">
+        <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+        <span className="truncate font-medium">{label}</span>
       </div>
-      <span className="max-w-[58%] truncate text-right font-semibold text-slate-900">{value}</span>
+      <span className="min-w-0 max-w-[58%] truncate text-right font-semibold text-slate-900" title={value}>{value}</span>
     </div>
   );
 }
 
 function ProcessAppIcon({ process, icon, iconMissing }: { process: ProcessInfo; icon?: string; iconMissing?: boolean }) {
-  const initial = process.name.trim().charAt(0).toUpperCase() || '?';
-
   return (
     <span
-      className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/70 bg-white/75 text-[11px] font-black text-violet-500 shadow-sm backdrop-blur-xl"
+      className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden"
       title={process.name}
       aria-hidden="true"
     >
       {icon ? (
-        <img src={icon} alt="" className="h-5 w-5 object-contain" draggable={false} />
+        <img src={icon} alt="" className="h-7 w-7 object-contain" draggable={false} />
       ) : iconMissing ? (
-        initial
+        <svg viewBox="0 0 32 32" className="h-7 w-7 text-slate-400" fill="none" aria-hidden="true">
+          <rect x="7" y="7" width="18" height="18" rx="5" fill="currentColor" opacity="0.16" />
+          <path d="M11 16h10M16 11v10M10 23l12-14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
       ) : (
         <span className="h-2 w-2 rounded-full bg-slate-400/45" />
       )}
@@ -123,45 +141,199 @@ function ProcessDonutIconLabel(props: any) {
   const { cx, cy, midAngle, innerRadius, outerRadius, payload } = props;
   const item = payload as ProcessDonutItem;
 
-  const radius = Number(innerRadius) + (Number(outerRadius) - Number(innerRadius)) / 2;
+  const sliceRadius = Number(innerRadius) + (Number(outerRadius) - Number(innerRadius)) / 2;
+  const labelRadius = Number(outerRadius) + 20;
   const radians = -Number(midAngle) * (Math.PI / 180);
   const iconSize = 22;
-  const x = Number(cx) + Math.cos(radians) * radius;
-  const y = Number(cy) + Math.sin(radians) * radius;
-  const initial = item.name.trim().charAt(0).toUpperCase() || '?';
-  const percent = item.topFivePercent == null ? '' : `${item.topFivePercent.toFixed(0)}%`;
+  const x = Number(cx) + Math.cos(radians) * sliceRadius;
+  const y = Number(cy) + Math.sin(radians) * sliceRadius;
+  const labelX = Number(cx) + Math.cos(radians) * labelRadius;
+  const labelY = Number(cy) + Math.sin(radians) * labelRadius;
+  const textAnchor = Math.cos(radians) >= 0 ? 'start' : 'end';
+  const percent = item.totalPercent == null ? '' : `${item.totalPercent.toFixed(0)}%`;
 
   return (
-    <g transform={`translate(${x}, ${y})`}>
-      <rect x={-19} y={-20} width={38} height={40} rx={14} fill="rgba(255,255,255,0.92)" stroke="rgba(255,255,255,0.95)" strokeWidth={1.5} />
-      {item.icon ? (
-        <image
-          href={item.icon}
-          x={-iconSize / 2}
-          y={-17}
-          width={iconSize}
-          height={iconSize}
-          preserveAspectRatio="xMidYMid meet"
-        />
-      ) : item.iconMissing ? (
-        <text
-          dominantBaseline="central"
-          textAnchor="middle"
-          fill={item.color}
-          fontSize={12}
-          fontWeight={800}
-          y={-6}
-        >
-          {initial}
+    <g>
+      <g transform={`translate(${x}, ${y})`}>
+        {item.icon && !item.isOther ? (
+          <image
+            href={item.icon}
+            x={-iconSize / 2}
+            y={-15}
+            width={iconSize}
+            height={iconSize}
+            preserveAspectRatio="xMidYMid meet"
+          />
+        ) : (
+          <circle r={item.isOther ? 5 : 7} cy={-11} fill={item.color} opacity={item.isOther ? 0.7 : 0.95} />
+        )}
+        <text dominantBaseline="central" textAnchor="middle" fill="#334155" fontSize={9} fontWeight={800} y={13}>
+          {percent}
         </text>
-      ) : (
-        <circle r={4} cy={-6} fill="rgba(100,116,139,0.32)" />
-      )}
-      <text dominantBaseline="central" textAnchor="middle" fill="#475569" fontSize={9} fontWeight={800} y={12}>
-        {percent}
+      </g>
+      <text
+        x={labelX}
+        y={labelY}
+        dominantBaseline="central"
+        textAnchor={textAnchor}
+        fill="#475569"
+        fontSize={10}
+        fontWeight={700}
+      >
+        {item.name}
       </text>
     </g>
   );
+}
+
+function formatAppBundleName(bundlePath: string): string {
+  const appBundlePart = bundlePath
+    .split('/')
+    .filter(Boolean)
+    .reverse()
+    .find((part) => part.endsWith('.app'));
+
+  return appBundlePart?.replace(/\.app$/i, '') ?? '';
+}
+
+function normalizeProcessAppName(name: string): string {
+  return String(name || '')
+    .replace(/\.app$/i, '')
+    .replace(/\s+Helper(?:\s*\([^)]+\))?.*$/i, '')
+    .replace(/\s+\((?:Renderer|GPU|Plugin|Extension)\).*$/i, '')
+    .trim();
+}
+
+function getProcessMemoryValue(process: ProcessInfo): number {
+  return typeof process.memory_bytes === 'number' && Number.isFinite(process.memory_bytes)
+    ? process.memory_bytes
+    : Math.max(process.memory, 0);
+}
+
+function formatProcessMemory(value: number): string {
+  return value > 1024 ? formatBytes(value) : `${value.toFixed(1)}%`;
+}
+
+function formatFreeGigabytes(value: number, total: number): string {
+  const bytes = total > 1024 * 1024 ? value : value * 1024 * 1024 * 1024;
+  const freeGb = bytes / (1024 * 1024 * 1024);
+  const rounded = freeGb >= 100 ? freeGb.toFixed(0) : freeGb >= 10 ? freeGb.toFixed(1) : freeGb.toFixed(2);
+  return `${rounded.replace(/\.0+$/, '')} GB Free`;
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getProcessColor(name: string, icon?: string): string {
+  const seed = hashString(icon ? `${name}:${icon.slice(0, 96)}` : name);
+  const hue = seed % 360;
+  const saturation = icon ? 70 : 62;
+  const lightness = icon ? 54 : 58;
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+}
+
+function getProcessAppIdentity(process: ProcessInfo): { id: string; name: string } {
+  const command = process.command ?? '';
+  const appBundleMatch = command.match(/^(.+?\.app)(?:\/|$)/i);
+  const appBundlePath = appBundleMatch?.[1] ?? '';
+  const bundleName = formatAppBundleName(appBundlePath);
+  const name = bundleName || normalizeProcessAppName(process.name) || process.name || `PID ${process.pid}`;
+  const normalizedName = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+  return {
+    id: appBundlePath ? appBundlePath.toLowerCase() : `name:${normalizedName || process.pid}`,
+    name,
+  };
+}
+
+function buildProcessAppGroups(
+  processes: ProcessInfo[],
+  pinnedPids: number[],
+  processSort: ProcessSort,
+  processIcons: Record<number, string>,
+  processIconMisses: Record<number, boolean>,
+): ProcessAppGroup[] {
+  const groups = new Map<string, ProcessAppGroup>();
+
+  for (const process of processes) {
+    const identity = getProcessAppIdentity(process);
+    const current = groups.get(identity.id);
+
+    if (current) {
+      current.processes.push(process);
+      current.totalCpu += Math.max(process.cpu, 0);
+      current.totalMemory += getProcessMemoryValue(process);
+      const pinnedIndex = pinnedPids.indexOf(process.pid);
+      if (pinnedIndex >= 0 && (current.pinnedRank === -1 || pinnedIndex < current.pinnedRank)) {
+        current.pinnedRank = pinnedIndex;
+      }
+      if (!current.icon && processIcons[process.pid]) {
+        current.iconProcess = process;
+        current.icon = processIcons[process.pid];
+        current.iconMissing = false;
+      }
+      if (!current.icon && !current.iconMissing && processIconMisses[process.pid]) {
+        current.iconMissing = true;
+      }
+    } else {
+      groups.set(identity.id, {
+        id: identity.id,
+        name: identity.name,
+        processes: [process],
+        totalCpu: Math.max(process.cpu, 0),
+        totalMemory: getProcessMemoryValue(process),
+        iconProcess: process,
+        icon: processIcons[process.pid],
+        iconMissing: processIconMisses[process.pid],
+        pinnedRank: pinnedPids.indexOf(process.pid),
+      });
+    }
+  }
+
+  return [...groups.values()].map((group) => {
+    group.processes.sort((a, b) => {
+      const aPinned = pinnedPids.indexOf(a.pid);
+      const bPinned = pinnedPids.indexOf(b.pid);
+      if (aPinned >= 0 || bPinned >= 0) {
+        if (aPinned === -1) return 1;
+        if (bPinned === -1) return -1;
+        return aPinned - bPinned;
+      }
+      const sortValue = processSort.direction === 'desc'
+        ? b[processSort.key] - a[processSort.key]
+        : a[processSort.key] - b[processSort.key];
+      if (sortValue !== 0) return sortValue;
+      return a.pid - b.pid;
+    });
+
+    if (!group.icon) {
+      const iconProcess = group.processes.find((process) => processIcons[process.pid]);
+      if (iconProcess) {
+        group.iconProcess = iconProcess;
+        group.icon = processIcons[iconProcess.pid];
+        group.iconMissing = false;
+      }
+    }
+
+    return group;
+  }).sort((a, b) => {
+    if (a.pinnedRank >= 0 || b.pinnedRank >= 0) {
+      if (a.pinnedRank === -1) return 1;
+      if (b.pinnedRank === -1) return -1;
+      return a.pinnedRank - b.pinnedRank;
+    }
+    const sortValue = processSort.direction === 'desc'
+      ? b[processSort.key === 'cpu' ? 'totalCpu' : 'totalMemory'] - a[processSort.key === 'cpu' ? 'totalCpu' : 'totalMemory']
+      : a[processSort.key === 'cpu' ? 'totalCpu' : 'totalMemory'] - b[processSort.key === 'cpu' ? 'totalCpu' : 'totalMemory'];
+    if (sortValue !== 0) return sortValue;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 function getHealthColor(score: number): string {
@@ -321,6 +493,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const [processIcons, setProcessIcons] = useState<Record<number, string>>({});
   const [processIconMisses, setProcessIconMisses] = useState<Record<number, boolean>>({});
   const [isProcessExpanded, setIsProcessExpanded] = useState(false);
+  const [processSearch, setProcessSearch] = useState('');
+  const [expandedProcessGroups, setExpandedProcessGroups] = useState<Set<string>>(() => new Set());
   const historyRef = useRef<HistoryPoint[]>([]);
   const batteryHistoryRef = useRef<BatteryHistoryPoint[]>([]);
   const requestedProcessIconsRef = useRef<Set<string>>(new Set());
@@ -429,10 +603,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
     if (!metrics || !window.moleDesktop?.getProcessIcons) return;
 
     const sourceProcesses = metrics.processes?.length ? metrics.processes : metrics.top_processes ?? [];
-    const processesByCpu = [...sourceProcesses].sort((a, b) => b.cpu - a.cpu).slice(0, 32);
-    const processesByMemory = [...sourceProcesses].sort((a, b) => b.memory - a.memory).slice(0, 32);
     const processesForIcons = Array.from(
-      new Map([...processesByCpu, ...processesByMemory].map((proc) => [proc.pid, proc])).values(),
+      new Map(sourceProcesses.map((proc) => [proc.pid, proc])).values(),
     );
     const processesNeedingIcons = processesForIcons.filter((proc) => {
       const requestKey = `${proc.pid}:${proc.command ?? ''}:${proc.name}`;
@@ -514,6 +686,18 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
     }));
   };
 
+  const toggleProcessGroup = (groupId: string) => {
+    setExpandedProcessGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
   const sortIndicator = (key: ProcessSortKey) => {
     if (processSort.key !== key) return '';
     return processSort.direction === 'desc' ? ' ↓' : ' ↑';
@@ -572,38 +756,51 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const batteryCharging = battery ? isBatteryCharging(battery.status) : false;
   const batteryPredictionStroke = batteryPrediction.direction === 'down' ? '#f97316' : '#22c55e';
   const allProcesses = metrics?.processes?.length ? metrics.processes : metrics?.top_processes ?? [];
-  const orderedProcesses = [...allProcesses].sort((a, b) => {
-    const aPinned = pinnedPids.indexOf(a.pid);
-    const bPinned = pinnedPids.indexOf(b.pid);
-    if (aPinned >= 0 || bPinned >= 0) {
-      if (aPinned === -1) return 1;
-      if (bPinned === -1) return -1;
-      return aPinned - bPinned;
-    }
-    const sortValue = processSort.direction === 'desc'
-      ? b[processSort.key] - a[processSort.key]
-      : a[processSort.key] - b[processSort.key];
-    if (sortValue !== 0) return sortValue;
-    return a.pid - b.pid;
-  });
-  const topCpuProcesses = [...allProcesses]
-    .sort((a, b) => b.cpu - a.cpu)
+  const processAppGroups = buildProcessAppGroups(allProcesses, pinnedPids, processSort, processIcons, processIconMisses);
+  const normalizedProcessSearch = processSearch.trim().toLowerCase();
+  const visibleProcessAppGroups = normalizedProcessSearch
+    ? processAppGroups.filter((group) => (
+      group.name.toLowerCase().includes(normalizedProcessSearch) ||
+      group.processes.some((proc) => (
+        proc.name.toLowerCase().includes(normalizedProcessSearch) ||
+        String(proc.pid).includes(normalizedProcessSearch) ||
+        (proc.command ?? '').toLowerCase().includes(normalizedProcessSearch)
+      ))
+    ))
+    : processAppGroups;
+  const topCpuProcessGroups = [...processAppGroups]
+    .sort((a, b) => b.totalCpu - a.totalCpu)
     .slice(0, 5);
-  const topProcessCpu = topCpuProcesses.reduce((sum, proc) => sum + Math.max(proc.cpu, 0), 0);
-  const topProcessDonutData = topProcessCpu > 0 ? [
-    ...topCpuProcesses
-      .filter((proc) => proc.cpu > 0)
-    .map((proc, index) => ({
-      pid: proc.pid,
-      name: proc.name,
-      cpu: proc.cpu,
-      value: Math.max(proc.cpu, 0),
-      color: PROCESS_DONUT_COLORS[index % PROCESS_DONUT_COLORS.length],
-      topFivePercent: (Math.max(proc.cpu, 0) / topProcessCpu) * 100,
-      icon: processIcons[proc.pid],
-      iconMissing: processIconMisses[proc.pid],
+  const allProcessCpu = processAppGroups.reduce((sum, group) => sum + Math.max(group.totalCpu, 0), 0);
+  const topProcessCpu = topCpuProcessGroups.reduce((sum, group) => sum + Math.max(group.totalCpu, 0), 0);
+  const otherProcessCpu = Math.max(allProcessCpu - topProcessCpu, 0);
+  const topProcessDonutData = allProcessCpu > 0 ? [
+    ...topCpuProcessGroups
+      .filter((group) => group.totalCpu > 0)
+    .map((group) => ({
+      id: group.id,
+      name: group.name,
+      cpu: group.totalCpu,
+      value: Math.max(group.totalCpu, 0),
+      color: getProcessColor(group.name, group.icon),
+      totalPercent: (Math.max(group.totalCpu, 0) / allProcessCpu) * 100,
+      icon: group.icon,
+      iconMissing: group.iconMissing,
     })),
+    ...(otherProcessCpu > 0 ? [{
+      id: PROCESS_DONUT_OTHER_ID,
+      name: 'Other apps',
+      cpu: otherProcessCpu,
+      value: otherProcessCpu,
+      color: PROCESS_DONUT_OTHER_COLOR,
+      totalPercent: (otherProcessCpu / allProcessCpu) * 100,
+      isOther: true,
+    }] : []),
   ] : [];
+  const memoryFree = Math.max((metrics?.memory.total ?? 0) - (metrics?.memory.used ?? 0), 0);
+  const storageFree = Math.max((metrics?.disks?.[0]?.total ?? 0) - (metrics?.disks?.[0]?.used ?? 0), 0);
+  const memoryFreeLabel = formatFreeGigabytes(memoryFree, metrics?.memory.total ?? 0).replace(' Free', '');
+  const storageFreeLabel = formatFreeGigabytes(storageFree, metrics?.disks?.[0]?.total ?? 0).replace(' Free', '');
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
@@ -615,40 +812,54 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
           </Card>
         ) : metrics && (
           <div
-            className="grid h-full min-h-0 gap-2 grid-cols-[1fr_1fr_0.5fr_0.5fr]"
-            style={{ gridTemplateRows: 'repeat(2, minmax(0, 1.25fr)) repeat(2, minmax(0, 0.75fr))' }}
+            className="grid h-full min-h-0 grid-cols-4 gap-2"
+            style={{ gridTemplateRows: 'repeat(2, minmax(0, 1fr)) repeat(2, minmax(0, 0.78fr))' }}
           >
             {/* Mac Info - Row 1-2, Col 1 */}
-            <Card className={`col-span-1 row-span-2 rounded-[1.75rem] p-5 ${GLASS_CARD}`}>
-              <div className="flex h-full flex-col justify-between gap-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex min-w-0 items-start gap-4">
+            <Card className={`col-start-1 row-start-1 row-span-2 min-h-0 min-w-0 rounded-[1.75rem] p-4 ${GLASS_CARD}`}>
+              <div className="flex h-full min-h-0 flex-col justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
                     <img
                       src="./assets/images/mac-preview.png"
                       alt="Mac preview"
-                      className="mt-1 w-28 shrink-0 object-contain drop-shadow-[0_16px_24px_rgba(15,23,42,0.16)]"
+                      className="w-24 shrink-0 object-contain drop-shadow-[0_16px_24px_rgba(15,23,42,0.16)]"
                     />
-                    <div className="min-w-0">
-                      <h2 className="truncate text-xl font-bold text-slate-950">{formatMacName(metrics.host)}</h2>
-                      <p className="mt-1 text-sm font-medium text-slate-600">{metrics.hardware?.model || 'Mac'}</p>
-                      <div className="mt-5 text-sm text-slate-600">
-                        <span>Health Score</span>
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="font-medium">{metrics.health_score >= 80 ? 'Excellent' : metrics.health_score >= 60 ? 'Good' : 'Needs attention'}</span>
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: getHealthColor(metrics.health_score) }} />
-                        </div>
-                      </div>
+                    <div className="flex shrink-0 flex-col items-end text-right">
+                      <span className="text-[11px] font-semibold uppercase text-slate-500">Health</span>
+                      <span
+                        className="text-4xl font-black leading-none tracking-tight drop-shadow-[0_10px_24px_rgba(139,92,246,0.24)]"
+                        style={{ color: getHealthColor(metrics.health_score) }}
+                        aria-label={`Health score ${metrics.health_score}`}
+                      >
+                        {metrics.health_score}
+                      </span>
                     </div>
                   </div>
-                  <div
-                    className="text-5xl font-black leading-none tracking-tight drop-shadow-[0_10px_24px_rgba(139,92,246,0.28)]"
-                    style={{ color: getHealthColor(metrics.health_score) }}
-                    aria-label={`Health score ${metrics.health_score}`}
-                  >
-                    {metrics.health_score}
+
+                  <div className="mt-3 min-w-0">
+                    <h2
+                      className="overflow-hidden text-lg font-bold leading-tight text-slate-950 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                      title={formatMacName(metrics.host)}
+                    >
+                      {formatMacName(metrics.host)}
+                    </h2>
+                    <p
+                      className="mt-1 overflow-hidden text-sm font-medium leading-snug text-slate-600 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                      title={metrics.hardware?.model || 'Mac'}
+                    >
+                      {metrics.hardware?.model || 'Mac'}
+                    </p>
+                    <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-600">
+                      <span className="font-medium">Health Score</span>
+                      <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-800">
+                        <span className="truncate">{metrics.health_score >= 80 ? 'Excellent' : metrics.health_score >= 60 ? 'Good' : 'Needs attention'}</span>
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: getHealthColor(metrics.health_score) }} />
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="rounded-3xl border border-white/60 bg-white/30 px-4 text-sm shadow-inner shadow-white/30 backdrop-blur-xl">
+                <div className="min-w-0 rounded-3xl border border-white/60 bg-white/30 px-3 text-sm shadow-inner shadow-white/30 backdrop-blur-xl">
                   <DetailRow icon={Settings2} label="System" value={metrics.hardware?.os_version || 'macOS'} />
                   <DetailRow icon={Clock3} label="Uptime" value={metrics.uptime || '—'} />
                   <DetailRow icon={Battery} label="Battery" value={metrics.batteries?.[0]?.health || 'Normal'} />
@@ -696,11 +907,11 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-xl font-bold text-slate-950">Processor</div>
-                  <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.cpu.usage) }}>
+                  <div className={CARD_TOP_VALUE} style={{ color: getHeatColor(metrics.cpu.usage) }}>
                     {metrics.cpu.usage.toFixed(0)}%
                   </div>
                 </div>
-                <div className="min-h-0 flex-1 py-2">
+                <div className={`min-h-0 flex-1 py-2 ${GRAPH_EDGE_FADE}`}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                       <defs>
@@ -743,11 +954,11 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-xl font-bold text-slate-950">GPU</div>
-                  <div className="text-sm font-semibold" style={{ color: gpuUsage == null ? '#64748b' : getHeatColor(gpuUsage) }}>
+                  <div className={CARD_TOP_VALUE} style={{ color: gpuUsage == null ? '#64748b' : getHeatColor(gpuUsage) }}>
                     {gpuUsage == null ? '—' : `${gpuUsage.toFixed(0)}%`}
                   </div>
                 </div>
-                <div className="min-h-0 flex-1 py-2">
+                <div className={`min-h-0 flex-1 py-2 ${GRAPH_EDGE_FADE}`}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                       <defs>
@@ -820,12 +1031,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               <ArrowRight className="relative h-5 w-5 text-slate-500 transition-transform duration-200 group-hover:translate-x-1" />
             </button>
 
-            {/* RAM - Row 1, half Col 3 */}
+            {/* RAM - Row 1, Col 3 */}
             <Card className={`min-h-44 col-start-3 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-xl font-bold text-slate-950">RAM</div>
-                  <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.memory.used_percent) }}>
+                  <div className={CARD_TOP_VALUE} style={{ color: getHeatColor(metrics.memory.used_percent) }}>
                     {metrics.memory.used_percent.toFixed(0)}%
                   </div>
                 </div>
@@ -854,7 +1065,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                   </ResponsiveContainer>
                   {/* Center label */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-base font-bold text-slate-950 leading-none">{metrics.memory.used_percent.toFixed(0)}%</span>
+                    <span className="text-sm font-bold leading-none text-slate-950">{memoryFreeLabel}</span>
+                    <span className="mt-0.5 text-[10px] font-semibold leading-none text-slate-500">Free</span>
                   </div>
                 </div>
                 <div className="mt-auto space-y-0.5 text-center">
@@ -868,12 +1080,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               </div>
             </Card>
 
-            {/* Storage - Row 1, half Col 4 */}
+            {/* Storage - Row 1, Col 4 */}
             <Card className={`min-h-44 col-start-4 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-xl font-bold text-slate-950">Storage</div>
-                  <div className="text-sm font-semibold" style={{ color: getHeatColor(metrics.disks?.[0]?.used_percent ?? 0) }}>
+                  <div className={CARD_TOP_VALUE} style={{ color: getHeatColor(metrics.disks?.[0]?.used_percent ?? 0) }}>
                     {(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%
                   </div>
                 </div>
@@ -901,7 +1113,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-base font-bold text-slate-950 leading-none">{(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%</span>
+                    <span className="text-sm font-bold leading-none text-slate-950">{storageFreeLabel}</span>
+                    <span className="mt-0.5 text-[10px] font-semibold leading-none text-slate-500">Free</span>
                   </div>
                 </div>
                 <div className="mt-auto text-center">
@@ -910,13 +1123,13 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               </div>
             </Card>
 
-            {/* Network - Row 2, half Col 3 */}
+            {/* Network - Row 2, Col 3 */}
             <Card className={`min-h-36 col-start-3 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-xl font-bold text-slate-950">Network</div>
                 </div>
-                <div className="min-h-0 flex-1 py-2">
+                <div className={`min-h-0 flex-1 py-2 ${GRAPH_EDGE_FADE}`}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
                       <defs>
@@ -952,12 +1165,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
               </div>
             </Card>
 
-            {/* Battery - Row 2, half Col 4 */}
+            {/* Battery - Row 2, Col 4 */}
             <Card className={`min-h-36 col-start-4 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-xl font-bold text-slate-950">Battery</div>
-                  <div className="text-sm font-semibold text-emerald-500">{batteryPercent == null ? '—' : `${batteryPercent.toFixed(0)}%`}</div>
+                  <div className={`${CARD_TOP_VALUE} text-emerald-500`}>{batteryPercent == null ? '—' : `${batteryPercent.toFixed(0)}%`}</div>
                 </div>
                 <div className="relative min-h-0 flex-1 py-2">
                   {batteryCharging && (
@@ -965,8 +1178,9 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                       <Zap className="h-4 w-4 fill-emerald-400/30" aria-hidden="true" />
                     </div>
                   )}
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 14 }}>
+                  <div className="relative h-full overflow-hidden">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={batteryChartHistory} margin={{ top: 2, right: 0, left: 0, bottom: 14 }}>
                       <defs>
                         <linearGradient id="batteryGrad" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
@@ -1023,8 +1237,11 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                         isAnimationActive={false}
                         connectNulls
                       />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                    <div className="pointer-events-none absolute bottom-5 left-0 top-0 w-7 bg-gradient-to-r from-white/55 to-transparent" />
+                    <div className="pointer-events-none absolute bottom-5 right-0 top-0 w-7 bg-gradient-to-l from-white/55 to-transparent" />
+                  </div>
                 </div>
                 <div className="mt-auto flex flex-col gap-0.5 text-xs font-medium text-slate-500">
                   <div className="truncate">{batteryPrediction.label}</div>
@@ -1034,8 +1251,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             </Card>
 
             {/* Processes - Row 3-4, All Columns */}
-            <Card className={`relative col-span-4 row-start-3 row-span-2 min-h-0 rounded-[1.75rem] overflow-visible ${isProcessExpanded ? 'z-40' : 'z-0'} ${GLASS_CARD}`}>
-              <div className={`absolute inset-x-0 bottom-0 grid grid-cols-[20rem_minmax(0,1fr)] gap-4 rounded-[1.75rem] border border-white/60 p-4 transition-[height,background-color,box-shadow] duration-300 ease-out ${isProcessExpanded ? 'h-[calc(100%+18rem)] max-h-[calc(100vh-1rem)] bg-white/90 shadow-[0_24px_80px_rgba(15,23,42,0.16)] backdrop-blur-2xl' : 'h-full bg-white/20 shadow-[0_18px_58px_rgba(109,93,252,0.12)] backdrop-blur-2xl'}`}>
+            <Card className={`relative col-span-4 row-start-3 row-span-2 min-h-0 rounded-[1.75rem] overflow-visible ${isProcessExpanded ? 'z-40' : 'z-0'} ${GLASS_CARD} bg-transparent`}>
+              <div className={`absolute inset-x-0 bottom-0 grid grid-cols-[20rem_minmax(0,1fr)] gap-4 rounded-[1.75rem] border border-white/60 p-4 transition-[height,background-color,box-shadow] duration-300 ease-out ${isProcessExpanded ? 'h-[calc(100%+18rem)] max-h-[calc(100vh-1rem)] bg-white/90 shadow-[0_24px_80px_rgba(15,23,42,0.16)] backdrop-blur-2xl' : 'h-full bg-white/35 shadow-[0_18px_58px_rgba(109,93,252,0.12)] backdrop-blur-2xl'}`}>
                 <div className="relative flex min-h-0 overflow-visible p-1">
                   <div className="relative h-full min-h-0 flex-1">
                     {topProcessDonutData.length > 0 ? (
@@ -1046,8 +1263,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                               data={topProcessDonutData}
                               cx="50%"
                               cy="50%"
-                              innerRadius="46%"
-                              outerRadius="82%"
+                              innerRadius="42%"
+                              outerRadius="70%"
                               paddingAngle={3}
                               cornerRadius={8}
                               dataKey="value"
@@ -1058,15 +1275,15 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                               isAnimationActive={false}
                             >
                               {topProcessDonutData.map((proc) => (
-                                <Cell key={proc.pid} fill={proc.color} />
+                                <Cell key={proc.id} fill={proc.color} />
                               ))}
                             </Pie>
                           </PieChart>
                         </ResponsiveContainer>
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full border border-white/70 bg-white/80 text-center shadow-[0_18px_42px_rgba(15,23,42,0.12)] backdrop-blur-xl">
-                            <span className="text-sm font-black text-slate-950">{topProcessCpu.toFixed(0)}</span>
-                            <span className="mt-1 text-xs font-semibold text-slate-500">CPU</span>
+                          <div className="flex flex-col items-center justify-center text-center">
+                            <span className="text-2xl font-black leading-none text-slate-950">{allProcesses.length}</span>
+                            <span className="mt-1 text-xs font-semibold text-slate-500">Processes</span>
                           </div>
                         </div>
                       </>
@@ -1076,9 +1293,33 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                   </div>
                 </div>
                 <div className="flex min-h-0 flex-col">
-                  <div className="mb-2 grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-end gap-3 px-2">
-                    <div className="text-xl font-bold text-slate-950">All Processes</div>
-                    <div className="grid grid-cols-2 items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="mb-2 flex items-center justify-between gap-3 px-2">
+                    <div className="text-xl font-bold text-slate-950">Apps & Processes</div>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <label className="relative min-w-0 w-[18rem]" aria-label="Search processes">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                      <input
+                        type="search"
+                        value={processSearch}
+                        onChange={(event) => setProcessSearch(event.target.value)}
+                        placeholder="Search processes"
+                        className="h-8 w-full rounded-full border border-slate-300 bg-slate-100/80 pl-8 pr-3 text-xs font-semibold text-slate-700 outline-none backdrop-blur-xl placeholder:text-slate-500 focus:border-slate-400 focus:bg-slate-100 focus:ring-2 focus:ring-violet-500/20"
+                      />
+                      </label>
+                      <button
+                        type="button"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center text-slate-600 transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                        aria-label={isProcessExpanded ? 'Collapse all processes' : 'Expand all processes'}
+                        aria-expanded={isProcessExpanded}
+                        onClick={() => setIsProcessExpanded((expanded) => !expanded)}
+                      >
+                        {!isProcessExpanded ? <ChevronUp className="h-5 w-5" aria-hidden="true" /> : <ChevronDown className="h-5 w-5" aria-hidden="true" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mb-1 grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <span />
+                    <div className="grid grid-cols-2 items-center gap-3">
                       <button
                         type="button"
                         className="text-left transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
@@ -1096,52 +1337,98 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                         MEM{sortIndicator('memory')}
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/70 bg-white/70 text-slate-600 shadow-sm transition hover:bg-white hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-                      aria-label={isProcessExpanded ? 'Collapse all processes' : 'Expand all processes'}
-                      aria-expanded={isProcessExpanded}
-                      onClick={() => setIsProcessExpanded((expanded) => !expanded)}
-                    >
-                      {isProcessExpanded ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
-                    </button>
+                    <span />
                   </div>
                   <div className="flex-1 overflow-auto pr-1 custom-scrollbar">
-                    {orderedProcesses.map((proc, idx) => {
-                      const cpuBar = Math.min(proc.cpu, 100);
-                      const isPinned = pinnedPids.includes(proc.pid);
+                    {visibleProcessAppGroups.length === 0 ? (
+                      <div className="flex h-full items-center justify-center text-sm font-medium text-slate-500">No matching processes</div>
+                    ) : visibleProcessAppGroups.map((group, idx) => {
+                      const cpuBar = Math.min(group.totalCpu, 100);
+                      const appColor = getProcessColor(group.name, group.icon);
+                      const isExpanded = expandedProcessGroups.has(group.id);
+                      const canExpand = group.processes.length > 1;
+                      const primaryProcess = group.processes[0];
+                      const groupMeta = canExpand ? `${group.processes.length} processes` : `PID ${primaryProcess.pid}`;
                       return (
-                        <div
-                          key={proc.pid}
-                          className="grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 border-b border-slate-900/10 px-2 py-1.5 last:border-b-0 hover:rounded-xl hover:bg-violet-500/10"
-                          onContextMenu={(event) => handleProcessContextMenu(event, proc)}
-                        >
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <span className={`w-5 shrink-0 text-center text-xs font-bold tabular-nums ${isPinned ? 'text-violet-600' : 'text-slate-400'}`}>{idx + 1}</span>
-                            <ProcessAppIcon process={proc} icon={processIcons[proc.pid]} iconMissing={processIconMisses[proc.pid]} />
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-medium text-slate-700">{proc.name}</div>
-                              <div className="text-[11px] font-medium text-slate-400">PID {proc.pid}</div>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 items-center gap-3 text-xs">
-                            <div className="flex items-center gap-2 text-violet-600" aria-label={`${proc.cpu.toFixed(1)} percent CPU`}>
-                              <span className="h-1.5 w-10 overflow-hidden rounded-full bg-slate-900/5">
-                                <span className="block h-full rounded-full bg-violet-500" style={{ width: `${cpuBar}%` }} />
-                              </span>
-                              <span className="font-semibold tabular-nums">{proc.cpu.toFixed(0)}</span>
-                            </div>
-                            <span className="font-medium tabular-nums text-slate-500">{proc.memory.toFixed(1)}%</span>
-                          </div>
-                          <button
-                            type="button"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-900/10 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-                            aria-label={`Open actions for ${proc.name}`}
-                            aria-haspopup="menu"
-                            onClick={(event) => handleProcessMenuButton(event, proc)}
+                        <div key={group.id} className="border-b border-slate-900/10 last:border-b-0">
+                          <div
+                            className="grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 px-2 py-1.5 hover:rounded-xl hover:bg-violet-500/10"
+                            onContextMenu={(event) => handleProcessContextMenu(event, primaryProcess)}
                           >
-                            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                          </button>
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <span className="h-5 w-1 shrink-0 rounded-full" style={{ backgroundColor: appColor }} aria-hidden="true" />
+                              <span className={`w-5 shrink-0 text-center text-xs font-bold tabular-nums ${group.pinnedRank >= 0 ? 'text-violet-600' : 'text-slate-400'}`}>{idx + 1}</span>
+                              <button
+                                type="button"
+                                className="flex h-7 w-7 shrink-0 items-center justify-center text-slate-500 transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:opacity-35"
+                                aria-label={isExpanded ? `Hide processes for ${group.name}` : `Show processes for ${group.name}`}
+                                aria-expanded={canExpand ? isExpanded : undefined}
+                                disabled={!canExpand}
+                                onClick={() => toggleProcessGroup(group.id)}
+                              >
+                                {isExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+                              </button>
+                              <ProcessAppIcon process={group.iconProcess} icon={group.icon} iconMissing={group.iconMissing} />
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-slate-800" title={group.name}>{group.name}</div>
+                                <div className="text-[11px] font-medium text-slate-400">{groupMeta}</div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 items-center gap-3 text-xs">
+                              <div className="flex items-center gap-2" style={{ color: appColor }} aria-label={`${group.totalCpu.toFixed(1)} percent CPU`}>
+                                <span className="h-1.5 w-10 overflow-hidden rounded-full bg-slate-900/5">
+                                  <span className="block h-full rounded-full" style={{ width: `${cpuBar}%`, backgroundColor: appColor }} />
+                                </span>
+                                <span className="font-semibold tabular-nums">{group.totalCpu.toFixed(1)}%</span>
+                              </div>
+                              <span className="font-medium tabular-nums text-slate-500">{formatProcessMemory(group.totalMemory)}</span>
+                            </div>
+                            {canExpand ? (
+                              <span className="h-7 w-7" aria-hidden="true" />
+                            ) : (
+                              <button
+                                type="button"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-900/10 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                                aria-label={`Open actions for ${primaryProcess.name}`}
+                                aria-haspopup="menu"
+                                onClick={(event) => handleProcessMenuButton(event, primaryProcess)}
+                              >
+                                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            )}
+                          </div>
+                          {isExpanded && canExpand && (
+                            <div className="pb-1 pl-12">
+                              {group.processes.map((proc) => (
+                                <div
+                                  key={proc.pid}
+                                  className="grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-white/50"
+                                  onContextMenu={(event) => handleProcessContextMenu(event, proc)}
+                                >
+                                  <div className="flex min-w-0 items-center gap-2.5">
+                                    <ProcessAppIcon process={proc} icon={processIcons[proc.pid] ?? group.icon} iconMissing={processIconMisses[proc.pid] ?? group.iconMissing} />
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium text-slate-700" title={proc.name}>{proc.name}</div>
+                                      <div className="text-[11px] font-medium text-slate-400">PID {proc.pid}</div>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 items-center gap-3 text-xs">
+                                    <span className="font-semibold tabular-nums" style={{ color: appColor }}>{proc.cpu.toFixed(1)}%</span>
+                                    <span className="font-medium tabular-nums text-slate-500">{formatProcessMemory(getProcessMemoryValue(proc))}</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-900/10 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                                    aria-label={`Open actions for ${proc.name}`}
+                                    aria-haspopup="menu"
+                                    onClick={(event) => handleProcessMenuButton(event, proc)}
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1149,7 +1436,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                 </div>
               </div>
             </Card>
-            {processMenu && (
+            {processMenu && createPortal(
               <div
                 role="menu"
                 className="fixed z-50 max-h-[calc(100vh-1rem)] overflow-auto rounded-2xl border border-slate-900/10 bg-white/95 p-1.5 text-left text-sm font-semibold text-slate-800 shadow-[0_18px_56px_rgba(15,23,42,0.18)] backdrop-blur-2xl"
@@ -1168,7 +1455,8 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
                 <div className="my-1 h-px bg-slate-900/10" />
                 <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100" onClick={() => runProcessAction('terminate')}>Terminate</button>
                 <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100" onClick={() => runProcessAction('force-quit')}>Force Quit</button>
-              </div>
+              </div>,
+              document.body,
             )}
           </div>
         )}

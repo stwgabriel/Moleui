@@ -32,7 +32,7 @@ apps/desktop/
 │   │   ├── UninstallPage.tsx
 │   │   ├── OptimizePage.tsx
 │   │   ├── AnalyzePage.tsx
-│   │   └── StatusPage.tsx
+│   │   └── MyMacPage.tsx
 │   ├── hooks/               # Custom React hooks
 │   ├── utils/               # Utility functions
 │   │   ├── cn.ts           # Class name merger
@@ -113,7 +113,7 @@ Each page is a self-contained component:
 - **UninstallPage** - App uninstaller
 - **OptimizePage** - System optimization
 - **AnalyzePage** - Disk analysis
-- **StatusPage** - System monitoring
+- **MyMacPage** - System monitoring with grouped app/process activity
 
 ## Styling with Tailwind
 
@@ -250,7 +250,7 @@ This is a complete rewrite from vanilla JavaScript to React + TypeScript + Tailw
 - 🚧 **UninstallPage** - Structure ready, needs implementation
 - 🚧 **OptimizePage** - Structure ready, needs implementation
 - 🚧 **AnalyzePage** - Structure ready, needs implementation
-- 🚧 **StatusPage** - Structure ready, needs implementation
+- ✅ **MyMacPage** - System monitoring with grouped app/process activity
 
 ## Contributing
 

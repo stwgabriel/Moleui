@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { cn } from '@/utils/cn';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { CliMonitorWindow } from '@/components/developer/CliMonitorWindow';
 import { SettingsWindow } from '@/components/settings/SettingsWindow';
 import { HomePage } from '@/pages/HomePage';
 import { MyMacPage } from '@/pages/MyMacPage';
@@ -25,7 +26,9 @@ function PageLoadingFallback() {
 }
 
 function App() {
-  const isSettingsWindow = new URLSearchParams(window.location.search).get('window') === 'settings';
+  const windowMode = new URLSearchParams(window.location.search).get('window');
+  const isSettingsWindow = windowMode === 'settings';
+  const isDeveloperWindow = windowMode === 'developer';
   const [currentPage, setCurrentPage] = useState<PageId>('home');
   const [animationDirection, setAnimationDirection] = useState<'left' | 'right'>('left');
   const [isInitialized, setIsInitialized] = useState(false);
@@ -98,6 +101,10 @@ function App() {
 
   if (isSettingsWindow) {
     return <SettingsWindow />;
+  }
+
+  if (isDeveloperWindow) {
+    return <CliMonitorWindow />;
   }
 
   return (

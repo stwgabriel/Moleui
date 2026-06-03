@@ -1,5 +1,18 @@
 # Desktop App Changelog
 
+## [0.11.0] - 2026-05-31
+
+### Added
+- Added app-grouped process monitoring on My Mac, with expandable process details and search across apps, PIDs, and commands.
+- Added richer process and uninstall app icon resolution using bundle metadata, Spotlight matches, application indexing, and generated fallback icons.
+
+### Changed
+- Refined the My Mac dashboard into equal-width metric columns with tighter Mac details, edge-faded charts, and free-space labels for RAM and storage.
+- Refined Clean and Uninstall page spacing so the main visual controls sit more naturally in the desktop layout.
+
+### Fixed
+- Fixed process icon fetching to request icons for all visible processes instead of only the highest CPU and memory rows.
+
 ## [0.10.0] - 2026-05-23
 
 ### Added

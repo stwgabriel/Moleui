@@ -939,6 +939,32 @@ EOF
 	[[ "$output" == *"SIZE=0"* ]]
 }
 
+@test "clean_project_artifacts: dry-run emits parseable item lines without a TTY" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+mkdir -p "$HOME/.cache/mole"
+echo "0" > "$HOME/.cache/mole/purge_stats"
+
+mkdir -p "$HOME/www/test-project/node_modules"
+dd if=/dev/zero of="$HOME/www/test-project/node_modules/file.bin" bs=1024 count=64 2>/dev/null
+touch "$HOME/www/test-project/package.json"
+touch -t 202001010101 "$HOME/www/test-project/node_modules/file.bin" "$HOME/www/test-project/node_modules" "$HOME/www/test-project/package.json" "$HOME/www/test-project"
+
+PURGE_SEARCH_PATHS=("$HOME/www")
+export MOLE_DRY_RUN=1
+clean_project_artifacts </dev/null
+
+[[ -d "$HOME/www/test-project/node_modules" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"[DRY RUN] ~/www/test-project/node_modules"* ]]
+	[[ "$output" == *"64"* ]]
+}
+
 @test "clean_project_artifacts: scans and finds artifacts" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"

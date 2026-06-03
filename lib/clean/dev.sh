@@ -506,11 +506,9 @@ clean_xcode_documentation_cache() {
     fi
 
     if ! has_sudo_session; then
-        if ! ensure_sudo_session "Cleaning Xcode documentation cache requires admin access"; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode documentation cache cleanup skipped (sudo denied)"
-            note_activity
-            return 0
-        fi
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode documentation cache cleanup skipped (sudo denied)"
+        note_activity
+        return 0
     fi
 
     local removed_count=0
@@ -796,11 +794,9 @@ clean_xcode_simulator_runtime_volumes() {
     fi
 
     if ! has_sudo_session; then
-        if ! ensure_sudo_session "Cleaning Xcode runtime volumes requires admin access"; then
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode runtime volumes · skipped (sudo denied)"
-            note_activity
-            return 0
-        fi
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode runtime volumes · skipped (sudo denied)"
+        note_activity
+        return 0
     fi
 
     # Perform cleanup and report final result in one line

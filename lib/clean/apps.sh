@@ -709,11 +709,13 @@ clean_orphaned_system_services() {
                     continue
                 fi
 
-                local file_size_kb
-                file_size_kb=$(sudo du -skP "$orphan_file" 2> /dev/null | awk '{print $1}' || echo "0")
+                local file_size_kb=0
+                if has_sudo_session; then
+                    file_size_kb=$(sudo du -skP "$orphan_file" 2> /dev/null | awk '{print $1}' || echo "0")
+                fi
 
                 # Unload if it's a LaunchDaemon/LaunchAgent
-                if [[ "$orphan_file" == *.plist ]]; then
+                if [[ "$orphan_file" == *.plist ]] && has_sudo_session; then
                     sudo launchctl unload "$orphan_file" 2> /dev/null || true
                 fi
                 if safe_sudo_remove "$orphan_file"; then

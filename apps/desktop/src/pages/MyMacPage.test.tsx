@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { getBatteryChartData, getBatteryPrediction } from '@/utils/batteryPrediction';
 import type { SystemMetrics } from '@/types';
 import { MyMacPage } from './MyMacPage';
@@ -24,6 +24,13 @@ function metricsWithBattery(percent: number, status: string, timeLeft?: string):
     gpu: [],
     processes: [],
     health_score: 92,
+  };
+}
+
+function metricsWithProcesses(processes: NonNullable<SystemMetrics['processes']>): SystemMetrics {
+  return {
+    ...metricsWithBattery(60, 'discharging'),
+    processes,
   };
 }
 
@@ -75,15 +82,23 @@ describe('getBatteryPrediction', () => {
   });
 });
 
-function findCard(label: string): HTMLElement {
-  let element = screen.getByText(label).parentElement;
+function findCard(label: string, matchingClass?: string): HTMLElement {
+  const cards = screen.getAllByText(label).map((textElement) => {
+    let element = textElement.parentElement;
 
-  while (element && !element.className.includes('bg-white/45')) {
-    element = element.parentElement;
-  }
+    while (element && !element.className.includes('bg-white/45')) {
+      element = element.parentElement;
+    }
 
-  if (!element) throw new Error(`Card not found for ${label}`);
-  return element;
+    return element;
+  }).filter((element): element is HTMLElement => Boolean(element));
+
+  const card = matchingClass
+    ? cards.find((element) => element.className.includes(matchingClass))
+    : cards[0];
+
+  if (!card) throw new Error(`Card not found for ${label}`);
+  return card;
 }
 
 function mockLocalStorage() {
@@ -113,6 +128,7 @@ function mockMoleDesktop(metrics: SystemMetrics) {
     deletePath: vi.fn(),
     openActivityMonitor: vi.fn(),
     signalProcess: vi.fn(),
+    getProcessIcons: vi.fn().mockResolvedValue({ ok: true, icons: {}, missing: [] }),
     runStatus: vi.fn().mockResolvedValue({
       ok: true,
       command: 'mo status --json',
@@ -166,19 +182,97 @@ describe('MyMacPage layout', () => {
     mockMoleDesktop(metricsWithBattery(60, 'discharging'));
   });
 
-  it('gives Mac info and processor full columns while RAM and storage split one column', async () => {
+  it('lays out Mac info and metrics on equal-width dashboard columns', async () => {
     render(<MyMacPage onNavigate={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByText('Processor')).toBeInTheDocument());
 
+    const macInfoCard = findCard('Health Score');
     const processorCard = findCard('Processor');
     const ramCard = findCard('RAM');
     const storageCard = findCard('Storage');
+    const gpuCard = findCard('GPU');
+    const networkCard = findCard('Network');
+    const batteryCard = findCard('Battery', 'row-start-2');
     const metricsGrid = processorCard.parentElement;
 
-    expect(metricsGrid).toHaveClass('grid-cols-[1fr_1fr_0.5fr_0.5fr]');
+    expect(metricsGrid).toHaveClass('grid-cols-4');
+    expect(macInfoCard).toHaveClass('col-start-1', 'row-span-2');
     expect(processorCard).toHaveClass('col-start-2');
     expect(ramCard).toHaveClass('col-start-3');
     expect(storageCard).toHaveClass('col-start-4');
+    expect(gpuCard).toHaveClass('col-start-2', 'row-start-2');
+    expect(networkCard).toHaveClass('col-start-3', 'row-start-2');
+    expect(batteryCard).toHaveClass('col-start-4', 'row-start-2');
+  });
+
+  it('requests icons for every process so lower-ranked rows can receive app artwork', async () => {
+    const processes = Array.from({ length: 40 }, (_, index) => ({
+      name: `Process ${index + 1}`,
+      pid: 3000 + index,
+      cpu: 40 - index,
+      memory: 40 - index,
+      command: `/Applications/Process ${index + 1}.app/Contents/MacOS/Process ${index + 1}`,
+    }));
+    mockMoleDesktop(metricsWithProcesses(processes));
+
+    render(<MyMacPage onNavigate={vi.fn()} />);
+
+    const getProcessIcons = vi.mocked(window.moleDesktop.getProcessIcons!);
+    await waitFor(() => expect(getProcessIcons).toHaveBeenCalled());
+
+    const firstIconRequest = getProcessIcons.mock.calls[0];
+    expect(firstIconRequest).toBeDefined();
+    const requestedProcesses = firstIconRequest![0];
+    expect(requestedProcesses).toHaveLength(40);
+    expect(requestedProcesses).toEqual(expect.arrayContaining([
+      expect.objectContaining({ pid: 3039 }),
+    ]));
+  });
+
+  it('groups related processes by app and expands to show each process amount', async () => {
+    mockMoleDesktop(metricsWithProcesses([
+      {
+        name: 'Example',
+        pid: 4201,
+        cpu: 7,
+        memory: 2.5,
+        memory_bytes: 100 * 1024 * 1024,
+        command: '/Applications/Example.app/Contents/MacOS/Example',
+      },
+      {
+        name: 'Example Helper',
+        pid: 4202,
+        cpu: 18,
+        memory: 4.5,
+        memory_bytes: 200 * 1024 * 1024,
+        command: '/Applications/Example.app/Contents/Frameworks/Example Helper.app/Contents/MacOS/Example Helper',
+      },
+      {
+        name: 'Safari',
+        pid: 4301,
+        cpu: 4,
+        memory: 1.5,
+        memory_bytes: 50 * 1024 * 1024,
+        command: '/Applications/Safari.app/Contents/MacOS/Safari',
+      },
+    ]));
+
+    render(<MyMacPage onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Apps & Processes')).toBeInTheDocument());
+
+    expect(screen.getAllByText('Example').length).toBeGreaterThan(0);
+    expect(screen.getByText('25.0%')).toBeInTheDocument();
+    expect(screen.getByText('300 MB')).toBeInTheDocument();
+    expect(screen.getByText('2 processes')).toBeInTheDocument();
+    expect(screen.queryByText('Example Helper')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show processes for Example' }));
+
+    expect(screen.getByText('Example Helper')).toBeInTheDocument();
+    expect(screen.getByText('PID 4202')).toBeInTheDocument();
+    expect(screen.getByText('18.0%')).toBeInTheDocument();
+    expect(screen.getByText('200 MB')).toBeInTheDocument();
   });
 });

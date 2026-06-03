@@ -491,7 +491,16 @@ func renderProcessCard(procs []ProcessInfo) cardData {
 		}
 		name := shorten(p.Name, 12)
 		cpuBar := miniBar(p.CPU)
-		lines = append(lines, fmt.Sprintf("%-12s  %s  %5.1f%%", name, cpuBar, p.CPU))
+		hint := ""
+		if p.MemoryBytes > 0 {
+			hint = " " + humanBytesCompact(p.MemoryBytes)
+		} else if p.Memory >= 10 {
+			hint = fmt.Sprintf(" M%.0f%%", p.Memory)
+		}
+		if p.CPU >= cpuHighThreshold {
+			hint += " hot"
+		}
+		lines = append(lines, fmt.Sprintf("%-12s  %s  %5.1f%%%s", name, cpuBar, p.CPU, hint))
 	}
 	if len(lines) == 0 {
 		lines = append(lines, subtleStyle.Render("No data"))

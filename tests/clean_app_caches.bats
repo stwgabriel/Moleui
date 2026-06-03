@@ -442,3 +442,18 @@ EOF
     [[ "$output" == *"Stremio cache"* ]]
     [[ "$output" == *"Stremio server cache"* ]]
 }
+
+@test "clean_launcher_apps does not touch Raycast cache" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+mkdir -p "$HOME/Library/Caches/com.raycast.macos/urlcache"
+mkdir -p "$HOME/Library/Caches/com.raycast.macos/fsCachedData"
+safe_clean() { echo "CLEAN:$2|$1"; }
+clean_launcher_apps
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Raycast"* ]] && [[ "$output" != *"raycast"* ]]
+}

@@ -26,7 +26,7 @@ brew install --cask moleui
 - **Uninstall**: Completely remove apps and all their traces
 - **Optimize**: Tune system settings and run maintenance tasks
 - **Analyze**: Visualize disk usage and find large files instantly
-- **Status**: Live CPU, memory, disk, and network monitoring
+- **My Mac**: Live CPU, memory, disk, network, battery, and grouped app/process monitoring
 
 ## Usage
 

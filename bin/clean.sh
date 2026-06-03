@@ -887,9 +887,29 @@ safe_clean() {
     return 0
 }
 
+clean_run_may_need_sudo() {
+    [[ -n "$EXTERNAL_VOLUME_TARGET" || "$DRY_RUN" == "true" ]] && return 1
+
+    if [[ ${#SELECTED_CLEAN_SECTIONS[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local section
+    for section in "${SELECTED_CLEAN_SECTIONS[@]}"; do
+        case "$section" in
+            "System" | "User essentials" | "Developer tools" | "App leftovers")
+                return 0
+                ;;
+        esac
+    done
+
+    return 1
+}
+
 start_cleanup() {
     # Set current command for operation logging
     export MOLE_CURRENT_COMMAND="clean"
+    export MOLE_CLEAN_SUDO_AVAILABLE="false"
     log_operation_session_start "clean"
     DRY_RUN_SEEN_IDENTITIES=()
 
@@ -949,12 +969,19 @@ EOF
     fi
 
     if [[ -t 0 ]]; then
+        if ! clean_run_may_need_sudo; then
+            SYSTEM_CLEAN=false
+            echo ""
+            return 0
+        fi
+
         if has_sudo_session; then
             SYSTEM_CLEAN=true
+            export MOLE_CLEAN_SUDO_AVAILABLE="true"
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
             echo ""
         else
-            echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+            echo -ne "${PURPLE}${ICON_ARROW}${NC} Cleanup can use admin access. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
 
             local choice
             choice=$(read_key)
@@ -971,8 +998,9 @@ EOF
                 SYSTEM_CLEAN=false
             elif [[ "$choice" == "ENTER" ]]; then
                 printf "\r\033[K" # Clear the prompt line
-                if ensure_sudo_session "System cleanup requires admin access"; then
+                if ensure_sudo_session "Cleanup requires admin access"; then
                     SYSTEM_CLEAN=true
+                    export MOLE_CLEAN_SUDO_AVAILABLE="true"
                     echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
                     echo ""
                 else
@@ -991,7 +1019,12 @@ EOF
         echo "Running in non-interactive mode"
         if has_sudo_session; then
             SYSTEM_CLEAN=true
+            export MOLE_CLEAN_SUDO_AVAILABLE="true"
             echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"
+        elif clean_run_may_need_sudo && ensure_sudo_session "Cleanup requires admin access"; then
+            SYSTEM_CLEAN=true
+            export MOLE_CLEAN_SUDO_AVAILABLE="true"
+            echo "  ${ICON_LIST} System-level cleanup enabled, admin access granted"
         else
             SYSTEM_CLEAN=false
             echo "  ${ICON_LIST} System-level cleanup skipped, requires sudo"

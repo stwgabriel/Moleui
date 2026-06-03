@@ -643,6 +643,135 @@ export function CleanPage() {
     }));
   };
 
+  const runCleanGroups = async (cleanGroups: CleanupGroup[], dryRun: boolean) => {
+    if (cleanGroups.length === 0) return true;
+
+    const cleanSections = cleanGroups.flatMap((group) => group.sections ?? []);
+    const cleanGroupIds = new Set(cleanGroups.map((group) => group.id));
+    const output: string[] = [];
+    let currentSection = '';
+    let currentGroupId = cleanGroups[0]?.id ?? '';
+    streamLineIndexRef.current = 0;
+    activeGroupRef.current = currentGroupId;
+
+    setGroups((previous) => previous.map((group) => {
+      if (!cleanGroupIds.has(group.id)) return group;
+      return {
+        ...group,
+        status: group.id === currentGroupId ? (dryRun ? 'active' : 'cleaning') : 'pending',
+        logs: [],
+        ...(dryRun ? { items: [], size: 0, fileCount: 0, selected: false, expanded: false } : {}),
+      };
+    }));
+    setCurrentScanItem(dryRun ? 'Scanning cleanup sections...' : 'Cleaning selected cleanup sections...');
+    appendLog(currentGroupId, `$ mo clean${dryRun ? ' --dry-run' : ''}${cleanSections.map((section) => ` --section "${section}"`).join('')}`);
+
+    const findGroupForSection = (section: string) => cleanGroups.find((group) => group.sections?.includes(section));
+
+    window.moleDesktop.clean.removeListeners();
+    window.moleDesktop.clean.onStdout((text) => {
+      output.push(text);
+      const parsedItemsByGroup = new Map<string, CleanupItem[]>();
+      let liveSizeDelta = 0;
+      let nextScanItem = '';
+
+      for (const rawLine of stripAnsi(text).split('\n')) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        const sectionMatch = line.match(/^[→▸➤]\s+(.+?)$/);
+        if (sectionMatch && CLEAN_SECTION_NAMES.has(sectionMatch[1].trim())) {
+          currentSection = sectionMatch[1].trim();
+          const sectionGroup = findGroupForSection(currentSection);
+          if (sectionGroup) {
+            currentGroupId = sectionGroup.id;
+            activeGroupRef.current = sectionGroup.id;
+            setGroups((previous) => previous.map((group) => {
+              if (!cleanGroupIds.has(group.id)) return group;
+              if (group.id === sectionGroup.id) return { ...group, status: dryRun ? 'active' : 'cleaning' };
+              return group.status === 'active' || group.status === 'cleaning' ? { ...group, status: 'pending' } : group;
+            }));
+          }
+          setCurrentScanItem(`Scanning ${currentSection}...`);
+          continue;
+        }
+
+        const currentGroup = findGroupForSection(currentSection);
+        if (!currentGroup) continue;
+        appendLog(currentGroup.id, line);
+        streamLineIndexRef.current += 1;
+        const item = parseCleanableLine(currentGroup, line, currentSection, streamLineIndexRef.current);
+        if (dryRun && item) {
+          parsedItemsByGroup.set(currentGroup.id, [...(parsedItemsByGroup.get(currentGroup.id) ?? []), item]);
+          liveSizeDelta += item.size;
+          nextScanItem = item.label;
+        } else if (dryRun && !isSummaryLine(line) && !isSkippedLine(line)) {
+          nextScanItem = cleanDisplayLine(line);
+        }
+      }
+
+      if (dryRun && parsedItemsByGroup.size > 0) {
+        setLiveScanSize((previous) => previous + liveSizeDelta);
+        setGroups((previous) => previous.map((currentGroup) => {
+          const parsedItems = parsedItemsByGroup.get(currentGroup.id);
+          if (!parsedItems) return currentGroup;
+          const existingLines = new Set(currentGroup.items.map((existing) => existing.sourceLine));
+          const uniqueItems = parsedItems.filter((item) => !existingLines.has(item.sourceLine));
+          if (uniqueItems.length === 0) return currentGroup;
+          const items = [...currentGroup.items, ...uniqueItems];
+          const size = items.reduce((sum, nextItem) => sum + nextItem.size, 0);
+          return {
+            ...currentGroup,
+            items,
+            size,
+            fileCount: items.length,
+            selected: true,
+            expanded: false,
+            status: 'active',
+          };
+        }));
+      }
+
+      if (dryRun && nextScanItem) setCurrentScanItem(nextScanItem);
+    });
+    window.moleDesktop.clean.onStderr((text) => appendLog(currentGroupId, text, 'error'));
+
+    const result = await window.moleDesktop.clean.execute({
+      command: 'clean',
+      dryRun,
+      sections: cleanSections,
+    });
+
+    window.moleDesktop.clean.removeListeners();
+
+    if (result.killed) {
+      setGroups((previous) => previous.map((group) => cleanGroupIds.has(group.id) ? { ...group, status: 'error' } : group));
+      appendLog(currentGroupId, 'Cancelled by user', 'error');
+      return false;
+    }
+
+    const emptyDryRun = dryRun && result.exitCode === 2;
+    if (!result.ok && !emptyDryRun) {
+      setGroups((previous) => previous.map((group) => cleanGroupIds.has(group.id) ? { ...group, status: 'error' } : group));
+      appendLog(currentGroupId, result.stderr || 'Command failed', 'error');
+      return false;
+    }
+
+    if (dryRun) {
+      for (const group of cleanGroups) {
+        const parsed = parseCleanableItems(group, output.join('') || result.stdout);
+        patchGroup(group.id, parsed);
+        appendLog(group.id, parsed.items.length > 0 ? `Found ${formatBytes(parsed.size)} cleanable` : 'No cleanable items found', parsed.items.length > 0 ? 'success' : 'info');
+      }
+      return true;
+    }
+
+    setGroups((previous) => previous.map((group) => cleanGroupIds.has(group.id) ? { ...group, status: 'complete' } : group));
+    for (const group of cleanGroups) appendLog(group.id, 'Cleanup complete', 'success');
+    setCleanedSize((previous) => previous + cleanGroups.reduce((sum, group) => sum + group.items.filter((item) => item.selected).reduce((itemSum, item) => itemSum + item.size, 0), 0));
+    return true;
+  };
+
   const runGroup = async (group: CleanupGroup, dryRun: boolean) => {
     activeGroupRef.current = group.id;
     streamLineIndexRef.current = 0;
@@ -658,6 +787,9 @@ export function CleanPage() {
     window.moleDesktop.clean.onStdout((text) => {
       output.push(text);
       appendLog(group.id, text);
+      const parsedItems: CleanupItem[] = [];
+      let liveSizeDelta = 0;
+      let nextScanItem = '';
 
       for (const rawLine of stripAnsi(text).split('\n')) {
         const line = rawLine.trim();
@@ -673,24 +805,35 @@ export function CleanPage() {
         streamLineIndexRef.current += 1;
         const item = parseCleanableLine(group, line, currentSection, streamLineIndexRef.current);
         if (dryRun && item) {
-          setLiveScanSize((previous) => previous + item.size);
-          setCurrentScanItem(item.label);
-          patchGroup(group.id, (currentGroup) => {
-            if (currentGroup.items.some((existing) => existing.sourceLine === item.sourceLine)) return {};
-            const items = [...currentGroup.items, item];
-            const size = items.reduce((sum, nextItem) => sum + nextItem.size, 0);
-            return {
-              items,
-              size,
-              fileCount: items.length,
-              selected: true,
-              expanded: false,
-              status: 'active',
-            };
-          });
+          parsedItems.push(item);
+          liveSizeDelta += item.size;
+          nextScanItem = item.label;
         } else if (dryRun && !isSummaryLine(line) && !isSkippedLine(line)) {
-          setCurrentScanItem(cleanDisplayLine(line));
+          nextScanItem = cleanDisplayLine(line);
         }
+      }
+
+      if (dryRun && parsedItems.length > 0) {
+        setLiveScanSize((previous) => previous + liveSizeDelta);
+        patchGroup(group.id, (currentGroup) => {
+          const existingLines = new Set(currentGroup.items.map((existing) => existing.sourceLine));
+          const uniqueItems = parsedItems.filter((item) => !existingLines.has(item.sourceLine));
+          if (uniqueItems.length === 0) return {};
+          const items = [...currentGroup.items, ...uniqueItems];
+          const size = items.reduce((sum, nextItem) => sum + nextItem.size, 0);
+          return {
+            items,
+            size,
+            fileCount: items.length,
+            selected: true,
+            expanded: false,
+            status: 'active',
+          };
+        });
+      }
+
+      if (dryRun && nextScanItem) {
+        setCurrentScanItem(nextScanItem);
       }
     });
     window.moleDesktop.clean.onStderr((text) => appendLog(group.id, text, 'error'));
@@ -739,7 +882,17 @@ export function CleanPage() {
     setCurrentScanItem('Preparing cleanup scan...');
     setStage('analyzing');
 
-    for (const group of nextGroups) {
+    const cleanGroups = nextGroups.filter((group) => group.command === 'clean');
+    const otherGroups = nextGroups.filter((group) => group.command !== 'clean');
+
+    const cleanOk = await runCleanGroups(cleanGroups, true);
+    if (!cleanOk) {
+      activeGroupRef.current = null;
+      setStage('idle');
+      return;
+    }
+
+    for (const group of otherGroups) {
       const ok = await runGroup(group, true);
       if (!ok) {
         activeGroupRef.current = null;
@@ -762,7 +915,17 @@ export function CleanPage() {
     setCurrentScanItem('Preparing selected cleanup...');
     setGroups((previous) => previous.map((group) => ({ ...group, status: group.items.some((item) => item.selected) ? 'pending' : group.status })));
 
-    for (const group of groupsToClean) {
+    const cleanGroupsToClean = groupsToClean.filter((group) => group.command === 'clean');
+    const otherGroupsToClean = groupsToClean.filter((group) => group.command !== 'clean');
+
+    const cleanOk = await runCleanGroups(cleanGroupsToClean, false);
+    if (!cleanOk) {
+      activeGroupRef.current = null;
+      setStage('results');
+      return;
+    }
+
+    for (const group of otherGroupsToClean) {
       const ok = await runGroup(group, false);
       if (!ok) {
         activeGroupRef.current = null;
@@ -1035,7 +1198,7 @@ export function CleanPage() {
         </header>
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,0.96fr)_minmax(0,1fr)] gap-[clamp(1.25rem,3vw,4rem)]">
-          <section className="relative min-h-0 min-w-0">
+          <section className="relative min-h-0 min-w-0 my-auto">
             <div className="relative mx-auto mt-[clamp(0.15rem,0.8vw,1rem)] h-[clamp(290px,42vh,620px)] max-w-[720px]">
               <div className="absolute inset-[8%] rounded-full border border-violet-100" />
               <div className="absolute inset-[18%] rounded-full border border-violet-100" />
@@ -1051,7 +1214,7 @@ export function CleanPage() {
               {ORBIT_PRESENTATION.map(renderOrbitItem)}
             </div>
 
-            <div className="mx-auto mt-[clamp(0.75rem,1.8vw,1.5rem)] flex max-w-[480px] items-center gap-[clamp(0.65rem,1.2vw,1rem)] rounded-[1.15rem] border border-white/75 bg-white/76 p-[clamp(0.55rem,1vw,0.85rem)] shadow-[0_14px_42px_rgba(83,76,148,0.09)] backdrop-blur-2xl">
+            <div className="mx-auto mt-12 flex max-w-[480px] items-center gap-[clamp(0.65rem,1.2vw,1rem)] rounded-[1.15rem]    p-[clamp(0.55rem,1vw,0.85rem)]">
               <div
                 className="grid h-[clamp(58px,5vw,72px)] w-[clamp(58px,5vw,72px)] shrink-0 place-items-center rounded-full"
                 style={{ background: `conic-gradient(#ef334b ${storageUsedPercent * 3.6}deg, #ece8f5 0deg)` }}
@@ -1089,7 +1252,7 @@ export function CleanPage() {
                   <div className="text-[clamp(0.76rem,0.9vw,0.82rem)] font-semibold text-slate-500">{storageCapacityLabel}</div>
                 </div>
                 {storageReclaimableSize > 0 && (
-                  <div className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-1 text-[clamp(0.66rem,0.8vw,0.74rem)] font-black text-emerald-600">
+                  <div className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-[clamp(0.66rem,0.8vw,0.74rem)] font-black">
                     <span className="h-1.5 w-4 shrink-0 rounded-full bg-[linear-gradient(90deg,#34d399,#5eead4)]" />
                     <span className="truncate">Will free {storageReclaimableLabel}</span>
                   </div>

@@ -282,6 +282,19 @@ safe_remove() {
 }
 
 # Safe symlink removal (for pre-validated symlinks only)
+_mole_sudo_session_available() {
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        return 1
+    fi
+
+    if declare -f has_sudo_session > /dev/null 2>&1; then
+        has_sudo_session
+        return $?
+    fi
+
+    sudo -n true 2> /dev/null
+}
+
 safe_remove_symlink() {
     local path="$1"
     local use_sudo="${2:-false}"
@@ -299,6 +312,10 @@ safe_remove_symlink() {
     if [[ "$use_sudo" == "true" ]]; then
         if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo blocked in test mode"
+            return 1
+        fi
+        if ! _mole_sudo_session_available; then
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "admin access unavailable"
             return 1
         fi
         sudo rm "$path" 2> /dev/null || rm_exit=$?
@@ -347,7 +364,7 @@ safe_sudo_remove() {
     fi
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        if [[ "${MO_DEBUG:-}" == "1" ]]; then
+        if [[ "${MO_DEBUG:-}" == "1" && _mole_sudo_session_available ]]; then
             local file_type="file"
             [[ -d "$path" ]] && file_type="directory"
 
@@ -380,6 +397,11 @@ safe_sudo_remove() {
             log_info "[DRY-RUN] Would sudo remove: $path"
         fi
         return 0
+    fi
+
+    if ! _mole_sudo_session_available; then
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "admin access unavailable"
+        return "${MOLE_ERR_AUTH_FAILED:-1}"
     fi
 
     local size_kb=0
@@ -479,6 +501,8 @@ mole_delete() {
         if [[ "$needs_sudo" == "true" ]]; then
             if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
                 du_rc=1
+            elif ! _mole_sudo_session_available; then
+                du_rc=1
             else
                 raw_size=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
                 du_rc=${PIPESTATUS[0]}
@@ -500,6 +524,10 @@ mole_delete() {
     if [[ "$needs_sudo" == "true" ]]; then
         if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
             _mole_delete_log "$mode" "$size_kb" "sudo-blocked-test-mode" "$path"
+            return 1
+        fi
+        if ! _mole_sudo_session_available; then
+            _mole_delete_log "$mode" "$size_kb" "sudo-unavailable" "$path"
             return 1
         fi
     fi
@@ -818,6 +846,11 @@ safe_sudo_find_delete() {
 
     if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
         debug_log "Skipping sudo find/delete in test mode: $base_dir"
+        return 0
+    fi
+
+    if ! _mole_sudo_session_available; then
+        debug_log "Skipping sudo find/delete without admin access: $base_dir"
         return 0
     fi
 
