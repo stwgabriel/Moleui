@@ -318,7 +318,7 @@ safe_remove_symlink() {
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "admin access unavailable"
             return 1
         fi
-        sudo rm "$path" 2> /dev/null || rm_exit=$?
+        sudo -n rm "$path" 2> /dev/null || rm_exit=$?
     else
         rm "$path" 2> /dev/null || rm_exit=$?
     fi
@@ -371,16 +371,16 @@ safe_sudo_remove() {
             local file_size=""
             local file_age=""
 
-            if sudo test -e "$path" 2> /dev/null; then
+            if sudo -n test -e "$path" 2> /dev/null; then
                 local size_kb
-                size_kb=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
+                size_kb=$(sudo -n du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
                 if [[ "$size_kb" -gt 0 ]]; then
                     file_size=$(bytes_to_human "$((size_kb * 1024))")
                 fi
 
-                if sudo test -f "$path" 2> /dev/null || sudo test -d "$path" 2> /dev/null; then
+                if sudo -n test -f "$path" 2> /dev/null || sudo -n test -d "$path" 2> /dev/null; then
                     local mod_time
-                    mod_time=$(sudo stat -f%m "$path" 2> /dev/null || echo "0")
+                    mod_time=$(sudo -n stat -f%m "$path" 2> /dev/null || echo "0")
                     local now
                     now=$(date +%s 2> /dev/null || echo "0")
                     if [[ "$mod_time" -gt 0 && "$now" -gt 0 ]]; then
@@ -407,8 +407,8 @@ safe_sudo_remove() {
     local size_kb=0
     local size_human=""
     if oplog_enabled; then
-        if sudo test -e "$path" 2> /dev/null; then
-            size_kb=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
+        if sudo -n test -e "$path" 2> /dev/null; then
+            size_kb=$(sudo -n du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
             if [[ "$size_kb" =~ ^[0-9]+$ ]] && [[ "$size_kb" -gt 0 ]]; then
                 size_human=$(bytes_to_human "$((size_kb * 1024))" 2> /dev/null || echo "${size_kb}KB")
             fi
@@ -417,7 +417,7 @@ safe_sudo_remove() {
 
     local output
     local ret=0
-    output=$(sudo rm -rf "$path" 2>&1) || ret=$? # safe_remove
+    output=$(sudo -n rm -rf "$path" 2>&1) || ret=$? # safe_remove
 
     if [[ $ret -eq 0 ]]; then
         log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "$size_human"
@@ -504,7 +504,7 @@ mole_delete() {
             elif ! _mole_sudo_session_available; then
                 du_rc=1
             else
-                raw_size=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
+                raw_size=$(sudo -n du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
                 du_rc=${PIPESTATUS[0]}
             fi
         else
@@ -855,12 +855,12 @@ safe_sudo_find_delete() {
     fi
 
     # Validate base directory (use sudo for permission-restricted dirs)
-    if ! sudo test -d "$base_dir" 2> /dev/null; then
+    if ! sudo -n test -d "$base_dir" 2> /dev/null; then
         debug_log "Directory does not exist, skipping: $base_dir"
         return 0
     fi
 
-    if sudo test -L "$base_dir" 2> /dev/null; then
+    if sudo -n test -L "$base_dir" 2> /dev/null; then
         log_error "Refusing to search symlinked directory: $base_dir"
         return 1
     fi
@@ -893,7 +893,7 @@ safe_sudo_find_delete() {
             continue
         fi
         safe_sudo_remove "$match" || true
-    done < <(sudo find "$base_dir" "${find_args[@]}" -print0 2> /dev/null || true)
+    done < <(sudo -n find "$base_dir" "${find_args[@]}" -print0 2> /dev/null || true)
 
     return 0
 }

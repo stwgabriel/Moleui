@@ -600,7 +600,7 @@ clean_orphaned_system_services() {
                 orphaned_files+=("$plist")
                 orphaned_count=$((orphaned_count + 1))
             fi
-        done < <(sudo find /Library/LaunchDaemons -maxdepth 1 -name "*.plist" -print0 2> /dev/null)
+        done < <(sudo -n find /Library/LaunchDaemons -maxdepth 1 -name "*.plist" -print0 2> /dev/null)
     fi
 
     # Scan system LaunchAgents
@@ -619,7 +619,7 @@ clean_orphaned_system_services() {
                 orphaned_files+=("$plist")
                 orphaned_count=$((orphaned_count + 1))
             fi
-        done < <(sudo find /Library/LaunchAgents -maxdepth 1 -name "*.plist" -print0 2> /dev/null)
+        done < <(sudo -n find /Library/LaunchAgents -maxdepth 1 -name "*.plist" -print0 2> /dev/null)
     fi
 
     # Scan PrivilegedHelperTools
@@ -671,7 +671,7 @@ clean_orphaned_system_services() {
                     orphaned_count=$((orphaned_count + 1))
                 fi
             fi
-        done < <(sudo find /Library/PrivilegedHelperTools -maxdepth 1 -type f -print0 2> /dev/null)
+        done < <(sudo -n find /Library/PrivilegedHelperTools -maxdepth 1 -type f -print0 2> /dev/null)
     fi
 
     stop_section_spinner
@@ -711,12 +711,12 @@ clean_orphaned_system_services() {
 
                 local file_size_kb=0
                 if has_sudo_session; then
-                    file_size_kb=$(sudo du -skP "$orphan_file" 2> /dev/null | awk '{print $1}' || echo "0")
+                    file_size_kb=$(sudo -n du -skP "$orphan_file" 2> /dev/null | awk '{print $1}' || echo "0")
                 fi
 
                 # Unload if it's a LaunchDaemon/LaunchAgent
                 if [[ "$orphan_file" == *.plist ]] && has_sudo_session; then
-                    sudo launchctl unload "$orphan_file" 2> /dev/null || true
+                    sudo -n launchctl unload "$orphan_file" 2> /dev/null || true
                 fi
                 if safe_sudo_remove "$orphan_file"; then
                     debug_log "Removed orphaned service: $orphan_file"
