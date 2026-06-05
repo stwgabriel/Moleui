@@ -189,10 +189,10 @@ describe('OptimizePage', () => {
     expect(screen.getAllByText('Analyze').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Tune').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Apply').length).toBeGreaterThan(0);
-    expect(screen.getByText('1/1 tasks selected')).toBeInTheDocument();
+    expect(screen.getByText('1/1 tweaks selected')).toBeInTheDocument();
     expect(screen.getByRole('meter', { name: 'Performance impact' })).toHaveAttribute('aria-valuenow', '5');
     expect(screen.getByRole('meter', { name: 'Responsiveness impact' })).toHaveAttribute('aria-valuenow', '6');
-    expect(screen.getAllByText(/tasks ready/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/tweaks ready/i).length).toBeGreaterThan(0);
   });
 
   it('shows an explicit no optimizations result from preview output', () => {
@@ -207,11 +207,9 @@ describe('OptimizePage', () => {
 
     render(<OptimizePage />);
 
-    expect(screen.getByText('No optimizations found')).toBeInTheDocument();
-    expect(screen.getByText('No tasks ready')).toBeInTheDocument();
-    expect(screen.getAllByText('System already optimized').length).toBeGreaterThan(0);
-    expect(screen.getByRole('meter', { name: 'Performance impact' })).toHaveAttribute('aria-valuenow', '0');
-    expect(screen.getByRole('meter', { name: 'Responsiveness impact' })).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByText('System is clean.')).toBeInTheDocument();
+    expect(screen.getByText('There is nothing to optimize.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /apply optimizations/i })).not.toBeInTheDocument();
   });
 
   it('treats all-noop preview tasks as no optimizations found', () => {
@@ -228,9 +226,47 @@ describe('OptimizePage', () => {
 
     render(<OptimizePage />);
 
-    expect(screen.getByText('No optimizations found')).toBeInTheDocument();
-    expect(screen.getByText('No tune-up needed')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /apply optimizations/i })).toBeDisabled();
-    expect(screen.getByRole('meter', { name: 'Performance impact' })).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByText('System is clean.')).toBeInTheDocument();
+    expect(screen.getByText('There is nothing to optimize.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /apply optimizations/i })).not.toBeInTheDocument();
+  });
+
+  it('filters no-op streamed optimize lines before showing preview tweaks', async () => {
+    let stdoutHandler: (text: string) => void = () => {};
+    vi.mocked(window.moleDesktop.optimize.onStdout).mockImplementation((handler: (text: string) => void) => {
+      stdoutHandler = handler;
+    });
+    vi.mocked(window.moleDesktop.optimize.execute).mockImplementation(async () => {
+      stdoutHandler('➤ System Health Check\n  ✓ All preference files valid\n  ○ No outdated launch agents found\n  ℹ Network stack already optimal\n');
+      return successfulOptimizeResult;
+    });
+
+    render(<OptimizePage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /start optimization/i }));
+
+    await waitFor(() => expect(screen.getByText('System is clean.')).toBeInTheDocument());
+    expect(screen.queryByText('System Health Check')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /apply optimizations/i })).not.toBeInTheDocument();
+  });
+
+  it('shows only actionable streamed optimize tweaks', async () => {
+    let stdoutHandler: (text: string) => void = () => {};
+    vi.mocked(window.moleDesktop.optimize.onStdout).mockImplementation((handler: (text: string) => void) => {
+      stdoutHandler = handler;
+    });
+    vi.mocked(window.moleDesktop.optimize.execute).mockImplementation(async () => {
+      stdoutHandler('➤ DNS & Spotlight Check\n  ✓ DNS already optimal\n  → Spotlight index rebuilt\n  ○ No network issues found\n');
+      return successfulOptimizeResult;
+    });
+
+    render(<OptimizePage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /start optimization/i }));
+
+    await waitFor(() => expect(screen.getByText('DNS & Spotlight Check')).toBeInTheDocument());
+    expect(screen.getByText('Would rebuild Spotlight index')).toBeInTheDocument();
+    expect(screen.queryByText('DNS already optimal')).not.toBeInTheDocument();
+    expect(screen.queryByText('No network issues found')).not.toBeInTheDocument();
   });
 });

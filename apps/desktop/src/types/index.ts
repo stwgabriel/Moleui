@@ -59,6 +59,18 @@ export interface AppIconRequest {
 
 export interface MoleDesktopAPI {
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
+  auth?: {
+    complete: () => Promise<{ ok: boolean; message?: string }>;
+    showLogin: () => Promise<{ ok: boolean; message?: string }>;
+    signOut: () => Promise<{ ok: boolean; message?: string }>;
+  };
+  billing?: {
+    detectCountry: () => Promise<{ country: string }>;
+    openCheckout: (url: string) => Promise<{ ok: boolean; message?: string }>;
+    openPortal: (url: string) => Promise<{ ok: boolean; message?: string }>;
+    onClosed: (callback: () => void) => void;
+    removeListeners: () => void;
+  };
   openSettingsWindow?: () => Promise<{ ok: boolean; message?: string }>;
   openDeveloperWindow?: () => Promise<{ ok: boolean; message?: string }>;
   getSettingsProfile?: () => Promise<{ deviceName: string; user: { name: string; email: string } }>;

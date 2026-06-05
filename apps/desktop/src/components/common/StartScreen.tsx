@@ -1,6 +1,8 @@
 import * as Icons from 'lucide-react';
+import type { CSSProperties } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { FEATURE_ACCENTS, FEATURE_ACCENTS_BY_ICON, type FeatureAccent } from '@/lib/featureAccents';
 import type { PageConfig } from '@/types';
 
 interface StartScreenProps {
@@ -12,29 +14,29 @@ interface StartScreenProps {
 // Icon color and animation mapping based on functionality
 const iconConfig: Record<string, { color: string; animation: string; shadow: string }> = {
   Trash2: {
-    color: '#3b82f6',
+    color: FEATURE_ACCENTS.clean.accent,
     animation: 'animate-bounce-gentle',
-    shadow: 'drop-shadow(0 8px 18px rgba(59, 130, 246, 0.35))',
+    shadow: `drop-shadow(0 8px 18px ${FEATURE_ACCENTS.clean.glow})`,
   }, // Clean - Blue
   PieChart: {
-    color: '#ec4899',
+    color: FEATURE_ACCENTS.analyze.accent,
     animation: 'animate-spin-slow',
-    shadow: 'drop-shadow(0 8px 18px rgba(236, 72, 153, 0.32))',
+    shadow: `drop-shadow(0 8px 18px ${FEATURE_ACCENTS.analyze.glow})`,
   }, // Analyze - Pink
   Zap: {
-    color: '#8b5cf6',
+    color: FEATURE_ACCENTS.optimize.accent,
     animation: 'animate-pulse-glow',
-    shadow: 'drop-shadow(0 8px 18px rgba(139, 92, 246, 0.35))',
+    shadow: `drop-shadow(0 8px 18px ${FEATURE_ACCENTS.optimize.glow})`,
   }, // Optimize - Purple
   Activity: {
-    color: '#10b981',
+    color: FEATURE_ACCENTS.mymac.accent,
     animation: 'animate-pulse-wave',
-    shadow: 'drop-shadow(0 8px 18px rgba(16, 185, 129, 0.32))',
+    shadow: `drop-shadow(0 8px 18px ${FEATURE_ACCENTS.mymac.glow})`,
   }, // Status - Green
   PackageX: {
-    color: '#ef4444',
+    color: FEATURE_ACCENTS.uninstall.accent,
     animation: 'animate-shake',
-    shadow: 'drop-shadow(0 8px 18px rgba(239, 68, 68, 0.32))',
+    shadow: `drop-shadow(0 8px 18px ${FEATURE_ACCENTS.uninstall.glow})`,
   }, // Uninstall - Red
   Sparkles: {
     color: '#f59e0b',
@@ -49,25 +51,21 @@ const myMacCard =
 const myMacActionCard =
   'group relative flex items-center gap-4 overflow-hidden rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left  backdrop-blur-2xl transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45';
 
-const featureThemes: Record<string, { accent: string; glow: string; footerText: string }> = {
+const featureThemes: Record<string, FeatureAccent & { footerText: string }> = {
   PackageX: {
-    accent: '#ff2d3d',
-    glow: 'rgba(255,45,61,0.25)',
+    ...FEATURE_ACCENTS.uninstall,
     footerText: 'Nothing will be removed without your permission',
   },
   Sparkles: {
-    accent: '#3b82f6',
-    glow: 'rgba(59,130,246,0.24)',
+    ...FEATURE_ACCENTS.clean,
     footerText: 'Review cleanup results before anything is removed',
   },
   Gauge: {
-    accent: '#8b5cf6',
-    glow: 'rgba(139,92,246,0.25)',
+    ...FEATURE_ACCENTS.optimize,
     footerText: 'A preview runs before any optimization changes',
   },
   Database: {
-    accent: '#ec4899',
-    glow: 'rgba(236,72,153,0.24)',
+    ...FEATURE_ACCENTS.analyze,
     footerText: 'Analysis only reads your storage layout',
   },
 };
@@ -88,16 +86,20 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
 
   const MainIcon = getIcon(config.icon);
   const iconStyle = iconConfig[config.icon] || {
-    color: '#3b82f6',
+    color: FEATURE_ACCENTS.clean.accent,
     animation: '',
-    shadow: 'drop-shadow(0 8px 24px rgba(59, 130, 246, 0.18))',
+    shadow: `drop-shadow(0 8px 24px ${FEATURE_ACCENTS.clean.glow})`,
   };
   const featureTheme = featureThemes[config.icon] ?? {
-    accent: iconStyle.color,
-    glow: 'rgba(109,93,252,0.22)',
+    ...(FEATURE_ACCENTS_BY_ICON[config.icon] ?? FEATURE_ACCENTS.optimize),
     footerText: 'Review the results before making changes',
   };
   const featureImage = featureImages[config.icon];
+  const featureButtonStyle = {
+    '--feature-accent': featureTheme.accent,
+    '--feature-accent-hover': featureTheme.accentHover,
+    '--feature-glow': featureTheme.glow,
+  } as CSSProperties;
 
   if (variant === 'myMac') {
     return (
@@ -186,7 +188,7 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
       <div
         className="relative h-full min-h-0 overflow-hidden"
         style={{
-          backgroundImage: `radial-gradient(circle at 78% 34%, ${featureTheme.glow}, transparent 34%), radial-gradient(circle at 45% 78%, rgba(109,93,252,0.12), transparent 44%)`,
+          backgroundImage: `radial-gradient(circle at 78% 34%, ${featureTheme.glow}, transparent 34%), radial-gradient(circle at 45% 78%, rgba(${featureTheme.rgb},0.10), transparent 44%)`,
         }}
       >
         <div className="pointer-events-none absolute -right-20 top-20 h-[520px] w-[520px] rounded-full border border-white/45 opacity-70" />
@@ -226,7 +228,10 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
           </section>
 
           <section className="relative flex min-h-0 items-center justify-center overflow-hidden pb-[clamp(1rem,3vh,2.5rem)]">
-            <div className="absolute bottom-[14%] h-20 w-[min(410px,42vw)] rounded-[50%] bg-white/35 shadow-[0_30px_70px_rgba(255,80,110,0.18),inset_0_1px_1px_rgba(255,255,255,0.65)] backdrop-blur-xl" />
+            <div
+              className="absolute bottom-[14%] h-20 w-[min(410px,42vw)] rounded-[50%] bg-white/35 backdrop-blur-xl"
+              style={{ boxShadow: `0 30px 70px ${featureTheme.glow}, inset 0 1px 1px rgba(255,255,255,0.65)` }}
+            />
             <div className="absolute bottom-[11%] h-20 w-[min(500px,50vw)] rounded-[50%] border border-white/35" />
             {featureImage ? (
               <img
@@ -264,7 +269,8 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
               onClick={onStart}
               icon={MainIcon}
               iconPosition="left"
-              className="h-[clamp(3.8rem,6vh,5rem)] min-w-[clamp(20rem,28vw,26rem)] rounded-[1.85rem] bg-[#6d4dfc] px-12 text-[clamp(1.25rem,1.65vw,1.65rem)] font-bold tracking-normal shadow-[0_18px_34px_rgba(83,58,220,0.34)] hover:bg-[#5d3ff0]"
+              className="h-[clamp(3.8rem,6vh,5rem)] min-w-[clamp(20rem,28vw,26rem)] rounded-[1.85rem] bg-[var(--feature-accent)] px-12 text-[clamp(1.25rem,1.65vw,1.65rem)] font-bold tracking-normal shadow-[0_18px_34px_var(--feature-glow)] hover:bg-[var(--feature-accent-hover)] focus-visible:ring-[var(--feature-accent)]"
+              style={featureButtonStyle}
             >
               {config.buttonText}
             </Button>

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, shell } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, screen, shell } from "electron";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -15,6 +15,8 @@ const BATTERY_SAMPLE_INTERVAL_MS = 6 * 60 * 1000;
 const MAX_BATTERY_HISTORY = 24 * 60;
 const MAX_CLI_MONITOR_EVENTS = 1200;
 const MAX_CLI_EVENT_TEXT = 24000;
+const MAIN_WINDOW_SIZE = { width: 1280, height: 860, minWidth: 1180, minHeight: 760 };
+const LOGIN_WINDOW_SIZE = { width: 880, height: 640, minWidth: 760, minHeight: 560 };
 
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("enable-gpu-rasterization");
@@ -1119,13 +1121,34 @@ function configureApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function centeredWindowBounds({ width, height, minWidth, minHeight }) {
+  const display = screen.getPrimaryDisplay();
+  const workArea = display.workArea;
+  const availableWidth = Math.max(360, workArea.width - 48);
+  const availableHeight = Math.max(360, workArea.height - 48);
+  const finalWidth = Math.min(width, availableWidth);
+  const finalHeight = Math.min(height, availableHeight);
+
+  return {
+    x: Math.round(workArea.x + (workArea.width - finalWidth) / 2),
+    y: Math.round(workArea.y + (workArea.height - finalHeight) / 2),
+    width: Math.round(finalWidth),
+    height: Math.round(finalHeight),
+    minWidth: Math.min(minWidth, Math.round(finalWidth)),
+    minHeight: Math.min(minHeight, Math.round(finalHeight)),
+  };
+}
+
 function createWindow(options = {}) {
   const shouldShow = options.show !== false;
+  const bounds = centeredWindowBounds(MAIN_WINDOW_SIZE);
   const window = new BrowserWindow({
-    width: 1280,
-    height: 920,
-    minWidth: 1280,
-    minHeight: 790,
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    minWidth: bounds.minWidth,
+    minHeight: bounds.minHeight,
     show: false,
     titleBarStyle: "hidden",
     trafficLightPosition: {
@@ -1140,15 +1163,14 @@ function createWindow(options = {}) {
     },
   });
 
-  if (isDev) {
-    window.loadURL('http://localhost:5173');
-  } else {
-    window.loadFile(path.join(__dirname, "dist", "index.html"));
-  }
+  loadAppWindow(window);
 
   if (shouldShow) {
     window.once("ready-to-show", () => {
+      const nextBounds = centeredWindowBounds(MAIN_WINDOW_SIZE);
+      window.setBounds({ x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height }, false);
       window.show();
+      window.focus();
     });
   }
 
@@ -1156,8 +1178,10 @@ function createWindow(options = {}) {
 }
 
 let mainWindow;
+let loginWindow;
 let settingsWindow;
 let cliMonitorWindow;
+let billingWindow;
 
 function loadAppWindow(window, query = "") {
   if (isDev) {
@@ -1165,6 +1189,181 @@ function loadAppWindow(window, query = "") {
   } else {
     window.loadFile(path.join(__dirname, "dist", "index.html"), query ? { search: query.slice(1) } : undefined);
   }
+}
+
+function createLoginWindow() {
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    if (loginWindow.isVisible()) {
+      loginWindow.focus();
+    }
+    return loginWindow;
+  }
+
+  const bounds = centeredWindowBounds(LOGIN_WINDOW_SIZE);
+  loginWindow = new BrowserWindow({
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    minWidth: bounds.minWidth,
+    minHeight: bounds.minHeight,
+    show: false,
+    title: "Sign in to Moleui",
+    titleBarStyle: "hidden",
+    trafficLightPosition: {
+      x: 18,
+      y: 6,
+    },
+    icon: appIconPath,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  loadAppWindow(loginWindow, "?window=login");
+
+  loginWindow.on("closed", () => {
+    loginWindow = null;
+  });
+
+  return loginWindow;
+}
+
+function showLoginWindow() {
+  if (!loginWindow || loginWindow.isDestroyed()) {
+    return { ok: false, message: "Login window is not available" };
+  }
+
+  const nextBounds = centeredWindowBounds(LOGIN_WINDOW_SIZE);
+  loginWindow.setBounds({ x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height }, false);
+  loginWindow.show();
+  loginWindow.focus();
+  return { ok: true };
+}
+
+function openMainWindowAfterAuth() {
+  if (process.platform === "darwin") {
+    app.dock.show();
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow();
+  } else {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    loginWindow.close();
+  }
+
+  return mainWindow;
+}
+
+function closeAppWindowsForSignOut() {
+  for (const window of [mainWindow, settingsWindow, cliMonitorWindow]) {
+    if (window && !window.isDestroyed()) {
+      window.close();
+    }
+  }
+  mainWindow = null;
+  settingsWindow = null;
+  cliMonitorWindow = null;
+}
+
+function isAllowedBillingUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && (
+      parsed.hostname === "checkout.stripe.com" ||
+      parsed.hostname === "billing.stripe.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isBillingReturnUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "billing.moleui.local";
+  } catch {
+    return false;
+  }
+}
+
+function openBillingWindow(parentWindow, url, title) {
+  if (!isAllowedBillingUrl(url)) {
+    return { ok: false, message: "Billing URL is not allowed" };
+  }
+
+  if (billingWindow && !billingWindow.isDestroyed()) {
+    billingWindow.close();
+  }
+
+  billingWindow = new BrowserWindow({
+    width: 980,
+    height: 760,
+    minWidth: 760,
+    minHeight: 620,
+    show: false,
+    title,
+    titleBarStyle: "hidden",
+    trafficLightPosition: {
+      x: 18,
+      y: 6,
+    },
+    parent: parentWindow,
+    icon: appIconPath,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  billingWindow.webContents.on("will-navigate", (event, nextUrl) => {
+    if (isBillingReturnUrl(nextUrl)) {
+      event.preventDefault();
+      billingWindow?.close();
+    }
+  });
+
+  billingWindow.webContents.setWindowOpenHandler(({ url: nextUrl }) => {
+    if (isAllowedBillingUrl(nextUrl)) return { action: "allow" };
+    if (isBillingReturnUrl(nextUrl)) {
+      billingWindow?.close();
+    }
+    return { action: "deny" };
+  });
+
+  billingWindow.loadURL(url);
+  billingWindow.once("ready-to-show", () => billingWindow?.show());
+  billingWindow.on("closed", () => {
+    billingWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("mole:billing:closed");
+    }
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send("mole:billing:closed");
+    }
+  });
+
+  return { ok: true };
+}
+
+async function detectBillingCountry() {
+  try {
+    const response = await fetch("https://ipapi.co/country_code/", { signal: AbortSignal.timeout(3000) });
+    const country = (await response.text()).trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(country)) return country;
+  } catch (error) {
+    console.warn("Failed to detect country from network:", error.message);
+  }
+
+  const locale = app.getLocaleCountryCode?.() || app.getLocale()?.split("-")[1] || "";
+  return /^[A-Z]{2}$/i.test(locale) ? locale.toUpperCase() : "US";
 }
 
 function createSettingsWindow(parentWindow) {
@@ -1314,6 +1513,39 @@ ipcMain.handle("mole:developer:clear-cli-events", async () => {
   cliMonitorEvents.length = 0;
   emitCliEvent({ type: "clear", command: "developer monitor", text: "CLI monitor cleared" });
   return { ok: true };
+});
+
+ipcMain.handle("mole:auth:complete", async () => {
+  openMainWindowAfterAuth();
+  return { ok: true };
+});
+
+ipcMain.handle("mole:auth:show-login", async (event) => {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+
+  if (sourceWindow !== loginWindow) {
+    return { ok: true };
+  }
+
+  return showLoginWindow();
+});
+
+ipcMain.handle("mole:auth:sign-out", async () => {
+  closeAppWindowsForSignOut();
+  createLoginWindow();
+  return { ok: true };
+});
+
+ipcMain.handle("mole:billing:country", async () => ({ country: await detectBillingCountry() }));
+
+ipcMain.handle("mole:billing:open-checkout", async (event, url) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  return openBillingWindow(parentWindow, String(url || ""), "Subscribe to Moleui");
+});
+
+ipcMain.handle("mole:billing:open-portal", async (event, url) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  return openBillingWindow(parentWindow, String(url || ""), "Manage Moleui Billing");
 });
 
 ipcMain.handle("mole:settings:profile", async () => {
@@ -1673,7 +1905,7 @@ app.whenReady().then(() => {
   }
 
   if (!openedAsHidden) {
-    mainWindow = createWindow();
+    createLoginWindow();
   }
 
   app.on("activate", () => {
@@ -1682,7 +1914,7 @@ app.whenReady().then(() => {
     }
 
     if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow();
+      createLoginWindow();
     }
   });
 });

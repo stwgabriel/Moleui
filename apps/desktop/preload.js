@@ -54,6 +54,22 @@ function onStreamWithLog(channel, callback) {
 
 contextBridge.exposeInMainWorld("moleDesktop", {
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
+  auth: {
+    complete: () => ipcRenderer.invoke("mole:auth:complete"),
+    showLogin: () => ipcRenderer.invoke("mole:auth:show-login"),
+    signOut: () => ipcRenderer.invoke("mole:auth:sign-out"),
+  },
+  billing: {
+    detectCountry: () => ipcRenderer.invoke("mole:billing:country"),
+    openCheckout: (url) => ipcRenderer.invoke("mole:billing:open-checkout", url),
+    openPortal: (url) => ipcRenderer.invoke("mole:billing:open-portal", url),
+    onClosed: (callback) => {
+      ipcRenderer.on("mole:billing:closed", callback);
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners("mole:billing:closed");
+    },
+  },
   openSettingsWindow: () => ipcRenderer.invoke("mole:settings:open"),
   openDeveloperWindow: () => ipcRenderer.invoke("mole:developer:open"),
   getSettingsProfile: () => ipcRenderer.invoke("mole:settings:profile"),

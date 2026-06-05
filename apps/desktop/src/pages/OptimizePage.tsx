@@ -30,6 +30,7 @@ import {
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
 import { stripAnsi } from '@/utils/format';
+import { usePaywall } from '@/hooks/usePaywall';
 import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig } from '@/types';
 
@@ -72,6 +73,17 @@ interface TaskVisualRule {
 
 const OPTIMIZE_ITEM_ICON_PATTERN = /^[✓✔→◎○ℹ-]\s*/;
 const NO_EXPANDED_TASK = '__none__';
+const FALLBACK_OPTIMIZE_STAGE_NAME = 'Performance Tweaks';
+
+const noOptimizationOutputPattern = /\b(?:No Optimizations? (?:Found|Needed)|No changes would be applied|No optimization tasks were applied|System already optimized|Nothing to (?:optimize|apply|do)|0\s+(?:optimizations?|changes|tasks)\b|Would apply\s+0\b|All .* (?:healthy|valid|optimal|up to date))\b/i;
+
+const noopOptimizationItemPattern = /\b(?:already|skipped|unavailable|not found|valid|optimal|healthy|verified|up to date|no .*found|all .*healthy|all .*valid|requires sudo|not available|nothing to|no changes|nothing changed)\b/i;
+
+const actionableOptimizationPatterns = [
+  /\b(?:would\s+)?(?:disable|clean|clear|flush|refresh|rebuild|repair|restart|release|optimize|vacuum|remove|delete|reset|update|prune|purge|fix|apply|compact)\b/i,
+  /\b(?:flushed|refreshed|rebuilt|optimized|repaired|restarted|released|improved|cleared|cleaned|started|disabled|removed|deleted|reset|updated|pruned|purged|fixed|vacuumed|compacted)\b/i,
+  /\b(?:outdated|orphaned|broken)\b/i,
+];
 
 const taskVisualRules: TaskVisualRule[] = [
   {
@@ -139,9 +151,19 @@ function isOptimizeSummaryLine(line: string) {
     /^=+$/.test(line) ||
     /^⚙\s+System\b/i.test(line) ||
     /^Active Whitelist:/i.test(message) ||
+    noOptimizationOutputPattern.test(message) ||
     /^(DRY RUN MODE|Dry Run Complete|Optimization Complete)\b/i.test(message) ||
     /^(Would apply|Run without|Applied|System fully optimized)/i.test(message)
   );
+}
+
+function isNoopOptimizationItem(item: string) {
+  return noopOptimizationItemPattern.test(removeOptimizeItemIcon(item));
+}
+
+function isActionableOptimizationItem(item: string) {
+  const message = removeOptimizeItemIcon(item);
+  return Boolean(message) && !isNoopOptimizationItem(message) && actionableOptimizationPatterns.some((pattern) => pattern.test(message));
 }
 
 function rewritePreviewItem(line: string) {
@@ -150,12 +172,12 @@ function rewritePreviewItem(line: string) {
   const message = removeOptimizeItemIcon(line);
   if (!message) return '';
 
-  if (icon === '◎') return `Needs attention: ${message}`;
-  if (icon === '○' || icon === 'ℹ' || icon === '-') return message;
-
-  if (/\b(already|skipped|unavailable|not found|disabled|valid|optimal|healthy)\b/i.test(message)) {
-    return message;
+  if (!isActionableOptimizationItem(message)) {
+    return '';
   }
+
+  if (icon === '◎') return `Needs attention: ${message}`;
+  if (icon === '○' || icon === 'ℹ' || icon === '-') return `Would review ${message.charAt(0).toLowerCase()}${message.slice(1)}`;
 
   const rewriteRules: Array<[RegExp, string]> = [
     [/^(.+?) flushed$/i, 'flush'],
@@ -208,6 +230,7 @@ function parseOptimizeLine(rawLine: string, target: TimelineTarget): ParsedOptim
 
   if (OPTIMIZE_ITEM_ICON_PATTERN.test(line)) {
     const text = target === 'preview' ? rewritePreviewItem(line) : removeOptimizeItemIcon(line);
+    if (target !== 'preview' && !isActionableOptimizationItem(text)) return null;
     return text ? { kind: 'item', text } : null;
   }
 
@@ -276,7 +299,7 @@ function getScrollShadowState(element: HTMLDivElement | null) {
 
 const config: PageConfig = {
   title: 'Optimize performance',
-  description: "Fine-tune your Mac's performance with system optimization and maintenance tasks.",
+  description: "Fine-tune your Mac's performance with selectable system optimization tweaks.",
   icon: 'Gauge',
   buttonText: 'Start Optimization',
   items: [
@@ -309,12 +332,12 @@ const stageCopy: Record<Exclude<Stage, 'idle' | 'complete' | 'error'>, { title: 
     description: 'Mole is checking the tune-up path first, so you can see every optimization before it changes anything.',
   },
   'preview-results': {
-    title: 'Review tasks',
-    description: 'Review the optimization tasks we found, then apply the performance tune-up when you are ready.',
+    title: 'Review tweaks',
+    description: 'Review the valid optimization tweaks we found, then apply the performance tune-up when you are ready.',
   },
   optimizing: {
     title: 'Boosting performance',
-    description: 'Mole is applying the approved maintenance tasks and tracking each performance pass as it finishes.',
+    description: 'Mole is applying the approved maintenance tweaks and tracking each performance pass as it finishes.',
   },
 };
 
@@ -327,11 +350,7 @@ function timelineStats(timeline: TimelineStage[]) {
 }
 
 function hasNoOptimizationsOutput(logs: LogEntry[]) {
-  return logs.some((log) => /No Optimizations (Found|Needed)|No changes would be applied|No optimization tasks were applied|System already optimized/i.test(log.text));
-}
-
-function isNoopOptimizationItem(item: string) {
-  return /\b(already|skipped|unavailable|not found|disabled|valid|optimal|healthy|verified|no .*found|all .*healthy|requires sudo|not available)\b/i.test(item);
+  return logs.some((log) => noOptimizationOutputPattern.test(log.text));
 }
 
 function actionableOptimizationItemCount(timeline: TimelineStage[]) {
@@ -339,6 +358,14 @@ function actionableOptimizationItemCount(timeline: TimelineStage[]) {
     (sum, timelineStage) => sum + timelineStage.items.filter((item) => !isNoopOptimizationItem(item)).length,
     0,
   );
+}
+
+function completeTimeline(timeline: TimelineStage[], options: { pruneEmpty?: boolean } = {}) {
+  const completed = timeline.map((s) =>
+    s.status === 'active' ? { ...s, status: 'complete' as const, endTime: Date.now() } : s
+  );
+
+  return options.pruneEmpty ? completed.filter((s) => s.items.length > 0) : completed;
 }
 
 function getImpactScores(timeline: TimelineStage[], attentionTaskCount: number, noOptimizationsFound: boolean) {
@@ -365,6 +392,7 @@ function getImpactScores(timeline: TimelineStage[], attentionTaskCount: number, 
 }
 
 export function OptimizePage() {
+  const { requireSubscription } = usePaywall();
   const [stage, setStage] = usePersistentState<Stage>('mole-optimize-stage', 'idle');
   const [logs, setLogs] = usePersistentState<LogEntry[]>('mole-optimize-logs', []);
   const [previewLogs, setPreviewLogs] = usePersistentState<LogEntry[]>('mole-optimize-preview-logs', []);
@@ -424,45 +452,49 @@ export function OptimizePage() {
     }
   };
 
-  const parseTimelineLine = (
-    line: string,
+  const applyTimelineEvents = (
+    events: ParsedOptimizeLine[],
     target: TimelineTarget = 'main'
   ) => {
-    const parsedLine = parseOptimizeLine(line, target);
-    if (!parsedLine) return;
+    if (events.length === 0) return;
 
     const setter = target === 'preview' ? setPreviewTimeline : setTimeline;
 
-    if (parsedLine.kind === 'section') {
-      const sectionName = parsedLine.text;
-      setter((prev) => {
-        const updated = prev.map((s) =>
-          s.status === 'active' ? { ...s, status: 'complete' as const, endTime: Date.now() } : s
-        );
-        const existingIndex = updated.findIndex((s) => s.name === sectionName);
-        if (existingIndex >= 0) {
-          updated[existingIndex] = { ...updated[existingIndex], status: 'active', selected: updated[existingIndex].selected ?? true, startTime: Date.now() };
-          return updated;
-        }
-        return [
-          ...updated,
-          { id: `stage-${Date.now()}-${sectionName}`, name: sectionName, status: 'active', items: [], selected: true, startTime: Date.now() },
-        ];
-      });
-      return;
-    }
-
     setter((prev) => {
-      const activeIndex = prev.findIndex((s) => s.status === 'active');
-      if (activeIndex >= 0) {
-        const updated = [...prev];
-        updated[activeIndex] = {
-          ...updated[activeIndex],
-          items: [...updated[activeIndex].items, parsedLine.text],
-        };
-        return updated;
+      let updated = [...prev];
+
+      for (const event of events) {
+        if (event.kind === 'section') {
+          const sectionName = event.text;
+          const startedAt = Date.now();
+          updated = updated.map((s) =>
+            s.status === 'active' ? { ...s, status: 'complete' as const, endTime: startedAt } : s
+          );
+          const existingIndex = updated.findIndex((s) => s.name === sectionName);
+          if (existingIndex >= 0) {
+            updated[existingIndex] = { ...updated[existingIndex], status: 'active', selected: updated[existingIndex].selected ?? true, startTime: startedAt };
+          } else {
+            updated.push({ id: `stage-${startedAt}-${sectionName}`, name: sectionName, status: 'active', items: [], selected: true, startTime: startedAt });
+          }
+          continue;
+        }
+
+        let activeIndex = updated.findIndex((s) => s.status === 'active');
+        if (activeIndex < 0) {
+          const startedAt = Date.now();
+          updated.push({ id: `stage-${startedAt}-${FALLBACK_OPTIMIZE_STAGE_NAME}`, name: FALLBACK_OPTIMIZE_STAGE_NAME, status: 'active', items: [], selected: true, startTime: startedAt });
+          activeIndex = updated.length - 1;
+        }
+
+        if (!updated[activeIndex].items.includes(event.text)) {
+          updated[activeIndex] = {
+            ...updated[activeIndex],
+            items: [...updated[activeIndex].items, event.text],
+          };
+        }
       }
-      return prev;
+
+      return updated;
     });
   };
 
@@ -470,11 +502,14 @@ export function OptimizePage() {
     text: string,
     target: TimelineTarget = 'main'
   ) => {
-    stripAnsi(text)
+    const events = stripAnsi(text)
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
-      .forEach((line) => parseTimelineLine(line, target));
+      .map((line) => parseOptimizeLine(line, target))
+      .filter((line): line is ParsedOptimizeLine => Boolean(line));
+
+    applyTimelineEvents(events, target);
   };
 
   const stopProcess = async (context: 'preview' | 'main') => {
@@ -510,6 +545,7 @@ export function OptimizePage() {
   // ─── Dry-run preview ────────────────────────────────────────────────────────
 
   const startPreview = async () => {
+    if (!requireSubscription('Optimize')) return;
     const runId = runIdRef.current + 1;
     runIdRef.current = runId;
     activeRunRef.current = { id: runId, context: 'preview' };
@@ -539,11 +575,7 @@ export function OptimizePage() {
       } else if (!isCurrentRun) {
         return;
       } else if (result.ok || result.exitCode === 0) {
-        setPreviewTimeline((prev) =>
-          prev.map((s) =>
-            s.status === 'active' ? { ...s, status: 'complete', endTime: Date.now() } : s
-          )
-        );
+        setPreviewTimeline((prev) => completeTimeline(prev, { pruneEmpty: true }));
         addLog('Dry-run complete — no changes were made', 'success', 'preview');
         setStage('preview-results');
       } else {
@@ -572,6 +604,7 @@ export function OptimizePage() {
   // ─── Real optimization ───────────────────────────────────────────────────────
 
   const startOptimization = async () => {
+    if (!requireSubscription('Optimize')) return;
     const taskNames = stage === 'preview-results'
       ? previewTimeline.filter(isTimelineStageSelected).map((timelineStage) => timelineStage.name)
       : undefined;
@@ -608,11 +641,7 @@ export function OptimizePage() {
       } else if (!isCurrentRun) {
         return;
       } else if (result.ok) {
-        setTimeline((prev) =>
-          prev.map((s) =>
-            s.status === 'active' ? { ...s, status: 'complete', endTime: Date.now() } : s
-          )
-        );
+        setTimeline((prev) => completeTimeline(prev));
         addLog('System optimization completed successfully!', 'success');
         setStage('complete');
       } else {
@@ -663,8 +692,9 @@ export function OptimizePage() {
     [activeTimeline, previewTimeline, stage],
   );
   const selectedTaskCount = selectedTimeline.length;
+  const availableActionItemCount = actionableOptimizationItemCount(activeTimeline);
   const selectedActionItemCount = actionableOptimizationItemCount(selectedTimeline);
-  const noOptimizationsFound = hasNoOptimizationsOutput(activeLogs) || (stage === 'preview-results' && selectedTaskCount > 0 && selectedActionItemCount === 0);
+  const noOptimizationsFound = hasNoOptimizationsOutput(activeLogs) || (stage === 'preview-results' && (activeTimeline.length === 0 || availableActionItemCount === 0));
   const attentionTaskCount = selectedTimeline.filter((timelineStage) => {
     const badge = getTaskBadge(timelineStage, stage);
     return badge.tone === 'attention' || badge.tone === 'high';
@@ -681,12 +711,12 @@ export function OptimizePage() {
     const activeStageName = activeStats.activeStage?.name;
     const activeStageItems = activeStats.activeStage?.items.length ?? 0;
     const taskSummaryTitle = noOptimizationsFound
-      ? 'No tasks ready'
+      ? 'No tweaks ready'
       : stage === 'previewing'
-      ? 'Scanning tasks'
+      ? 'Scanning tweaks'
       : stage === 'optimizing'
-        ? `${readyPlanCount} ${readyPlanCount === 1 ? 'task' : 'tasks'} applying`
-        : `${readyPlanCount} ${readyPlanCount === 1 ? 'task' : 'tasks'} ready`;
+        ? `${readyPlanCount} ${readyPlanCount === 1 ? 'tweak' : 'tweaks'} applying`
+        : `${readyPlanCount} ${readyPlanCount === 1 ? 'tweak' : 'tweaks'} ready`;
     const taskSummaryDescription = noOptimizationsFound
       ? 'Preview complete'
       : stage === 'preview-results'
@@ -696,7 +726,7 @@ export function OptimizePage() {
         : 'Checking system paths';
     const safetyTitle = attentionTaskCount > 0 ? 'Review first' : stage === 'optimizing' ? 'Applying safely' : 'Safe to apply';
     const safetyDescription = attentionTaskCount > 0
-      ? `${attentionTaskCount} ${attentionTaskCount === 1 ? 'task needs' : 'tasks need'} attention`
+      ? `${attentionTaskCount} ${attentionTaskCount === 1 ? 'tweak needs' : 'tweaks need'} attention`
       : 'No risky changes detected';
     const planSteps = [
       {
@@ -713,7 +743,7 @@ export function OptimizePage() {
         number: '02',
         title: 'Tune',
         description: stage === 'preview-results'
-          ? noOptimizationsFound ? 'No tune-up needed' : `${selectedPreviewTaskCount}/${Math.max(previewTimeline.length, selectedPreviewTaskCount)} tasks selected`
+          ? noOptimizationsFound ? 'No tune-up needed' : `${selectedPreviewTaskCount}/${Math.max(previewTimeline.length, selectedPreviewTaskCount)} tweaks selected`
           : stage === 'optimizing'
             ? 'Tune plan locked'
             : activeStageItems > 0 ? `${activeStageItems} findings grouped` : 'Optimizing settings and resources',
@@ -725,8 +755,8 @@ export function OptimizePage() {
         number: '03',
         title: 'Apply',
         description: stage === 'optimizing'
-          ? `${appliedTimelineCount}/${expectedApplyCount} tasks applied`
-          : noOptimizationsFound ? 'Nothing to apply' : `${selectedPreviewTaskCount || readyTaskCount} safe changes queued`,
+          ? `${appliedTimelineCount}/${expectedApplyCount} tweaks applied`
+          : noOptimizationsFound ? 'Nothing to apply' : `${selectedPreviewTaskCount || readyTaskCount} safe tweaks queued`,
         icon: ShieldCheck,
         state: stage === 'optimizing' ? 'active' : 'queued',
         className: 'left-1/2 top-[68%] w-[43.2%] -translate-x-1/2',
@@ -995,16 +1025,16 @@ export function OptimizePage() {
     const panelTitle = stage === 'previewing'
       ? 'Optimization Preview'
       : stage === 'preview-results'
-        ? 'Performance Tasks'
+        ? 'Performance Tweaks'
         : 'Optimization Progress';
     const emptyTitle = noOptimizationsFound
       ? 'No optimizations found'
       : stage === 'preview-results' ? 'System already optimized' : 'Preparing optimization checks';
     const emptyDescription = noOptimizationsFound
-      ? 'Mole checked your system and did not find optimization tasks to apply.'
+      ? 'Mole checked your system and did not find valid optimization tweaks to apply.'
       : stage === 'preview-results'
       ? 'No significant optimizations were found in the preview.'
-      : 'Tasks will appear here as Mole reads the optimizer output.';
+      : 'Tweaks will appear here as Mole reads actionable optimizer output.';
 
     return (
       <section className="flex min-h-0 min-w-0 flex-col pt-[clamp(0.4rem,1.65vw,2rem)]">
@@ -1076,10 +1106,44 @@ export function OptimizePage() {
     </footer>
   );
 
+  const renderAlreadyOptimizedScreen = () => (
+    <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(239,35,60,0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+
+      <div className="relative flex h-full min-h-0 items-center justify-center text-center">
+        <main className="flex max-w-[42rem] flex-col items-center">
+          <div className="flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-emerald-500 shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(34,197,94,0.08)] backdrop-blur-2xl">
+            <Check className="h-[46%] w-[46%]" strokeWidth={3} />
+          </div>
+
+          <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950">
+            System is clean.
+          </h1>
+          <p className="mt-5 text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500">
+            There is nothing to optimize.
+          </p>
+
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Button icon={Check} onClick={reset} size="lg" className="min-w-[min(260px,42vw)] rounded-full bg-rose-500 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_rgba(239,35,60,0.25)] hover:bg-rose-600 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
+              Done
+            </Button>
+            <Button variant="secondary" icon={RefreshCcw} onClick={startPreview} size="lg" className="min-w-[min(260px,42vw)] rounded-full border border-white/70 bg-white/70 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
+              Scan Again
+            </Button>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+
   // ─── Idle ────────────────────────────────────────────────────────────────────
 
   if (stage === 'idle') {
     return <StartScreen config={config} onStart={startPreview} variant="feature" />;
+  }
+
+  if (stage === 'preview-results' && noOptimizationsFound) {
+    return renderAlreadyOptimizedScreen();
   }
 
   // ─── Previewing (dry-run) ────────────────────────────────────────────────────
@@ -1144,13 +1208,13 @@ export function OptimizePage() {
               <Check className="h-10 w-10" />
             </div>
             <h2 className="text-3xl font-black text-slate-950">Optimization Complete!</h2>
-            <p className="mt-2 text-sm font-semibold text-slate-500">Mole completed {completedStages.length} performance tasks and processed {totalItems} optimization actions.</p>
+            <p className="mt-2 text-sm font-semibold text-slate-500">Mole completed {completedStages.length} performance tweaks and processed {totalItems} optimization actions.</p>
 
             {completedStages.length > 0 && (
               <div className="mt-6 rounded-[1.15rem] border border-emerald-100 bg-emerald-50/55 p-4 text-left">
                 <h3 className="mb-3 flex items-center gap-2 text-sm font-black text-emerald-700">
                   <Zap className="h-4 w-4" />
-                  Completed Tasks
+                  Completed Tweaks
                 </h3>
                 <div className="space-y-2">
                   {completedStages.slice(0, 5).map((completedStage) => (
@@ -1191,7 +1255,7 @@ export function OptimizePage() {
               <AlertCircle className="h-10 w-10" />
             </div>
             <h2 className="text-3xl font-black text-slate-950">Optimization Failed</h2>
-            <p className="mt-2 text-sm font-semibold text-slate-500">Some tasks encountered errors. Check the details below, then try the tune-up again.</p>
+            <p className="mt-2 text-sm font-semibold text-slate-500">Some tweaks encountered errors. Check the details below, then try the tune-up again.</p>
 
             {logs.filter((log) => log.type === 'error').length > 0 && (
               <div className="mt-6 rounded-[1.15rem] border border-rose-100 bg-rose-50/55 p-4 text-left">

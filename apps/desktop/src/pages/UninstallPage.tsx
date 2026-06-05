@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { StartScreen } from '@/components/common/StartScreen';
 import { usePersistentState } from '@/utils/persistentState';
 import { formatBytes } from '@/utils/format';
+import { usePaywall } from '@/hooks/usePaywall';
 import type { PageConfig } from '@/types';
 
 type Stage = 'idle' | 'loading' | 'selection' | 'confirmation' | 'executing' | 'results' | 'error';
@@ -417,6 +418,7 @@ function SelectedAppBubbleCluster({
 }
 
 export function UninstallPage() {
+  const { requireSubscription } = usePaywall();
   const [stage, setStage] = usePersistentState<Stage>('mole-uninstall-stage', 'idle');
   const [apps, setApps] = usePersistentState<App[]>('mole-uninstall-apps', []);
   const [appIcons, setAppIcons] = useState<Record<string, string>>(() => {
@@ -625,6 +627,7 @@ export function UninstallPage() {
   };
 
   const startScan = async () => {
+    if (!requireSubscription('Uninstall')) return;
     setSelectedAppIndexes([]);
     setDryRunOutput([]);
     setExecuteOutput([]);
@@ -753,6 +756,7 @@ export function UninstallPage() {
   };
 
   const executeUninstall = async () => {
+    if (!requireSubscription('Uninstall')) return;
     setShowFinalConfirmation(false);
     setStage('executing');
     setExecuteOutput([]);

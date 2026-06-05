@@ -22,6 +22,7 @@ import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
 import type { PageConfig } from '@/types';
 import { formatBytes, parseSizeToBytes, stripAnsi } from '@/utils/format';
+import { usePaywall } from '@/hooks/usePaywall';
 import { usePersistentState } from '@/utils/persistentState';
 
 type Stage = 'idle' | 'analyzing' | 'results' | 'cleaning' | 'complete';
@@ -552,6 +553,7 @@ function getScrollShadowState(element: HTMLDivElement | null) {
 }
 
 export function CleanPage() {
+  const { requireSubscription } = usePaywall();
   const [stage, setStage] = usePersistentState<Stage>('mole-clean-stage', 'idle', isStage);
   const [groups, setGroups] = usePersistentState<CleanupGroup[]>('mole-clean-groups', createInitialGroups(), isCleanupGroupArray);
   const [cleanedSize, setCleanedSize] = usePersistentState('mole-clean-cleaned-size', 0, (value): value is number => typeof value === 'number');
@@ -906,7 +908,13 @@ export function CleanPage() {
     setStage('results');
   };
 
+  const requestAnalyze = () => {
+    if (!requireSubscription('Cleanup')) return;
+    void startAnalyze();
+  };
+
   const startCleaning = async () => {
+    if (!requireSubscription('Cleanup')) return;
     const groupsToClean = groups.filter((group) => group.items.some((item) => item.selected));
     if (groupsToClean.length === 0) return;
 
@@ -1147,7 +1155,7 @@ export function CleanPage() {
   };
 
   if (stage === 'idle') {
-    return <StartScreen config={config} onStart={startAnalyze} variant="feature" />;
+    return <StartScreen config={config} onStart={requestAnalyze} variant="feature" />;
   }
 
   if (stage === 'complete') {
@@ -1190,7 +1198,7 @@ export function CleanPage() {
                 Stop
               </Button>
             ) : (
-              <Button variant="secondary" icon={RefreshCcw} onClick={startAnalyze} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-violet-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
+              <Button variant="secondary" icon={RefreshCcw} onClick={requestAnalyze} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-violet-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
                 Scan Again
               </Button>
             )}

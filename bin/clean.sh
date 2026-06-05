@@ -1017,7 +1017,10 @@ EOF
     else
         echo ""
         echo "Running in non-interactive mode"
-        if has_sudo_session; then
+        if ! clean_run_may_need_sudo; then
+            SYSTEM_CLEAN=false
+            echo "  ${ICON_LIST} Admin access not needed for selected cleanup"
+        elif has_sudo_session; then
             SYSTEM_CLEAN=true
             export MOLE_CLEAN_SUDO_AVAILABLE="true"
             echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"

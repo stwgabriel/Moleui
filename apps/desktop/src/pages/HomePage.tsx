@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { Trash2, PackageX, Zap, PieChart, ArrowRight, Sparkles } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { FEATURE_ACCENTS } from '@/lib/featureAccents';
 import type { PageId } from '@/types';
 
+type FeatureId = 'clean' | 'uninstall' | 'optimize' | 'analyze';
+
 interface Feature {
-  id: PageId;
+  id: FeatureId;
   icon: React.ElementType;
   label: string;
   description: string;
-  color: string;
   animation: string;
-  dropShadow: string;
 }
 
 const features: Feature[] = [
@@ -19,44 +20,36 @@ const features: Feature[] = [
     icon: Trash2,
     label: 'Clean',
     description: 'Remove caches, logs, and junk files to reclaim disk space.',
-    color: '#6d5dfc',
     animation: 'animate-bounce-gentle',
-    dropShadow: 'drop-shadow(0 8px 32px rgba(109,93,252,0.35))',
   },
   {
     id: 'uninstall',
     icon: PackageX,
     label: 'Uninstall',
     description: 'Completely remove apps and every trace they leave behind.',
-    color: '#ef233c',
     animation: 'animate-shake',
-    dropShadow: 'drop-shadow(0 8px 32px rgba(239,35,60,0.35))',
   },
   {
     id: 'optimize',
     icon: Zap,
     label: 'Optimize',
     description: 'Tune system settings and run maintenance for peak performance.',
-    color: '#ff9a8b',
     animation: 'animate-pulse-glow',
-    dropShadow: 'drop-shadow(0 8px 32px rgba(255,154,139,0.35))',
   },
   {
     id: 'analyze',
     icon: PieChart,
     label: 'Analyze',
     description: "Visualize what's eating your disk and find large files instantly.",
-    color: '#202936',
     animation: 'animate-spin-slow',
-    dropShadow: 'drop-shadow(0 8px 32px rgba(32,41,54,0.25))',
   },
 ];
 
 const defaultHero = {
   icon: Sparkles,
-  color: '#ef233c',
+  color: FEATURE_ACCENTS.uninstall.accent,
   animation: 'animate-sparkle',
-  dropShadow: 'drop-shadow(0 8px 24px rgba(239,35,60,0.22))',
+  dropShadow: `drop-shadow(0 8px 24px ${FEATURE_ACCENTS.uninstall.glow})`,
 };
 
 interface HomePageProps {
@@ -65,13 +58,14 @@ interface HomePageProps {
 }
 
 export function HomePage({ onNavigate, onSkipToHome }: HomePageProps) {
-  const [hoveredId, setHoveredId] = useState<PageId | null>(null);
+  const [hoveredId, setHoveredId] = useState<FeatureId | null>(null);
 
   const active = hoveredId ? features.find((f) => f.id === hoveredId) : null;
   const HeroIcon = active ? active.icon : defaultHero.icon;
-  const heroColor = active ? active.color : defaultHero.color;
+  const activeAccent = active ? FEATURE_ACCENTS[active.id] : null;
+  const heroColor = activeAccent ? activeAccent.accent : defaultHero.color;
   const heroAnimation = active ? active.animation : defaultHero.animation;
-  const heroShadow = active ? active.dropShadow : defaultHero.dropShadow;
+  const heroShadow = activeAccent ? `drop-shadow(0 8px 32px ${activeAccent.glow})` : defaultHero.dropShadow;
 
   return (
     <div className="h-full flex flex-col items-center">
@@ -90,6 +84,7 @@ export function HomePage({ onNavigate, onSkipToHome }: HomePageProps) {
             {features.map((f) => {
               const Icon = f.icon;
               const isHovered = hoveredId === f.id;
+              const accent = FEATURE_ACCENTS[f.id];
               return (
                 <button
                   key={f.id}
@@ -103,23 +98,23 @@ export function HomePage({ onNavigate, onSkipToHome }: HomePageProps) {
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2'
                   )}
                   style={{
-                    backgroundColor: isHovered ? `${f.color}12` : 'transparent',
+                    backgroundColor: isHovered ? `rgba(${accent.rgb},0.07)` : 'transparent',
                   }}
                   aria-label={`Go to ${f.label}`}
                 >
                   {/* Icon */}
                   <div
                     className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110"
-                    style={{ backgroundColor: `${f.color}18` }}
+                    style={{ backgroundColor: `rgba(${accent.rgb},0.10)` }}
                   >
-                    <Icon className="w-5 h-5" style={{ color: f.color }} />
+                    <Icon className="w-5 h-5" style={{ color: accent.accent }} />
                   </div>
 
                   {/* Text */}
                   <div className="flex-1 min-w-0">
                     <div
                       className="font-semibold text-sm leading-tight transition-colors duration-150"
-                      style={{ color: isHovered ? f.color : undefined }}
+                      style={{ color: isHovered ? accent.accent : undefined }}
                     >
                       {f.label}
                     </div>
@@ -131,7 +126,7 @@ export function HomePage({ onNavigate, onSkipToHome }: HomePageProps) {
                   {/* Arrow */}
                   <ArrowRight
                     className="w-4 h-4 flex-shrink-0 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150"
-                    style={{ color: f.color }}
+                    style={{ color: accent.accent }}
                   />
                 </button>
               );

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Activity, CheckCircle2, Clock3, Fingerprint, History, Monitor, RotateCw, Settings, UserRound, XCircle, type LucideIcon } from 'lucide-react';
+import { Activity, CheckCircle2, Clock3, CreditCard, Crown, Fingerprint, History, LogOut, Monitor, RotateCw, Settings, XCircle, type LucideIcon } from 'lucide-react';
 import type { BackgroundSystemStatus } from '@/types';
+import { UserAvatar } from '@/components/account/UserAvatar';
+import { useSubscription } from '@/hooks/useSubscription';
 import { cn } from '@/utils/cn';
 
 interface SettingsProfile {
@@ -54,6 +56,8 @@ function formatDuration(durationMs: number) {
 }
 
 export function SettingsWindow() {
+  const subscription = useSubscription();
+  const clerkUser = (window as any).Clerk?.user;
   const [profile, setProfile] = useState<SettingsProfile>(FALLBACK_PROFILE);
   const [activePage, setActivePage] = useState<SettingsPage>('general');
   const [backgroundSystems, setBackgroundSystems] = useState<BackgroundSystemStatus[]>([]);
@@ -61,6 +65,10 @@ export function SettingsWindow() {
   const [isLoadingBackgroundSystems, setIsLoadingBackgroundSystems] = useState(false);
   const [isTouchIdEnabled, setIsTouchIdEnabled] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
+  const [isBillingBusy, setIsBillingBusy] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const displayName = clerkUser?.fullName || profile.user.name;
+  const displayEmail = clerkUser?.primaryEmailAddress?.emailAddress || profile.user.email;
 
   useEffect(() => {
     let isMounted = true;
@@ -141,6 +149,35 @@ export function SettingsWindow() {
     }
   }
 
+  async function handleSubscribeClick() {
+    setIsBillingBusy(true);
+    setBillingError(null);
+    try {
+      await subscription.startCheckout();
+    } catch (error) {
+      setBillingError(error instanceof Error ? error.message : 'Failed to open checkout');
+    } finally {
+      setIsBillingBusy(false);
+    }
+  }
+
+  async function handleBillingPortalClick() {
+    setIsBillingBusy(true);
+    setBillingError(null);
+    try {
+      await subscription.openBillingPortal();
+    } catch (error) {
+      setBillingError(error instanceof Error ? error.message : 'Failed to open billing portal');
+    } finally {
+      setIsBillingBusy(false);
+    }
+  }
+
+  async function handleSignOut() {
+    await (window as any).Clerk?.signOut?.();
+    await window.moleDesktop.auth?.signOut();
+  }
+
   return (
     <main data-testid="settings-window" className="h-screen min-h-0 overflow-hidden bg-[#fbf9ff] text-slate-950">
       <div className="window-drag-region" aria-hidden="true" />
@@ -191,13 +228,78 @@ export function SettingsWindow() {
                     </h2>
                   </div>
                   <div className="flex min-w-0 items-center gap-3 p-4">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
-                      <UserRound className="h-5 w-5" aria-hidden="true" />
-                    </div>
+                    <UserAvatar className="h-12 w-12 shrink-0" />
                     <div className="min-w-0">
-                      <p className="truncate text-base font-semibold">{profile.user.name}</p>
-                      <p className="truncate text-sm text-slate-600">{profile.user.email}</p>
+                      <p className="truncate text-base font-semibold">{displayName}</p>
+                      <p className="truncate text-sm text-slate-600">{displayEmail}</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="ml-auto inline-flex items-center gap-2 rounded-full border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
+                    >
+                      <LogOut className="h-4 w-4" aria-hidden="true" />
+                      Sign out
+                    </button>
+                  </div>
+                </section>
+
+                <section aria-labelledby="subscription-heading" className={PANEL_CLASS}>
+                  <div className="border-b border-white/70 px-4 py-3">
+                    <h2 id="subscription-heading" className={SECTION_LABEL_CLASS}>
+                      Subscription
+                    </h2>
+                  </div>
+                  <div className="space-y-4 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                        <Crown className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-base font-semibold">Moleui Pro</p>
+                        <p className="mt-1 text-sm leading-5 text-slate-600">
+                          {subscription.isSubscribed
+                            ? 'Active subscription. Paid tools are unlocked on this account.'
+                            : 'My Mac is free. Cleanup, Optimize, Uninstall, and Storage runs require Pro.'}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', subscription.isSubscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600')}>
+                            {subscription.isSubscribed ? 'Subscribed' : 'Not subscribed'}
+                          </span>
+                          <span className="inline-flex rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                            {subscription.country === 'BR' ? 'R$15/month' : '$5/month'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {subscription.isSubscribed ? (
+                        <button
+                          type="button"
+                          onClick={handleBillingPortalClick}
+                          disabled={isBillingBusy}
+                          className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-violet-700 disabled:opacity-60"
+                        >
+                          <CreditCard className="h-4 w-4" aria-hidden="true" />
+                          Manage billing
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSubscribeClick}
+                          disabled={isBillingBusy}
+                          className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-violet-700 disabled:opacity-60"
+                        >
+                          <CreditCard className="h-4 w-4" aria-hidden="true" />
+                          Subscribe in app
+                        </button>
+                      )}
+                    </div>
+                    {billingError && (
+                      <p className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                        {billingError}
+                      </p>
+                    )}
                   </div>
                 </section>
 

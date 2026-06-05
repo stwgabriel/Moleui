@@ -17,9 +17,12 @@
   },
   "workspaces": [
     "apps/*",
-    "apps/*/*",
     "packages/*"
   ],
+  "dependencies": {
+    "convex": "^1.17.4",
+    "stripe": "^17.5.0"
+  },
   "devDependencies": {
     "turbo": "^2.5.0"
   }

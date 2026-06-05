@@ -15,6 +15,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { getFileIconCategory } from '@/lib/fileIcons';
 import { formatBytes, stripAnsi } from '@/utils/format';
 import { usePersistentState } from '@/utils/persistentState';
+import { usePaywall } from '@/hooks/usePaywall';
 import type { PageConfig } from '@/types';
 
 type Stage = 'idle' | 'scanning' | 'results' | 'error';
@@ -324,6 +325,7 @@ const config: PageConfig = {
 };
 
 export function AnalyzePage() {
+  const { requireSubscription } = usePaywall();
   const [stage, setStage] = usePersistentState<Stage>('mole-analyze-stage', 'idle');
   const [scanPath, setScanPath] = usePersistentState('mole-analyze-scan-path', '/');
   const [result, setResult] = usePersistentState<AnalyzeResult | null>('mole-analyze-result', null);
@@ -495,6 +497,7 @@ export function AnalyzePage() {
       transitionDirection,
     }: { pushHistory?: boolean; skipCache?: boolean; display?: 'page' | 'inline' | 'background'; transitionDirection?: NavigationAnimationDirection } = {},
   ) => {
+    if (!requireSubscription('Storage Analyze')) return;
     const targetPath = path ?? pathForAnalyzeMode(selectedMode, pathInput);
     const scanDisplay = display ?? (stage === 'results' && result ? 'inline' : 'page');
     pendingNavigationDirectionRef.current = transitionDirection ?? (
@@ -749,7 +752,9 @@ export function AnalyzePage() {
     return (
       <StartScreen
         config={config}
-        onStart={() => setView('pick')}
+        onStart={() => {
+          if (requireSubscription('Storage Analyze')) setView('pick');
+        }}
         variant="feature"
       />
     );

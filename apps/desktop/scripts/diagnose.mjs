@@ -134,12 +134,10 @@ if (percentage === 100) {
   console.log('\n💡 Try:');
   console.log('   1. bun install');
   console.log('   2. Check if you\'re in the correct directory');
-  console.log('   3. Review archive/TROUBLESHOOTING.md');
+  console.log('   3. Review README.md');
 }
 
 console.log('\n📖 For help, see:');
-console.log('   - archive/TROUBLESHOOTING.md');
-console.log('   - archive/TEST_SETUP.md');
 console.log('   - README.md\n');
 
 process.exit(percentage === 100 ? 0 : 1);

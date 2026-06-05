@@ -20,7 +20,9 @@
   },
   "type": "module",
   "dependencies": {
+    "@clerk/clerk-react": "^5.21.0",
     "clsx": "^2.1.1",
+    "convex": "^1.17.4",
     "d3-force": "^3.0.0",
     "lucide-react": "^0.468.0",
     "motion": "^12.40.0",

@@ -18,15 +18,16 @@
   --color-text-primary: #202936;
   --color-text-secondary: #5a6473;
   --color-text-tertiary: #9b8f9f;
-  --color-accent-primary: #6d5dfc;
-  --color-accent-primary-hover: #5847ea;
-  --color-accent-secondary: #ef233c;
-  --color-accent-success: #ff9a8b;
+  --color-accent-primary: #8c3ffc;
+  --color-accent-primary-hover: #7730e5;
+  --color-accent-secondary: #fd2d86;
+  --color-accent-success: #10b981;
   --color-accent-warning: #f5a524;
-  --color-accent-danger: #ef233c;
-  --color-clean: #6d5dfc;
-  --color-optimize: #ef233c;
-  --color-analyze: #ff9a8b;
+  --color-accent-danger: #fc3638;
+  --color-clean: #2973fd;
+  --color-optimize: #8c3ffc;
+  --color-uninstall: #fc3638;
+  --color-analyze: #fd2d86;
   --color-status: #202936;
 
   /* --- Border Radius --- */
@@ -44,7 +45,7 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
   --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.16), 0 8px 24px rgba(0, 0, 0, 0.12);
   --shadow-2xl: 0 32px 80px rgba(0, 0, 0, 0.20), 0 12px 32px rgba(0, 0, 0, 0.16);
-  --shadow-accent: 0 8px 24px rgba(109, 93, 252, 0.28), 0 4px 8px rgba(239, 35, 60, 0.12);
+  --shadow-accent: 0 8px 24px rgba(140, 63, 252, 0.28), 0 4px 8px rgba(253, 45, 134, 0.12);
 
   /* --- Easing --- */
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
