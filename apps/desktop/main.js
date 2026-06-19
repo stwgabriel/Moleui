@@ -1247,6 +1247,9 @@ function createWindow(options = {}) {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Disable DevTools in packaged builds so the renderer state (including the
+      // developer-unlock flag) cannot be edited to bypass the paywall.
+      devTools: isDev,
     },
   });
 
@@ -1305,6 +1308,9 @@ function createLoginWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Disable DevTools in packaged builds so the renderer state (including the
+      // developer-unlock flag) cannot be edited to bypass the paywall.
+      devTools: isDev,
     },
   });
 
@@ -1459,6 +1465,7 @@ function openBillingWindow(parentWindow, url, title) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      devTools: isDev,
     },
   });
 
@@ -1588,6 +1595,9 @@ function createSettingsWindow(parentWindow) {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Disable DevTools in packaged builds so the renderer state (including the
+      // developer-unlock flag) cannot be edited to bypass the paywall.
+      devTools: isDev,
     },
   });
 
@@ -1628,6 +1638,9 @@ function createCliMonitorWindow(parentWindow) {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Disable DevTools in packaged builds so the renderer state (including the
+      // developer-unlock flag) cannot be edited to bypass the paywall.
+      devTools: isDev,
     },
   });
 

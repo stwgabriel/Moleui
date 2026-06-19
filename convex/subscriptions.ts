@@ -68,7 +68,13 @@ export const upsertFromStripe = internalMutation({
       .withIndex('by_stripe_customer_id', (q) => q.eq('stripeCustomerId', args.stripeCustomerId))
       .first();
 
-    if (!user) return;
+    if (!user) {
+      console.warn(
+        `[stripe] upsertFromStripe: no user matches stripeCustomerId=${args.stripeCustomerId} ` +
+        `(subscription=${args.stripeSubscriptionId ?? 'n/a'}, status=${args.status}); event dropped`,
+      );
+      return;
+    }
 
     const existing = await ctx.db
       .query('subscriptions')

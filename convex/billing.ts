@@ -3,7 +3,6 @@
 import Stripe from 'stripe';
 import { action } from './_generated/server';
 import { internal } from './_generated/api';
-import { v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 
@@ -14,16 +13,35 @@ function stripe() {
 }
 
 function priceIdForCountry(country: string | undefined) {
-  const normalizedCountry = country?.toUpperCase();
+  // Only honor a well-formed ISO-3166 alpha-2 code; anything else falls through
+  // to the default (USD) price rather than granting a discount on bad input.
+  const normalizedCountry = typeof country === 'string' && /^[A-Z]{2}$/i.test(country)
+    ? country.toUpperCase()
+    : undefined;
+
   if (normalizedCountry === 'BR') {
     const brlPrice = process.env.STRIPE_PRICE_BRL_MONTHLY;
     if (!brlPrice) throw new Error('STRIPE_PRICE_BRL_MONTHLY is not configured');
+    // Discounted (PPP) pricing path. Logged so currency/country mismatches are
+    // auditable until Stripe Adaptive Pricing closes the arbitrage server-side.
+    console.info(`[billing] selecting BRL price for country=${normalizedCountry}`);
     return brlPrice;
   }
 
   const usdPrice = process.env.STRIPE_PRICE_USD_MONTHLY;
   if (!usdPrice) throw new Error('STRIPE_PRICE_USD_MONTHLY is not configured');
   return usdPrice;
+}
+
+// Prefer a single multi-currency Price (Stripe Adaptive Pricing): Stripe then
+// picks the currency from the customer's Stripe-verified location at checkout, so
+// the client cannot influence pricing. Configure it with
+// scripts/configure_adaptive_pricing.mjs and set STRIPE_PRICE_ID to enable.
+// Fallback: per-country price selected from the server-stored country.
+function checkoutLineItems(country: string | undefined): Stripe.Checkout.SessionCreateParams.LineItem[] {
+  const adaptivePriceId = process.env.STRIPE_PRICE_ID?.trim();
+  if (adaptivePriceId) return [{ price: adaptivePriceId, quantity: 1 }];
+  return [{ price: priceIdForCountry(country), quantity: 1 }];
 }
 
 async function checkoutDiscountOptions(client: Stripe): Promise<Pick<Stripe.Checkout.SessionCreateParams, 'allow_promotion_codes' | 'discounts'>> {
@@ -68,10 +86,11 @@ async function requireUser(ctx: ActionCtx): Promise<Doc<'users'>> {
 }
 
 export const createCheckoutSession = action({
-  args: {
-    country: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
+  // No client-supplied country: pricing is derived server-side from the user's
+  // stored country (or Stripe Adaptive Pricing) so it cannot be chosen by the
+  // caller. See specs/WS3-auth-payment for the full rationale.
+  args: {},
+  handler: async (ctx) => {
     const user = await requireUser(ctx);
     const client = stripe();
     let customerId = user.stripeCustomerId;
@@ -96,7 +115,7 @@ export const createCheckoutSession = action({
     const session = await client.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
-      line_items: [{ price: priceIdForCountry(args.country ?? user.country), quantity: 1 }],
+      line_items: checkoutLineItems(user.country),
       success_url: process.env.APP_CHECKOUT_SUCCESS_URL ?? 'https://billing.moleui.local/success',
       cancel_url: process.env.APP_CHECKOUT_CANCEL_URL ?? 'https://billing.moleui.local/cancel',
       ...discountOptions,
@@ -115,7 +134,7 @@ export const createCheckoutSession = action({
       metadata: {
         userId: user._id,
         clerkUserId: user.clerkUserId,
-        country: args.country ?? user.country ?? 'unknown',
+        country: user.country ?? 'unknown',
       },
     });
 
