@@ -29,12 +29,15 @@ import {
 } from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
+import { featureAccentVars } from '@/lib/featureAccents';
 import { stripAnsi } from '@/utils/format';
 import { usePaywall } from '@/hooks/usePaywall';
 import { usePersistentState } from '@/utils/persistentState';
 import type { PageConfig } from '@/types';
 
 type Stage = 'idle' | 'previewing' | 'preview-results' | 'optimizing' | 'complete' | 'error';
+
+const optimizeAccentStyle = featureAccentVars('optimize');
 
 interface LogEntry {
   text: string;
@@ -134,7 +137,7 @@ const taskBadgeClassByTone: Record<TaskBadgeTone, string> = {
   high: 'bg-rose-50 text-rose-500 ring-1 ring-rose-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
   medium: 'bg-orange-50 text-orange-500 ring-1 ring-orange-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
   safe: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
-  running: 'bg-violet-50 text-violet-600 ring-1 ring-violet-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  running: 'bg-[rgba(var(--page-accent-rgb),0.10)] text-[var(--page-accent)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
   queued: 'bg-slate-100/80 text-slate-500 ring-1 ring-slate-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]',
   done: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
 };
@@ -763,10 +766,10 @@ export function OptimizePage() {
       },
     ];
     const impactMetrics = [
-      { label: 'Performance', icon: Rocket, score: impactScores.performance, tone: 'bg-violet-500' },
-      { label: 'Responsiveness', icon: Zap, score: impactScores.responsiveness, tone: 'bg-violet-600' },
-      { label: 'Stability', icon: Shield, score: impactScores.stability, tone: 'bg-violet-300' },
-      { label: 'Battery', icon: BatteryCharging, score: impactScores.battery, tone: 'bg-violet-300' },
+      { label: 'Performance', icon: Rocket, score: impactScores.performance, tone: 'bg-[var(--page-accent)]' },
+      { label: 'Responsiveness', icon: Zap, score: impactScores.responsiveness, tone: 'bg-[var(--page-accent-hover)]' },
+      { label: 'Stability', icon: Shield, score: impactScores.stability, tone: 'bg-[rgba(var(--page-accent-rgb),0.42)]' },
+      { label: 'Battery', icon: BatteryCharging, score: impactScores.battery, tone: 'bg-[rgba(var(--page-accent-rgb),0.42)]' },
     ];
 
     return (
@@ -774,9 +777,9 @@ export function OptimizePage() {
         <div className="relative mx-auto flex h-[clamp(500px,62vh,650px)] w-full max-w-[720px] flex-col overflow-visible">
 
           <div className="relative z-10 min-h-[0] flex-1">
-            <div className="absolute left-[6%] top-[9%] h-[65%] w-[31%] rounded-[50%] border border-dashed border-violet-300/56" aria-hidden="true" />
-            <div className="absolute left-[19%] top-[4%] h-[74%] w-[68%] rounded-full border border-dashed border-violet-300/62" aria-hidden="true" />
-            <div className="absolute left-[31%] top-[8%] h-[64%] w-[56%] rounded-full border border-dashed border-violet-200/70" aria-hidden="true" />
+            <div className="absolute left-[6%] top-[9%] h-[65%] w-[31%] rounded-[50%] border border-dashed border-[rgba(var(--page-accent-rgb),0.34)]" aria-hidden="true" />
+            <div className="absolute left-[19%] top-[4%] h-[74%] w-[68%] rounded-full border border-dashed border-[rgba(var(--page-accent-rgb),0.38)]" aria-hidden="true" />
+            <div className="absolute left-[31%] top-[8%] h-[64%] w-[56%] rounded-full border border-dashed border-[rgba(var(--page-accent-rgb),0.24)]" aria-hidden="true" />
 
             {planSteps.map((step) => {
               const isActive = step.state === 'active';
@@ -791,7 +794,7 @@ export function OptimizePage() {
                   aria-current={isActive ? 'step' : undefined}
                   className={`absolute z-20 flex min-h-[clamp(5.85rem,9.5vh,7rem)] min-w-0 items-center gap-[clamp(0.85rem,1.15vw,1.1rem)] rounded-[2.15rem] border px-[clamp(0.85rem,1.2vw,1.15rem)] py-3 shadow-[0_18px_58px_rgba(83,76,148,0.12)] backdrop-blur-2xl transition-all duration-500 ${
                     isActive
-                      ? 'z-30 scale-[1.08] border-violet-200/80 bg-white/88 shadow-[0_20px_66px_rgba(109,93,252,0.18),0_0_0_6px_rgba(109,93,252,0.05)]'
+                      ? 'z-30 scale-[1.08] border-[rgba(var(--page-accent-rgb),0.24)] bg-white/88 shadow-[0_20px_66px_var(--page-accent-glow),0_0_0_6px_rgba(var(--page-accent-rgb),0.05)]'
                       : isComplete
                         ? 'border-emerald-100/80 bg-white/78'
                         : 'border-white/62 bg-white/58 opacity-70'
@@ -799,24 +802,24 @@ export function OptimizePage() {
                 >
                   <span className="relative flex shrink-0 items-center justify-center">
                     {hasPulseBackdrop && (
-                      <span className="absolute inset-[-0.45rem] rounded-full bg-violet-400/25 blur-sm animate-ping" aria-hidden="true" />
+                      <span className="absolute inset-[-0.45rem] rounded-full bg-[rgba(var(--page-accent-rgb),0.25)] blur-sm animate-ping" aria-hidden="true" />
                     )}
                     {hasLoadingRing && (
-                      <span className="absolute inset-[-0.32rem] rounded-full border-2 border-violet-200/70 border-r-violet-500 border-t-violet-600 animate-spin" aria-hidden="true" />
+                      <span className="absolute inset-[-0.32rem] rounded-full border-2 border-[rgba(var(--page-accent-rgb),0.22)] border-r-[var(--page-accent)] border-t-[var(--page-accent-hover)] animate-spin" aria-hidden="true" />
                     )}
                     <span className={`relative z-10 flex h-[clamp(2rem,2.8vw,2.35rem)] w-[clamp(2rem,2.8vw,2.35rem)] items-center justify-center rounded-full text-[clamp(0.78rem,1vw,0.95rem)] font-black ${
                       isActive
-                        ? 'bg-violet-600 text-white shadow-[0_8px_24px_rgba(109,93,252,0.35)]'
+                        ? 'bg-[var(--page-accent)] text-white shadow-[0_8px_24px_var(--page-accent-glow)]'
                         : isComplete
                           ? 'bg-emerald-50 text-emerald-500 shadow-[0_8px_20px_rgba(34,197,94,0.12)]'
-                        : 'bg-violet-100 text-violet-600 shadow-[0_8px_20px_rgba(109,93,252,0.16)]'
+                        : 'bg-[rgba(var(--page-accent-rgb),0.10)] text-[var(--page-accent)] shadow-[0_8px_20px_rgba(var(--page-accent-rgb),0.16)]'
                     }`}>
                       {isComplete ? <Check className="h-[58%] w-[58%]" strokeWidth={3} /> : step.number}
                     </span>
                   </span>
                   <div className="min-w-0">
                     <h3 className="flex items-center gap-2 truncate text-[clamp(1rem,1.35vw,1.18rem)] font-black leading-tight text-slate-700">
-                      <StepIcon className={`h-[0.95em] w-[0.95em] shrink-0 ${isActive ? 'text-violet-500' : isComplete ? 'text-emerald-500' : 'text-violet-300'}`} />
+                      <StepIcon className={`h-[0.95em] w-[0.95em] shrink-0 ${isActive ? 'text-[var(--page-accent)]' : isComplete ? 'text-emerald-500' : 'text-[rgba(var(--page-accent-rgb),0.38)]'}`} />
                       <span className="truncate">{step.title}</span>
                     </h3>
                     <p className="mt-2 max-w-[8.5rem] text-[clamp(0.72rem,0.9vw,0.82rem)] font-semibold leading-snug text-slate-500">{step.description}</p>
@@ -826,11 +829,11 @@ export function OptimizePage() {
             })}
           </div>
 
-          <div className="relative z-10 overflow-hidden rounded-[1.35rem] border border-violet-100/70 bg-white/76 shadow-[0_18px_54px_rgba(83,76,148,0.10)] backdrop-blur-2xl">
+          <div className="relative z-10 overflow-hidden rounded-[1.35rem] border border-[rgba(var(--page-accent-rgb),0.14)] bg-white/76 shadow-[0_18px_54px_rgba(83,76,148,0.10)] backdrop-blur-2xl">
 
             <div className="grid grid-cols-2 divide-x divide-slate-900/[0.06]">
               <div className="flex min-w-0 items-center gap-4 p-[clamp(0.9rem,1.25vw,1.15rem)]">
-                <div className="flex h-[clamp(3rem,4vw,3.5rem)] w-[clamp(3rem,4vw,3.5rem)] shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-500">
+                <div className="flex h-[clamp(3rem,4vw,3.5rem)] w-[clamp(3rem,4vw,3.5rem)] shrink-0 items-center justify-center rounded-full bg-[rgba(var(--page-accent-rgb),0.10)] text-[var(--page-accent)]">
                   <ListChecks className="h-6 w-6" />
                 </div>
                 <div className="min-w-0">
@@ -864,7 +867,7 @@ export function OptimizePage() {
                   return (
                     <div key={metric.label} className="min-w-0">
                       <div className="mb-2 flex min-w-0 items-center gap-2">
-                        <MetricIcon className="h-4 w-4 shrink-0 text-violet-500" />
+                        <MetricIcon className="h-4 w-4 shrink-0 text-[var(--page-accent)]" />
                         <span className="truncate text-[0.68rem] font-black text-slate-500">{metric.label}</span>
                       </div>
                       <div
@@ -879,7 +882,7 @@ export function OptimizePage() {
                           <span
                             key={`${metric.label}-${index}`}
                             aria-hidden="true"
-                            className={`h-2 rounded-full ${index < metric.score ? metric.tone : 'bg-violet-100/90'}`}
+                            className={`h-2 rounded-full ${index < metric.score ? metric.tone : 'bg-[rgba(var(--page-accent-rgb),0.10)]'}`}
                           />
                         ))}
                       </div>
@@ -911,8 +914,8 @@ export function OptimizePage() {
       <section
         key={timelineStage.id}
         className={`relative border-b border-slate-900/[0.07] transition-colors duration-300 first:rounded-t-[1.55rem] last:border-b-0 last:rounded-b-[1.55rem] ${
-          isError ? 'bg-rose-50/28' : isActive ? 'bg-violet-50/24 animate-clean-card-pulse' : 'hover:bg-white/38'
-        } ${canSelect && isSelected ? 'shadow-[inset_5px_0_0_rgba(109,93,252,0.32)]' : ''} ${canSelect && !isSelected ? 'opacity-70' : ''}`}
+          isError ? 'bg-rose-50/28' : isActive ? 'bg-[rgba(var(--page-accent-rgb),0.08)] animate-clean-card-pulse' : 'hover:bg-white/38'
+        } ${canSelect && isSelected ? 'shadow-[inset_5px_0_0_rgba(var(--page-accent-rgb),0.32)]' : ''} ${canSelect && !isSelected ? 'opacity-70' : ''}`}
       >
         <div className="group flex w-full items-center gap-[clamp(0.8rem,1.15vw,1.25rem)] px-[clamp(0.8rem,1.35vw,1.35rem)] py-[clamp(0.85rem,1.2vw,1.2rem)] text-left transition">
           {canSelect && (
@@ -923,8 +926,8 @@ export function OptimizePage() {
               aria-pressed={isSelected}
               className={`flex h-[clamp(1.35rem,1.75vw,1.7rem)] w-[clamp(1.35rem,1.75vw,1.7rem)] shrink-0 items-center justify-center rounded-full border transition-all ${
                 isSelected
-                  ? 'border-violet-500 bg-violet-600 text-white shadow-[0_8px_18px_rgba(109,93,252,0.26),0_0_0_5px_rgba(109,93,252,0.10)]'
-                  : 'border-slate-300 bg-white/76 text-transparent shadow-[0_6px_14px_rgba(83,76,148,0.06)] hover:border-violet-300 hover:text-violet-300'
+                  ? 'border-[var(--page-accent)] bg-[var(--page-accent)] text-white shadow-[0_8px_18px_var(--page-accent-glow),0_0_0_5px_rgba(var(--page-accent-rgb),0.10)]'
+                  : 'border-slate-300 bg-white/76 text-transparent shadow-[0_6px_14px_rgba(83,76,148,0.06)] hover:border-[rgba(var(--page-accent-rgb),0.45)] hover:text-[rgba(var(--page-accent-rgb),0.55)]'
               }`}
             >
               <Check className="h-[clamp(0.8rem,1vw,1rem)] w-[clamp(0.8rem,1vw,1rem)]" strokeWidth={3} />
@@ -936,15 +939,15 @@ export function OptimizePage() {
             aria-controls={detailsId}
             aria-expanded={isExpanded}
             onClick={() => setExpandedTaskId(isExpanded ? NO_EXPANDED_TASK : timelineStage.id)}
-            className="flex min-w-0 flex-1 items-center gap-[clamp(0.8rem,1.15vw,1.25rem)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
+            className="flex min-w-0 flex-1 items-center gap-[clamp(0.8rem,1.15vw,1.25rem)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--page-accent-rgb),0.45)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
           >
             <div
               className={`flex h-[clamp(2.75rem,3.7vw,4.05rem)] w-[clamp(2.75rem,3.7vw,4.05rem)] shrink-0 items-center justify-center rounded-[1.05rem] border bg-white/76 backdrop-blur-xl ${
                 isActive
-                  ? 'border-violet-200/90 text-violet-600'
+                  ? 'border-[rgba(var(--page-accent-rgb),0.24)] text-[var(--page-accent)]'
                   : isError
                     ? 'border-rose-200/90 text-rose-500'
-                    : 'border-violet-100/80 text-violet-500'
+                    : 'border-[rgba(var(--page-accent-rgb),0.14)] text-[var(--page-accent)]'
               }`}
             >
               <TaskIcon className="h-[clamp(1.25rem,1.65vw,1.65rem)] w-[clamp(1.25rem,1.65vw,1.65rem)]" strokeWidth={2.15} />
@@ -969,7 +972,7 @@ export function OptimizePage() {
             aria-controls={detailsId}
             aria-expanded={isExpanded}
             onClick={() => setExpandedTaskId(isExpanded ? NO_EXPANDED_TASK : timelineStage.id)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/62 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/62 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--page-accent-rgb),0.45)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
             aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${timelineStage.name}`}
           >
             {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
@@ -978,7 +981,7 @@ export function OptimizePage() {
 
         {isExpanded && (
           <div id={detailsId} className="px-[clamp(0.8rem,1.35vw,1.35rem)] pb-[clamp(0.8rem,1.2vw,1.2rem)]">
-            <div className="ml-[clamp(3.55rem,4.9vw,5.25rem)] overflow-hidden rounded-[1.1rem] border border-violet-100/80 bg-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] backdrop-blur-xl">
+            <div className="ml-[clamp(3.55rem,4.9vw,5.25rem)] overflow-hidden rounded-[1.1rem] border border-[rgba(var(--page-accent-rgb),0.14)] bg-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] backdrop-blur-xl">
               {visibleItems.length > 0 ? (
                 <>
                   {visibleItems.map((item, index) => {
@@ -990,7 +993,7 @@ export function OptimizePage() {
                         className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_1.35rem] items-center gap-[clamp(0.55rem,0.95vw,0.9rem)] border-b border-slate-900/[0.06] px-[clamp(0.75rem,1.15vw,1rem)] py-[clamp(0.65rem,0.95vw,0.85rem)] last:border-b-0"
                       >
                         <div className="flex min-w-0 items-center gap-3">
-                          <span className="h-2 w-2 shrink-0 rounded-full bg-violet-500 shadow-[0_0_0_4px_rgba(109,93,252,0.11)]" />
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--page-accent)] shadow-[0_0_0_4px_rgba(var(--page-accent-rgb),0.11)]" />
                           <span className="truncate text-[clamp(0.75rem,0.9vw,0.88rem)] font-bold text-slate-700">{item}</span>
                         </div>
                         <span className={`shrink-0 rounded-full px-[clamp(0.55rem,0.8vw,0.7rem)] py-[clamp(0.28rem,0.42vw,0.36rem)] text-[clamp(0.64rem,0.78vw,0.76rem)] font-black leading-none ${taskBadgeClassByTone[itemBadge.tone]}`}>
@@ -1009,9 +1012,9 @@ export function OptimizePage() {
                 </>
               ) : (
                 <div className="flex min-w-0 items-center gap-3 px-[clamp(0.75rem,1.15vw,1rem)] py-[clamp(0.75rem,1vw,0.95rem)]">
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-violet-500 shadow-[0_0_0_4px_rgba(109,93,252,0.11)]" />
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--page-accent)] shadow-[0_0_0_4px_rgba(var(--page-accent-rgb),0.11)]" />
                   <span className="truncate text-[clamp(0.75rem,0.9vw,0.88rem)] font-bold text-slate-500">Waiting for optimizer output...</span>
-                  {isActive && <Loader2 className="ml-auto h-4 w-4 shrink-0 animate-spin text-violet-500" />}
+                  {isActive && <Loader2 className="ml-auto h-4 w-4 shrink-0 animate-spin text-[var(--page-accent)]" />}
                 </div>
               )}
             </div>
@@ -1040,7 +1043,7 @@ export function OptimizePage() {
       <section className="flex min-h-0 min-w-0 flex-col pt-[clamp(0.4rem,1.65vw,2rem)]">
         <div className="mb-[clamp(0.6rem,1vw,1rem)] flex items-center justify-between gap-3">
           <h2 className="text-[clamp(0.95rem,1.3vw,1.25rem)] font-black text-slate-600">{panelTitle}</h2>
-          <div className="rounded-full bg-white/70 px-3 py-1 text-[clamp(0.72rem,0.88vw,0.82rem)] font-black text-rose-500 shadow-[0_8px_24px_rgba(83,76,148,0.06)]">
+          <div className="rounded-full bg-white/70 px-3 py-1 text-[clamp(0.72rem,0.88vw,0.82rem)] font-black text-[var(--page-accent)] shadow-[0_8px_24px_rgba(83,76,148,0.06)]">
             {taskCountLabel(activeStats.totalItems)}
           </div>
         </div>
@@ -1049,14 +1052,14 @@ export function OptimizePage() {
           <div ref={taskListRef} onScroll={updateTaskScrollShadow} className="h-full min-h-0 overflow-auto pr-2 custom-scrollbar">
             <div>
               {activeTimeline.length > 0 && !noOptimizationsFound && (
-                <div className="overflow-hidden rounded-[1.55rem] border border-violet-100/75 bg-white/58 backdrop-blur-2xl">
+                <div className="overflow-hidden rounded-[1.55rem] border border-[rgba(var(--page-accent-rgb),0.14)] bg-white/58 backdrop-blur-2xl">
                   {activeTimeline.map(renderTimelineCard)}
                 </div>
               )}
 
               {(activeTimeline.length === 0 || noOptimizationsFound) && (
-                <div className="rounded-[1.15rem] border border-rose-100 bg-white/62 p-8 text-center">
-                  <Gauge className="mx-auto h-10 w-10 text-rose-500" />
+                <div className="rounded-[1.15rem] border border-[rgba(var(--page-accent-rgb),0.14)] bg-white/62 p-8 text-center">
+                  <Gauge className="mx-auto h-10 w-10 text-[var(--page-accent)]" />
                   <h3 className="mt-3 text-xl font-black text-slate-950">{emptyTitle}</h3>
                   <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-relaxed text-slate-500">{emptyDescription}</p>
                   {noOptimizationsFound && (
@@ -1083,7 +1086,7 @@ export function OptimizePage() {
             icon={Play}
             onClick={startOptimization}
             disabled={selectedPreviewTaskCount === 0 || noOptimizationsFound}
-            className="min-w-[min(370px,42vw)] rounded-full bg-rose-500 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_rgba(239,35,60,0.25)] hover:bg-rose-600 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
+            className="min-w-[min(370px,42vw)] rounded-full bg-[var(--page-accent)] px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)] [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
           >
             Apply Optimizations
           </Button>
@@ -1093,7 +1096,7 @@ export function OptimizePage() {
           icon={stage === 'previewing' ? X : Loader2}
           onClick={() => stopProcess(stage === 'previewing' ? 'preview' : 'main')}
           size="lg"
-          className="min-w-[min(450px,42vw)] rounded-full bg-rose-500 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_rgba(239,35,60,0.25)] hover:bg-rose-600 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
+          className="min-w-[min(450px,42vw)] rounded-full bg-[var(--page-accent)] px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)] [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
         >
           {stage === 'previewing' ? 'Cancel Preview' : 'Stop Optimization'}
         </Button>
@@ -1107,8 +1110,8 @@ export function OptimizePage() {
   );
 
   const renderAlreadyOptimizedScreen = () => (
-    <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(239,35,60,0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+    <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950" style={optimizeAccentStyle}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
 
       <div className="relative flex h-full min-h-0 items-center justify-center text-center">
         <main className="flex max-w-[42rem] flex-col items-center">
@@ -1124,7 +1127,7 @@ export function OptimizePage() {
           </p>
 
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button icon={Check} onClick={reset} size="lg" className="min-w-[min(260px,42vw)] rounded-full bg-rose-500 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_rgba(239,35,60,0.25)] hover:bg-rose-600 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
+            <Button icon={Check} onClick={reset} size="lg" className="min-w-[min(260px,42vw)] rounded-full bg-[var(--page-accent)] px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)] [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
               Done
             </Button>
             <Button variant="secondary" icon={RefreshCcw} onClick={startPreview} size="lg" className="min-w-[min(260px,42vw)] rounded-full border border-white/70 bg-white/70 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
@@ -1163,8 +1166,8 @@ export function OptimizePage() {
     };
 
     return (
-      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(239,35,60,0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950" style={optimizeAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
 
         <div className="relative flex h-full min-h-0 flex-col">
           <header className="flex shrink-0 items-start justify-between gap-4">
@@ -1178,7 +1181,7 @@ export function OptimizePage() {
                 Back
               </Button>
               {stage === 'preview-results' && (
-                <Button variant="secondary" icon={RefreshCcw} onClick={startPreview} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-rose-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
+                <Button variant="secondary" icon={RefreshCcw} onClick={startPreview} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-[var(--page-accent)] shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
                   Scan Again
                 </Button>
               )}
@@ -1200,8 +1203,8 @@ export function OptimizePage() {
     const { completedStages, totalItems } = timelineStats(timeline);
 
     return (
-      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] p-7">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(239,35,60,0.12),transparent_36%),radial-gradient(circle_at_16%_88%,rgba(34,197,94,0.12),transparent_34%)]" />
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] p-7" style={optimizeAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(var(--page-accent-rgb),0.12),transparent_36%),radial-gradient(circle_at_16%_88%,rgba(34,197,94,0.12),transparent_34%)]" />
         <div className="relative flex h-full items-center justify-center">
           <div className="w-full max-w-xl rounded-[1.4rem] border border-white/80 bg-white/70 p-8 text-center shadow-[0_24px_80px_rgba(83,76,148,0.16)] backdrop-blur-2xl">
             <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-500 shadow-[0_18px_45px_rgba(34,197,94,0.16)]">
@@ -1234,7 +1237,7 @@ export function OptimizePage() {
               </div>
             )}
 
-            <Button icon={Check} onClick={reset} size="lg" className="mt-8 rounded-full bg-rose-500 px-8 shadow-[0_18px_44px_rgba(239,35,60,0.24)] hover:bg-rose-600">
+            <Button icon={Check} onClick={reset} size="lg" className="mt-8 rounded-full bg-[var(--page-accent)] px-8 shadow-[0_18px_44px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]">
               Done
             </Button>
           </div>
@@ -1247,7 +1250,7 @@ export function OptimizePage() {
 
   if (stage === 'error') {
     return (
-      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] p-7">
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] p-7" style={optimizeAccentStyle}>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(239,35,60,0.14),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
         <div className="relative flex h-full items-center justify-center">
           <div className="w-full max-w-xl rounded-[1.4rem] border border-white/80 bg-white/70 p-8 text-center shadow-[0_24px_80px_rgba(83,76,148,0.16)] backdrop-blur-2xl">
@@ -1276,7 +1279,7 @@ export function OptimizePage() {
               <Button variant="secondary" onClick={reset} className="rounded-full border border-white/70 bg-white/70 px-8 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white">
                 Back
               </Button>
-              <Button icon={Zap} onClick={startOptimization} className="rounded-full bg-rose-500 px-8 shadow-[0_18px_44px_rgba(239,35,60,0.24)] hover:bg-rose-600">
+              <Button icon={Zap} onClick={startOptimization} className="rounded-full bg-[var(--page-accent)] px-8 shadow-[0_18px_44px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]">
                 Try Again
               </Button>
             </div>

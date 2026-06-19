@@ -5,6 +5,7 @@ import { api } from '../../../../convex/_generated/api';
 
 interface SubscriptionContextValue {
   isSubscribed: boolean;
+  isDeveloperUnlocked: boolean;
   isSignedIn: boolean;
   isLoading: boolean;
   status: string;
@@ -14,6 +15,7 @@ interface SubscriptionContextValue {
 }
 
 const SubscriptionContext = createContext<SubscriptionContextValue | null>(null);
+const DEVELOPER_UNLOCK_KEY = 'moleui:developer-unlocked';
 
 function subscriptionStatus(entitlement: any) {
   return typeof entitlement?.status === 'string' ? entitlement.status : 'loading';
@@ -37,6 +39,17 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const [entitlementError, setEntitlementError] = useState<string | null>(null);
   const [country, setCountry] = useState('US');
   const [billingRefreshKey, setBillingRefreshKey] = useState(0);
+  const [isDeveloperUnlocked, setIsDeveloperUnlocked] = useState(() => localStorage.getItem(DEVELOPER_UNLOCK_KEY) === 'true');
+
+  useEffect(() => {
+    const unlock = () => {
+      localStorage.setItem(DEVELOPER_UNLOCK_KEY, 'true');
+      setIsDeveloperUnlocked(true);
+    };
+
+    window.moleDesktop.developer?.onUnlockApp(unlock);
+    return () => window.moleDesktop.developer?.removeListeners();
+  }, []);
 
   useEffect(() => {
     if (!isSignedIn) {
@@ -108,25 +121,46 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<SubscriptionContextValue>(() => ({
-    isSubscribed: Boolean(entitlement?.isSubscribed),
+    isSubscribed: isDeveloperUnlocked || Boolean(entitlement?.isSubscribed),
+    isDeveloperUnlocked,
     isSignedIn: Boolean(isSignedIn),
-    isLoading: !isLoaded || (Boolean(isSignedIn) && entitlement === undefined && !entitlementError),
-    status: entitlementError ? 'error' : subscriptionStatus(entitlement),
+    isLoading: !isDeveloperUnlocked && (!isLoaded || (Boolean(isSignedIn) && entitlement === undefined && !entitlementError)),
+    status: isDeveloperUnlocked ? 'developer-unlocked' : entitlementError ? 'error' : subscriptionStatus(entitlement),
     country,
     startCheckout: async () => {
+      if (!user) throw new Error('Sign in to start checkout');
+
       const billing = billingApi();
       const detectedCountry = await billing.detectCountry().catch(() => ({ country }));
-      const session = await createCheckoutSession({ country: detectedCountry.country || country });
+      const checkoutCountry = detectedCountry.country || country;
+      await syncCurrentUser({
+        email: user.primaryEmailAddress?.emailAddress ?? '',
+        name: user.fullName ?? user.primaryEmailAddress?.emailAddress ?? 'Moleui user',
+        imageUrl: user.imageUrl,
+        country: checkoutCountry,
+      });
+      setCountry(checkoutCountry);
+
+      const session = await createCheckoutSession({ country: checkoutCountry });
       const result = await billing.openCheckout(session.url);
       if (!result.ok) throw new Error(result.message || 'Failed to open checkout');
     },
     openBillingPortal: async () => {
+      if (!user) throw new Error('Sign in to manage billing');
+
       const billing = billingApi();
+      await syncCurrentUser({
+        email: user.primaryEmailAddress?.emailAddress ?? '',
+        name: user.fullName ?? user.primaryEmailAddress?.emailAddress ?? 'Moleui user',
+        imageUrl: user.imageUrl,
+        country,
+      });
+
       const session = await createBillingPortalSession({});
       const result = await billing.openPortal(session.url);
       if (!result.ok) throw new Error(result.message || 'Failed to open billing portal');
     },
-  }), [country, createBillingPortalSession, createCheckoutSession, entitlement, entitlementError, isLoaded, isSignedIn, billingRefreshKey]);
+  }), [country, createBillingPortalSession, createCheckoutSession, entitlement, entitlementError, isDeveloperUnlocked, isLoaded, isSignedIn, user, syncCurrentUser, billingRefreshKey]);
 
   return <SubscriptionContext.Provider value={value}>{children}</SubscriptionContext.Provider>;
 }
@@ -135,6 +169,7 @@ export function useSubscription() {
   const context = useContext(SubscriptionContext);
   return context ?? {
     isSubscribed: true,
+    isDeveloperUnlocked: false,
     isSignedIn: true,
     isLoading: false,
     status: 'unavailable',

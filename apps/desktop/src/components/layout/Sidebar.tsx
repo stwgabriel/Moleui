@@ -36,7 +36,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
       return;
     }
 
-    window.open('?window=settings', 'moleui-settings', 'width=520,height=620');
+    window.open('?window=settings', 'moleui-settings', 'width=900,height=620');
   };
 
   return (

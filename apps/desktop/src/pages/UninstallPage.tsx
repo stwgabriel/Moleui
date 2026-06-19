@@ -2,19 +2,22 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { forceCollide, forceSimulation, forceX, forceY } from 'd3-force';
 import type { SimulationNodeDatum } from 'd3-force';
 import { AnimatePresence, motion } from 'motion/react';
-import { 
+import {
   CheckCircle, AlertTriangle, Loader, ArrowLeft, X, Trash2,
   Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StartScreen } from '@/components/common/StartScreen';
+import { featureAccentVars } from '@/lib/featureAccents';
 import { usePersistentState } from '@/utils/persistentState';
 import { formatBytes } from '@/utils/format';
 import { usePaywall } from '@/hooks/usePaywall';
 import type { PageConfig } from '@/types';
 
 type Stage = 'idle' | 'loading' | 'selection' | 'confirmation' | 'executing' | 'results' | 'error';
+
+const uninstallAccentStyle = featureAccentVars('uninstall');
 
 interface App {
   name: string;
@@ -51,10 +54,10 @@ interface BubbleNode extends SimulationNodeDatum {
 const GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
 const SOFT_CARD = 'rounded-[1.75rem] border border-white/55 bg-white/35  backdrop-blur-2xl';
 const UNINSTALL_SHELL = 'relative h-full min-h-0 overflow-hidden p-2';
-const UNINSTALL_ACCENT_BG = 'pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_88%_16%,rgba(239,68,68,0.16),transparent_34%),radial-gradient(circle_at_16%_88%,rgba(109,93,252,0.12),transparent_38%)]';
+const UNINSTALL_ACCENT_BG = 'pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_88%_16%,rgba(var(--page-accent-rgb),0.16),transparent_34%),radial-gradient(circle_at_16%_88%,rgba(109,93,252,0.12),transparent_38%)]';
 const LIST_CARD = `relative overflow-hidden rounded-[1.5rem] p-4 ${SOFT_CARD}`;
 const APP_SELECTION_CARD = `relative overflow-hidden rounded-[1.25rem] p-3 ${SOFT_CARD}`;
-const PILL_INPUT = 'rounded-full border border-white/60 bg-white/45 text-slate-950 shadow-inner shadow-white/40 backdrop-blur-xl placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/35 focus:border-rose-300 transition-all';
+const PILL_INPUT = 'rounded-full border border-white/60 bg-white/45 text-slate-950 shadow-inner shadow-white/40 backdrop-blur-xl placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[rgba(var(--page-accent-rgb),0.35)] focus:border-[rgba(var(--page-accent-rgb),0.35)] transition-all';
 const MUTED_PILL = 'rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 backdrop-blur-xl';
 
 function getScrollShadows(element: HTMLDivElement | null) {
@@ -98,7 +101,7 @@ const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; si
 
   return (
     <div className={`${iconClassName} border border-rose-200/70 bg-rose-100/35 flex items-center justify-center flex-shrink-0 shadow-[0_10px_24px_rgba(244,63,94,0.14)] backdrop-blur-xl`}>
-      <Package className={`${fallbackIconClassName} text-rose-500`} />
+      <Package className={`${fallbackIconClassName} text-[var(--page-accent)]`} />
     </div>
   );
 });
@@ -118,7 +121,7 @@ function AppRemovalAnimation({ progressPercent }: { progressPercent: number }) {
         <div className="relative flex h-full flex-col justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-rose-200/80 bg-rose-50/80 shadow-inner shadow-white/70">
-              <Package className="h-[1.05rem] w-[1.05rem] text-rose-500" />
+              <Package className="h-[1.05rem] w-[1.05rem] text-[var(--page-accent)]" />
             </div>
             <div className="min-w-0 space-y-1.5">
               <div className="h-1.5 w-16 rounded-full bg-slate-200/85" />
@@ -365,50 +368,50 @@ function SelectedAppBubbleCluster({
         <AnimatePresence initial={false}>
           {selectedCount > 0 && (
             <>
-            {selectedAppItems.map(({ app, index }, position) => {
-              const layout = bubbleLayout[`${app.path}-${index}`];
-              if (!layout) return null;
+              {selectedAppItems.map(({ app, index }, position) => {
+                const layout = bubbleLayout[`${app.path}-${index}`];
+                if (!layout) return null;
 
-              const iconSize = isDense ? 'sm' : selectedCount === 1 ? 'lg' : 'md';
+                const iconSize = isDense ? 'sm' : selectedCount === 1 ? 'lg' : 'md';
 
-              return (
-                <motion.button
-                  key={`${app.path}-${index}`}
-                  type="button"
-                  className="uninstall-orbit-bubble group absolute left-0 top-0 z-10 flex aspect-square items-center justify-center rounded-full text-center outline-none focus-visible:ring-2 focus-visible:ring-rose-400/45"
-                  style={{
-                    width: layout.size,
-                    height: layout.size,
-                  }}
-                  initial={{ x: centerLayout.x - layout.size / 2, y: centerLayout.y - layout.size / 2, scale: 0.72, opacity: 0, filter: 'blur(6px)' }}
-                  animate={{ x: layout.x - layout.size / 2, y: layout.y - layout.size / 2, scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ scale: [1, 1.08, 0.62], opacity: [1, 1, 0], filter: 'blur(7px)', transition: { duration: 0.22, ease: 'easeOut' } }}
-                  transition={{ ...bubbleTransition, delay: Math.min(position * 0.018, 0.16) }}
-                  whileHover={{ scale: 1.018 }}
-                  whileTap={{ scale: 0.985 }}
-                  onClick={() => onToggle(index)}
-                  aria-label={`Deselect ${app.name}`}
-                  data-testid="selected-app-bubble"
-                >
-                  <span
-                    className="relative flex h-full w-full flex-col items-center justify-center gap-2 rounded-full px-3"
+                return (
+                  <motion.button
+                    key={`${app.path}-${index}`}
+                    type="button"
+                    className="uninstall-orbit-bubble group absolute left-0 top-0 z-10 flex aspect-square items-center justify-center rounded-full text-center outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--page-accent-rgb),0.45)]"
+                    style={{
+                      width: layout.size,
+                      height: layout.size,
+                    }}
+                    initial={{ x: centerLayout.x - layout.size / 2, y: centerLayout.y - layout.size / 2, scale: 0.72, opacity: 0, filter: 'blur(6px)' }}
+                    animate={{ x: layout.x - layout.size / 2, y: layout.y - layout.size / 2, scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                    exit={{ scale: [1, 1.08, 0.62], opacity: [1, 1, 0], filter: 'blur(7px)', transition: { duration: 0.22, ease: 'easeOut' } }}
+                    transition={{ ...bubbleTransition, delay: Math.min(position * 0.018, 0.16) }}
+                    whileHover={{ scale: 1.018 }}
+                    whileTap={{ scale: 0.985 }}
+                    onClick={() => onToggle(index)}
+                    aria-label={`Deselect ${app.name}`}
+                    data-testid="selected-app-bubble"
                   >
-                    <AppIcon icon={appIcons[app.path]} size={iconSize} />
-                    <span className={`relative max-w-full truncate font-bold text-slate-950 drop-shadow-[0_1px_0_rgba(255,255,255,0.55)] ${isDense ? 'text-[10px]' : 'text-xs'}`}>
-                      {app.name}
-                    </span>
-                    {!isDense && (
-                      <span className="relative max-w-[86%] truncate text-[10px] font-semibold text-slate-500">
-                        {app.size}
+                    <span
+                      className="relative flex h-full w-full flex-col items-center justify-center gap-2 rounded-full px-3"
+                    >
+                      <AppIcon icon={appIcons[app.path]} size={iconSize} />
+                      <span className={`relative max-w-full truncate font-bold text-slate-950 drop-shadow-[0_1px_0_rgba(255,255,255,0.55)] ${isDense ? 'text-[10px]' : 'text-xs'}`}>
+                        {app.name}
                       </span>
-                    )}
-                    <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-rose-200/90 bg-white/95 text-rose-600 opacity-80 shadow-[0_8px_20px_rgba(244,63,94,0.24)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                      <X className="h-4 w-4" strokeWidth={2.8} />
+                      {!isDense && (
+                        <span className="relative max-w-[86%] truncate text-[10px] font-semibold text-slate-500">
+                          {app.size}
+                        </span>
+                      )}
+                      <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-rose-200/90 bg-white/95 text-rose-600 opacity-80 shadow-[0_8px_20px_rgba(244,63,94,0.24)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                        <X className="h-4 w-4" strokeWidth={2.8} />
+                      </span>
                     </span>
-                  </span>
-                </motion.button>
-              );
-            })}
+                  </motion.button>
+                );
+              })}
             </>
           )}
         </AnimatePresence>
@@ -443,7 +446,7 @@ export function UninstallPage() {
   const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
   const [dontShowFinalConfirmationAgain, setDontShowFinalConfirmationAgain] = useState(false);
   const selectedApps = new Set(selectedAppIndexes);
-  
+
   const dryRunListRef = useRef<HTMLDivElement>(null);
   const executeListRef = useRef<HTMLDivElement>(null);
   const appListRef = useRef<HTMLDivElement>(null);
@@ -829,17 +832,17 @@ export function UninstallPage() {
   // Filter and sort apps
   const getFilteredAndSortedApps = () => {
     let filtered = apps;
-    
+
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = apps.filter(app => 
+      filtered = apps.filter(app =>
         app.name.toLowerCase().includes(query) ||
         app.path.toLowerCase().includes(query) ||
         app.source.toLowerCase().includes(query)
       );
     }
-    
+
     // Apply sorting
     const sorted = [...filtered];
     if (sortBy === 'size') {
@@ -847,7 +850,7 @@ export function UninstallPage() {
     } else {
       sorted.sort((a, b) => a.name.localeCompare(b.name));
     }
-    
+
     return sorted;
   };
 
@@ -940,9 +943,9 @@ export function UninstallPage() {
       if (!cleanLine) return;
 
       // Skip dry-run mode message and auto-confirm message
-      if (cleanLine.includes('DRY RUN MODE') || 
-          cleanLine.includes('No app files or settings will be modified') ||
-          cleanLine.includes('Auto-confirming uninstallation')) {
+      if (cleanLine.includes('DRY RUN MODE') ||
+        cleanLine.includes('No app files or settings will be modified') ||
+        cleanLine.includes('Auto-confirming uninstallation')) {
         return;
       }
 
@@ -951,11 +954,11 @@ export function UninstallPage() {
       if (progressMatch) {
         if (currentApp) apps.push(currentApp);
         currentProgress = { current: parseInt(progressMatch[1]), total: parseInt(progressMatch[2]) };
-        currentApp = { 
-          name: progressMatch[3].trim(), 
+        currentApp = {
+          name: progressMatch[3].trim(),
           progress: `${progressMatch[1]}/${progressMatch[2]}`,
-          files: [], 
-          completed: false 
+          files: [],
+          completed: false
         };
         return;
       }
@@ -1023,33 +1026,36 @@ export function UninstallPage() {
 
   if (stage === 'loading') {
     return (
-      <div className={UNINSTALL_SHELL}>
-        <div className={UNINSTALL_ACCENT_BG} />
-        <div className="relative flex h-full items-center justify-center">
-        <div className="w-full max-w-3xl p-8 text-center">
-          <div className="space-y-6">
-          <div className="inline-flex rounded-full border border-rose-200/70 bg-rose-100/35 p-6 shadow-[0_18px_48px_rgba(244,63,94,0.18)] backdrop-blur-xl">
-            <Loader className="w-12 h-12 text-rose-500 animate-spin" />
-          </div>
-          <div>
-            <h2 className="text-3xl font-black tracking-[-0.04em] text-slate-950 mb-2">
-              Analyzing Applications...
-            </h2>
-            <p className="font-medium text-slate-600">
-              Scanning your system for installed applications
-            </p>
-          </div>
-          {scanStatus && (
-            <div className="inline-flex items-center gap-3 px-4 py-3">
-              <Folder className="w-5 h-5 text-rose-500" />
-              <span className="text-sm font-medium text-slate-600">{scanStatus}</span>
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950" style={uninstallAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+
+        <div className="relative flex h-full min-h-0 items-center justify-center text-center">
+          <main className="flex w-full max-w-[42rem] flex-col items-center">
+            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl">
+              <span className="absolute inset-[-0.38rem] rounded-full border-2 border-[rgba(var(--page-accent-rgb),0.18)] border-r-[var(--page-accent)] border-t-[var(--page-accent-hover)] animate-spin" aria-hidden="true" />
+              <Package className="relative h-[42%] w-[42%]" strokeWidth={2.6} />
             </div>
-          )}
-          <Button variant="secondary" icon={X} onClick={cancelScan} className="rounded-full bg-white/45">
-            Cancel
-          </Button>
-          </div>
-        </div>
+
+            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950">
+              Listing apps.
+            </h1>
+            <p className="mt-5 max-w-[34rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500">
+              Mole is reading installed applications before you choose what to remove.
+            </p>
+
+            {scanStatus && (
+              <div className="mt-7 inline-flex max-w-full items-center gap-3 rounded-full bg-white/70 px-4 py-2 text-sm font-black text-slate-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)]">
+                <Folder className="h-4 w-4 shrink-0 text-[var(--page-accent)]" />
+                <span className="truncate">{scanStatus}</span>
+              </div>
+            )}
+
+            <div className="mt-8">
+              <Button variant="secondary" icon={X} onClick={cancelScan} size="lg" className="min-w-[min(260px,42vw)] rounded-full border border-white/70 bg-white/70 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
+                Cancel
+              </Button>
+            </div>
+          </main>
         </div>
       </div>
     );
@@ -1059,209 +1065,207 @@ export function UninstallPage() {
     const filteredApps = getFilteredAndSortedApps();
     const filteredIndices = filteredApps.map(app => apps.indexOf(app));
     const RefreshIcon = isRefreshingApps ? Loader : RefreshCw;
-    
+
     return (
-      <div className={UNINSTALL_SHELL}>
+      <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
         <div className="relative flex h-full min-h-0 flex-col gap-2">
-        <div className="px-4 pb-4 pt-3">
-          <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <h2 className="max-w-xl text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
-                Select Applications to Uninstall
-              </h2>
-              <div className="flex items-center gap-3">
-                <p className="text-sm font-semibold text-slate-500">
-                  {selectedApps.size} of {apps.length} selected
-                </p>
-                {apps.length > 0 && (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={selectAll}
-                      className="text-xs font-bold text-rose-500 hover:text-rose-600 transition-colors"
-                    >
-                      Select All
-                    </button>
-                    <span className="text-slate-300 text-xs">|</span>
-                    <button
-                      type="button"
-                      onClick={deselectAll}
-                      className="text-xs font-bold text-slate-500 hover:text-slate-600 transition-colors"
-                    >
-                      Deselect All
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-              <Button
-                variant="secondary"
-                icon={ArrowLeft}
-                onClick={reset}
-                className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]"
-              >
-                Back
-              </Button>
-              <Button
-                variant="secondary"
-                icon={RefreshIcon}
-                onClick={startScan}
-                disabled={isRefreshingApps}
-                aria-label={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
-                title={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
-                className={`rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-rose-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)] ${isRefreshingApps ? '[&_svg]:animate-spin' : ''}`}
-              >
-                Refresh
-              </Button>
-            </div>
-          </div>
-
-          {/* Search and Sort Controls */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search applications..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={`w-full py-3 pl-11 pr-10 ${PILL_INPUT}`}
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-            <div className={`flex items-center gap-2 px-4 py-3 ${MUTED_PILL}`}>
-              <ArrowUpDown className="w-4 h-4 text-slate-400" />
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'name' | 'size')}
-                className="bg-transparent text-sm font-semibold text-slate-700 focus:outline-none cursor-pointer"
-              >
-                <option value="size">Sort by Size</option>
-                <option value="name">Sort by Name</option>
-              </select>
-            </div>
-          </div>
-
-          {searchQuery && (
-            <p className="text-sm font-medium text-slate-500 mt-3">
-              Found {filteredApps.length} application{filteredApps.length !== 1 ? 's' : ''}
-            </p>
-          )}
-        </div>
-
-        <div className="relative flex-1 min-h-0 overflow-hidden px-2 pb-2">
-          <div className="grid h-full min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(20rem,1.05fr)_minmax(20rem,0.95fr)]">
-            <div className="flex min-h-0 flex-col gap-3">
-              <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem]">
-                <SelectedAppBubbleCluster
-                  apps={apps}
-                  appIcons={appIcons}
-                  selectedAppIndexes={selectedAppIndexes}
-                  onToggle={toggleApp}
-                />
-              </div>
-              <Button
-                onClick={proceedToConfirmation}
-                disabled={selectedApps.size === 0}
-                icon={Trash2}
-                className="mx-auto min-w-[min(370px,80%)] justify-center gap-3 rounded-full bg-rose-500 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] font-black shadow-[0_18px_50px_rgba(239,35,60,0.25)] hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-white/80 disabled:shadow-none [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
-              >
-                Uninstall Apps
-                <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-black">
-                  {selectedApps.size}
-                </span>
-              </Button>
-            </div>
-
-            <div className="relative min-h-0 overflow-hidden rounded-[1.75rem] p-2">
-              <div
-                ref={appListRef}
-                onScroll={(event) => {
-                  const nextShadows = getScrollShadows(event.currentTarget);
-                  setAppListShadows(previousShadows => previousShadows.top === nextShadows.top && previousShadows.bottom === nextShadows.bottom ? previousShadows : nextShadows);
-                }}
-                className="h-full overflow-hidden overflow-y-auto rounded-[1rem] p-3 custom-scrollbar"
-              >
-                {filteredApps.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="p-4 rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 mb-4 backdrop-blur-xl">
-                    <Search className="w-8 h-8 text-slate-400" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-950 mb-1">
-                    No applications found
-                  </h3>
-                  <p className="text-sm font-medium text-slate-600">
-                    Try adjusting your search query
+          <div className="px-4 pb-4 pt-3">
+            <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <h2 className="max-w-xl text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
+                  Select Applications to Uninstall
+                </h2>
+                <div className="flex items-center gap-3">
+                  <p className="text-sm font-semibold text-slate-500">
+                    {selectedApps.size} of {apps.length} selected
                   </p>
-                </div>
-                ) : (
-                <div className="space-y-2">
-                  {filteredApps.map((app, displayIndex) => {
-                    const originalIndex = filteredIndices[displayIndex];
-                    const isSelected = selectedApps.has(originalIndex);
-                    return (
-                      <Card
-                        key={originalIndex}
-                        role="button"
-                        tabIndex={0}
-                        aria-pressed={isSelected}
-                        aria-label={`${isSelected ? 'Deselect' : 'Select'} ${app.name}`}
-                        className={`${APP_SELECTION_CARD} shadow-sm cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/45 ${
-                          isSelected ? 'ring-2 ring-rose-400 bg-white/55' : ''
-                        }`}
-                        onClick={() => toggleApp(originalIndex)}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter' && event.key !== ' ') return;
-                          event.preventDefault();
-                          toggleApp(originalIndex);
-                        }}
+                  {apps.length > 0 && (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={selectAll}
+                        className="text-xs font-bold text-[var(--page-accent)] hover:text-[var(--page-accent-hover)] transition-colors"
                       >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleApp(originalIndex)}
-                            className="sr-only"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <AppIcon icon={appIcons[app.path]} size="sm" />
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-bold text-slate-950">{app.name}</div>
-                            <div className="truncate text-xs font-medium text-slate-500">{app.path}</div>
-                          </div>
-                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                            app.source === 'Homebrew' 
-                              ? 'bg-red-500/10 text-red-500'
-                              : 'bg-white/45 text-slate-600'
-                          }`}>
-                            {app.source}
-                          </span>
-                          <span className="min-w-[4rem] shrink-0 text-right text-xs font-bold text-slate-600">
-                            {app.size}
-                          </span>
-                        </div>
-                      </Card>
-                    );
-                  })}
+                        Select All
+                      </button>
+                      <span className="text-slate-300 text-xs">|</span>
+                      <button
+                        type="button"
+                        onClick={deselectAll}
+                        className="text-xs font-bold text-slate-500 hover:text-slate-600 transition-colors"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                  )}
                 </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                <Button
+                  variant="secondary"
+                  icon={ArrowLeft}
+                  onClick={reset}
+                  className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]"
+                >
+                  Back
+                </Button>
+                <Button
+                  variant="secondary"
+                  icon={RefreshIcon}
+                  onClick={startScan}
+                  disabled={isRefreshingApps}
+                  aria-label={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
+                  title={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
+                  className={`rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-[var(--page-accent)] shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)] ${isRefreshingApps ? '[&_svg]:animate-spin' : ''}`}
+                >
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            {/* Search and Sort Controls */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex-1 relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search applications..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className={`w-full py-3 pl-11 pr-10 ${PILL_INPUT}`}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 )}
               </div>
-              <div className="pointer-events-none absolute inset-2 overflow-hidden rounded-[1.5rem]">
-                <div className={`absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-slate-950/12 to-transparent transition-opacity duration-200 ${appListShadows.top ? 'opacity-100' : 'opacity-0'}`} />
-                <div className={`absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/14 to-transparent transition-opacity duration-200 ${appListShadows.bottom ? 'opacity-100' : 'opacity-0'}`} />
+              <div className={`flex items-center gap-2 px-4 py-3 ${MUTED_PILL}`}>
+                <ArrowUpDown className="w-4 h-4 text-slate-400" />
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'name' | 'size')}
+                  className="bg-transparent text-sm font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                >
+                  <option value="size">Sort by Size</option>
+                  <option value="name">Sort by Name</option>
+                </select>
+              </div>
+            </div>
+
+            {searchQuery && (
+              <p className="text-sm font-medium text-slate-500 mt-3">
+                Found {filteredApps.length} application{filteredApps.length !== 1 ? 's' : ''}
+              </p>
+            )}
+          </div>
+
+          <div className="relative flex-1 min-h-0 overflow-hidden px-2 pb-2">
+            <div className="grid h-full min-h-0 grid-cols-1 gap-3 grid-cols-[minmax(20rem,1.05fr)_minmax(20rem,0.95fr)]">
+              <div className="flex min-h-0 flex-col gap-3">
+                <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem]">
+                  <SelectedAppBubbleCluster
+                    apps={apps}
+                    appIcons={appIcons}
+                    selectedAppIndexes={selectedAppIndexes}
+                    onToggle={toggleApp}
+                  />
+                </div>
+                <Button
+                  onClick={proceedToConfirmation}
+                  disabled={selectedApps.size === 0}
+                  icon={Trash2}
+                  className="mx-auto min-w-[min(370px,80%)] justify-center gap-3 rounded-full bg-[var(--page-accent)] px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] font-black shadow-[0_18px_50px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-white/80 disabled:shadow-none [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
+                >
+                  Uninstall Apps
+                  <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-black">
+                    {selectedApps.size}
+                  </span>
+                </Button>
+              </div>
+
+              <div className="relative min-h-0 overflow-hidden rounded-[1.75rem] p-2">
+                <div
+                  ref={appListRef}
+                  onScroll={(event) => {
+                    const nextShadows = getScrollShadows(event.currentTarget);
+                    setAppListShadows(previousShadows => previousShadows.top === nextShadows.top && previousShadows.bottom === nextShadows.bottom ? previousShadows : nextShadows);
+                  }}
+                  className="h-full overflow-hidden overflow-y-auto rounded-[1rem] p-3 custom-scrollbar"
+                >
+                  {filteredApps.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div className="p-4 rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 mb-4 backdrop-blur-xl">
+                        <Search className="w-8 h-8 text-slate-400" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-950 mb-1">
+                        No applications found
+                      </h3>
+                      <p className="text-sm font-medium text-slate-600">
+                        Try adjusting your search query
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredApps.map((app, displayIndex) => {
+                        const originalIndex = filteredIndices[displayIndex];
+                        const isSelected = selectedApps.has(originalIndex);
+                        return (
+                          <Card
+                            key={originalIndex}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={isSelected}
+                            aria-label={`${isSelected ? 'Deselect' : 'Select'} ${app.name}`}
+                            className={`${APP_SELECTION_CARD} shadow-sm cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--page-accent-rgb),0.45)] ${isSelected ? 'ring-2 ring-[var(--page-accent)] bg-white/55' : ''
+                              }`}
+                            onClick={() => toggleApp(originalIndex)}
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter' && event.key !== ' ') return;
+                              event.preventDefault();
+                              toggleApp(originalIndex);
+                            }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleApp(originalIndex)}
+                                className="sr-only"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <AppIcon icon={appIcons[app.path]} size="sm" />
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-bold text-slate-950">{app.name}</div>
+                                <div className="truncate text-xs font-medium text-slate-500">{app.path}</div>
+                              </div>
+                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${app.source === 'Homebrew'
+                                  ? 'bg-red-500/10 text-red-500'
+                                  : 'bg-white/45 text-slate-600'
+                                }`}>
+                                {app.source}
+                              </span>
+                              <span className="min-w-[4rem] shrink-0 text-right text-xs font-bold text-slate-600">
+                                {app.size}
+                              </span>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div className="pointer-events-none absolute inset-2 overflow-hidden rounded-[1.5rem]">
+                  <div className={`absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-slate-950/12 to-transparent transition-opacity duration-200 ${appListShadows.top ? 'opacity-100' : 'opacity-0'}`} />
+                  <div className={`absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/14 to-transparent transition-opacity duration-200 ${appListShadows.bottom ? 'opacity-100' : 'opacity-0'}`} />
+                </div>
               </div>
             </div>
           </div>
-        </div>
         </div>
       </div>
     );
@@ -1270,243 +1274,241 @@ export function UninstallPage() {
   if (stage === 'confirmation') {
     const parsedDryRun = parseDryRunOutput(dryRunOutput);
     const isAnalyzing = dryRunOutput.length === 0 || !parsedDryRun.summary;
-    
+
     const selectedAppsArray = sortAppIndexesBySize(Array.from(selectedApps));
     const hasMoreApps = selectedAppsArray.length > 3;
     const displayedApps = showAllApps ? selectedAppsArray : selectedAppsArray.slice(0, 3);
 
     return (
-      <div className={UNINSTALL_SHELL}>
+      <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
         <div className="relative flex h-full min-h-0 flex-col gap-2">
-        <div className="px-4 pb-4 pt-3">
-          <div className="flex items-start gap-4 mb-4">
-            <div className="p-3 rounded-2xl bg-amber-100/40">
-              <AlertTriangle className="w-6 h-6 text-amber-500" />
-            </div>
-            <div className="flex-1">
-              <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
-                Confirm Uninstallation
-              </h2>
-              <p className="font-medium text-slate-600 mb-4">
-                The following applications and their associated files will be removed:
-              </p>
-              
-              {/* Tags list for selected apps */}
-              <div className="space-y-2">
-                <div className="flex flex-wrap gap-2">
-                  {displayedApps.map(index => {
-                    const app = apps[index];
-                    return (
-                      <div 
-                        key={index} 
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-white/60 bg-white/40 shadow-inner shadow-white/30 backdrop-blur-xl transition-all hover:bg-white/55"
-                      >
-                        <AppIcon icon={appIcons[app.path]} size="sm" />
-                        <span className="font-semibold text-slate-950 text-sm">{app.name}</span>
-                        <span className="text-xs text-slate-400">•</span>
-                        <span className="text-xs font-medium text-slate-500">{app.size}</span>
-                        {app.source === 'Homebrew' && (
-                          <>
-                            <span className="text-xs text-slate-400">•</span>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 font-semibold">
-                              Brew
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                
-                {hasMoreApps && (
-                  <button
-                    onClick={() => setShowAllApps(!showAllApps)}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors"
-                  >
-                    {showAllApps ? (
-                      <>
-                        Show less
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                        </svg>
-                      </>
-                    ) : (
-                      <>
-                        Show {selectedAppsArray.length - 3} more
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </>
-                    )}
-                  </button>
-                )}
+          <div className="px-4 pb-4 pt-3">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="p-3 rounded-2xl bg-amber-100/40">
+                <AlertTriangle className="w-6 h-6 text-amber-500" />
               </div>
-            </div>
-          </div>
-        </div>
+              <div className="flex-1">
+                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
+                  Confirm Uninstallation
+                </h2>
+                <p className="font-medium text-slate-600 mb-4">
+                  The following applications and their associated files will be removed:
+                </p>
 
-        <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-hidden">
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-slate-950">
-                {isAnalyzing ? 'Analyzing files...' : 'Files to be removed'}
-              </h3>
-              {isAnalyzing && (
-                <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                  <Loader className="w-4 h-4 animate-spin" />
-                  <span>Scanning...</span>
-                </div>
-              )}
-            </div>
-            
-            {isAnalyzing && (
-              <div className="space-y-2">
-                <div className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40">
-                  <div 
-                    className="h-full bg-gradient-to-r from-rose-400 to-red-500 transition-all duration-300 ease-out"
-                    style={{ width: `${analysisProgress}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-                  <span>Scanning application files and dependencies...</span>
-                  <span>{Math.round(analysisProgress)}%</span>
-                </div>
-              </div>
-            )}
-            {parsedDryRun.summary && (
-              <Card className={`${LIST_CARD} border-rose-200/60`}>
-                <div className="flex items-center gap-3">
-                  <Info className="w-5 h-5 text-rose-500" />
-                  <span className="text-sm font-medium text-slate-600">{parsedDryRun.summary}</span>
-                </div>
-              </Card>
-            )}
-          </div>
-
-          <div ref={dryRunListRef} className="space-y-4 max-h-full overflow-auto pb-[15rem]">
-            {parsedDryRun.apps.map((app, appIndex) => {
-              const selectedApp = getAppByName(app.name);
-              return (
-                <Card key={appIndex} className={LIST_CARD}>
-                  <div className="flex items-center gap-3 mb-3">
-                    <AppIcon icon={selectedApp ? appIcons[selectedApp.path] : undefined} />
-                    <div className="flex-1">
-                      <div className="font-bold text-slate-950">{app.name}</div>
-                      <div className="text-sm font-medium text-slate-500">{app.size}</div>
-                    </div>
-                    <CheckCircle className="w-5 h-5 text-accent-success" />
-                  </div>
-
-                  {app.files.length > 0 && (
-                    <div className="space-y-1 ml-11">
-                      {app.files.slice(0, 5).map((file, fileIndex) => (
-                        <div 
-                          key={fileIndex} 
-                          className={`text-sm flex items-center gap-2 ${
-                            file.isSystem ? 'text-amber-500' : 'text-slate-500'
-                          }`}
+                {/* Tags list for selected apps */}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {displayedApps.map(index => {
+                      const app = apps[index];
+                      return (
+                        <div
+                          key={index}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-white/60 bg-white/40 shadow-inner shadow-white/30 backdrop-blur-xl transition-all hover:bg-white/55"
                         >
-                          {file.isSystem ? (
+                          <AppIcon icon={appIcons[app.path]} size="sm" />
+                          <span className="font-semibold text-slate-950 text-sm">{app.name}</span>
+                          <span className="text-xs text-slate-400">•</span>
+                          <span className="text-xs font-medium text-slate-500">{app.size}</span>
+                          {app.source === 'Homebrew' && (
                             <>
-                              <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                              <span className="font-mono text-xs truncate">{file.path}</span>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 font-semibold">System</span>
-                            </>
-                          ) : (
-                            <>
-                              <Check className="w-3 h-3 flex-shrink-0" />
-                              <span className="font-mono text-xs truncate">
-                                {file.path.replace(/^\/Users\/[^\/]+/, '~')}
+                              <span className="text-xs text-slate-400">•</span>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 font-semibold">
+                                Brew
                               </span>
                             </>
                           )}
                         </div>
-                      ))}
-                      {app.files.length > 5 && (
-                        <div className="text-xs font-medium text-slate-500 ml-5">
-                          + {app.files.length - 5} more files
-                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {hasMoreApps && (
+                    <button
+                      onClick={() => setShowAllApps(!showAllApps)}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-semibold text-[var(--page-accent)] hover:bg-[rgba(var(--page-accent-rgb),0.10)] transition-colors"
+                    >
+                      {showAllApps ? (
+                        <>
+                          Show less
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                          </svg>
+                        </>
+                      ) : (
+                        <>
+                          Show {selectedAppsArray.length - 3} more
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </>
                       )}
-                    </div>
+                    </button>
                   )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-hidden">
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-slate-950">
+                  {isAnalyzing ? 'Analyzing files...' : 'Files to be removed'}
+                </h3>
+                {isAnalyzing && (
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                    <Loader className="w-4 h-4 animate-spin" />
+                    <span>Scanning...</span>
+                  </div>
+                )}
+              </div>
+
+              {isAnalyzing && (
+                <div className="space-y-2">
+                  <div className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40">
+                    <div
+                      className="h-full bg-gradient-to-r from-[rgba(var(--page-accent-rgb),0.70)] to-[var(--page-accent)] transition-all duration-300 ease-out"
+                      style={{ width: `${analysisProgress}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                    <span>Scanning application files and dependencies...</span>
+                    <span>{Math.round(analysisProgress)}%</span>
+                  </div>
+                </div>
+              )}
+              {parsedDryRun.summary && (
+                <Card className={`${LIST_CARD} border-rose-200/60`}>
+                  <div className="flex items-center gap-3">
+                    <Info className="w-5 h-5 text-[var(--page-accent)]" />
+                    <span className="text-sm font-medium text-slate-600">{parsedDryRun.summary}</span>
+                  </div>
                 </Card>
-              );
-            })}
+              )}
+            </div>
 
-            
+            <div ref={dryRunListRef} className="space-y-4 max-h-full overflow-auto pb-[15rem]">
+              {parsedDryRun.apps.map((app, appIndex) => {
+                const selectedApp = getAppByName(app.name);
+                return (
+                  <Card key={appIndex} className={LIST_CARD}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <AppIcon icon={selectedApp ? appIcons[selectedApp.path] : undefined} />
+                      <div className="flex-1">
+                        <div className="font-bold text-slate-950">{app.name}</div>
+                        <div className="text-sm font-medium text-slate-500">{app.size}</div>
+                      </div>
+                      <CheckCircle className="w-5 h-5 text-accent-success" />
+                    </div>
+
+                    {app.files.length > 0 && (
+                      <div className="space-y-1 ml-11">
+                        {app.files.slice(0, 5).map((file, fileIndex) => (
+                          <div
+                            key={fileIndex}
+                            className={`text-sm flex items-center gap-2 ${file.isSystem ? 'text-amber-500' : 'text-slate-500'
+                              }`}
+                          >
+                            {file.isSystem ? (
+                              <>
+                                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                                <span className="font-mono text-xs truncate">{file.path}</span>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 font-semibold">System</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-3 h-3 flex-shrink-0" />
+                                <span className="font-mono text-xs truncate">
+                                  {file.path.replace(/^\/Users\/[^\/]+/, '~')}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                        {app.files.length > 5 && (
+                          <div className="text-xs font-medium text-slate-500 ml-5">
+                            + {app.files.length - 5} more files
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+
+
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center justify-between px-4 py-4">
-          <Button variant="ghost" onClick={cancelConfirmation} className="gap-2 rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500">
-            <X className="w-4 h-4" />
-            Cancel
-          </Button>
-          <Button 
-            variant="danger" 
-            onClick={requestExecuteUninstall} 
-            disabled={isAnalyzing}
-            className="gap-2 rounded-full bg-rose-500 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600"
-          >
-            <Trash2 className="w-4 h-4" />
-            Uninstall {selectedApps.size} App{selectedApps.size > 1 ? 's' : ''}
-          </Button>
-        </div>
-
-        {showFinalConfirmation && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-            <Card className="w-full max-w-lg rounded-[2rem] border border-white/60 bg-white/90 p-6 shadow-[0_36px_120px_rgba(15,23,42,0.32),0_16px_48px_rgba(244,63,94,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)]">
-              <div className="flex items-start gap-4">
-                <div className="rounded-2xl border border-rose-200/70 bg-rose-100/40 p-3 shadow-[0_14px_32px_rgba(244,63,94,0.16)]">
-                  <AlertTriangle className="h-6 w-6 text-rose-500" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-2xl font-black tracking-[-0.04em] text-slate-950">
-                    Are you sure?
-                  </h3>
-                  <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                    Do you really want to do this? This action is irreversible and the selected applications and related files will be removed.
-                  </p>
-                </div>
-              </div>
-
-              <label className="mt-6 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/60 bg-white/45 px-4 py-3 shadow-inner shadow-white/30">
-                <input
-                  type="checkbox"
-                  checked={dontShowFinalConfirmationAgain}
-                  onChange={(event) => setDontShowFinalConfirmationAgain(event.target.checked)}
-                  className="sr-only"
-                />
-                <span className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
-                  dontShowFinalConfirmationAgain
-                    ? 'border-rose-500 bg-rose-500 text-white'
-                    : 'border-slate-300 bg-white/70 text-transparent'
-                }`}>
-                  <Check className="h-3.5 w-3.5" />
-                </span>
-                <span className="text-sm font-semibold text-slate-700">Don't show again</span>
-              </label>
-
-              <div className="mt-6 flex items-center justify-end gap-3">
-                <Button
-                  variant="ghost"
-                  onClick={() => setShowFinalConfirmation(false)}
-                  className="rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="danger"
-                  onClick={confirmExecuteUninstall}
-                  className="rounded-full bg-rose-500 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600"
-                >
-                  Uninstall
-                </Button>
-              </div>
-            </Card>
+          <div className="flex items-center justify-between px-4 py-4">
+            <Button variant="ghost" onClick={cancelConfirmation} className="gap-2 rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500">
+              <X className="w-4 h-4" />
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={requestExecuteUninstall}
+              disabled={isAnalyzing}
+              className="gap-2 rounded-full bg-[var(--page-accent)] shadow-[0_18px_40px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]"
+            >
+              <Trash2 className="w-4 h-4" />
+              Uninstall {selectedApps.size} App{selectedApps.size > 1 ? 's' : ''}
+            </Button>
           </div>
-        )}
+
+          {showFinalConfirmation && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+              <Card className="w-full max-w-lg rounded-[2rem] border border-white/60 bg-white/90 p-6 shadow-[0_36px_120px_rgba(15,23,42,0.32),0_16px_48px_rgba(244,63,94,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)]">
+                <div className="flex items-start gap-4">
+                  <div className="rounded-2xl border border-rose-200/70 bg-rose-100/40 p-3 shadow-[0_14px_32px_rgba(244,63,94,0.16)]">
+                    <AlertTriangle className="h-6 w-6 text-[var(--page-accent)]" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-2xl font-black tracking-[-0.04em] text-slate-950">
+                      Are you sure?
+                    </h3>
+                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                      Do you really want to do this? This action is irreversible and the selected applications and related files will be removed.
+                    </p>
+                  </div>
+                </div>
+
+                <label className="mt-6 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/60 bg-white/45 px-4 py-3 shadow-inner shadow-white/30">
+                  <input
+                    type="checkbox"
+                    checked={dontShowFinalConfirmationAgain}
+                    onChange={(event) => setDontShowFinalConfirmationAgain(event.target.checked)}
+                    className="sr-only"
+                  />
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${dontShowFinalConfirmationAgain
+                      ? 'border-[var(--page-accent)] bg-[var(--page-accent)] text-white'
+                      : 'border-slate-300 bg-white/70 text-transparent'
+                    }`}>
+                    <Check className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="text-sm font-semibold text-slate-700">Don't show again</span>
+                </label>
+
+                <div className="mt-6 flex items-center justify-end gap-3">
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowFinalConfirmation(false)}
+                    className="rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={confirmExecuteUninstall}
+                    className="rounded-full bg-[var(--page-accent)] shadow-[0_18px_40px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]"
+                  >
+                    Uninstall
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1528,107 +1530,106 @@ export function UninstallPage() {
       : summary ? 100 : 8;
 
     return (
-      <div className={UNINSTALL_SHELL}>
+      <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
         <div className="relative flex h-full min-h-0 flex-col gap-2">
-        <div className="px-4 pb-4 pt-3">
-          <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
-            Uninstalling Applications
-          </h2>
-          <p className="font-medium text-slate-600 mb-4">
-            Removing selected applications and their files...
-          </p>
-          
-          {progressTotal > 0 && (
-            <div className="mb-4">
-              <div className="flex items-center justify-between text-sm font-medium text-slate-600 mb-2">
-                <span>Progress</span>
-                <span>{progressCurrent} of {progressTotal}</span>
-              </div>
-              <div
-                className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40"
-                role="progressbar"
-                aria-valuenow={Math.round(progressPercent)}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Uninstall progress"
-              >
-                <div 
-                  className="h-full bg-gradient-to-r from-rose-400 to-red-500 transition-all duration-300"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
-          )}
+          <div className="px-4 pb-4 pt-3">
+            <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
+              Uninstalling Applications
+            </h2>
+            <p className="font-medium text-slate-600 mb-4">
+              Removing selected applications and their files...
+            </p>
 
-          <div className="flex items-center gap-3 py-2">
-            <Info className="w-5 h-5 text-amber-500" />
-            <span className="text-sm font-medium text-slate-600">
-              Do not close this window until the process completes
-            </span>
-          </div>
-        </div>
-
-        <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-auto">
-          <div ref={executeListRef} className="space-y-4">
-            <div className="flex justify-center py-6">
-              <AppRemovalAnimation progressPercent={progressPercent} />
-            </div>
-
-            {executingApps.map((app, appIndex) => (
-              <Card key={appIndex} className={`${LIST_CARD} ${app.completed ? 'border-emerald-300/50' : ''}`}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-2xl border backdrop-blur-xl ${
-                    app.completed ? 'border-emerald-200/70 bg-emerald-100/35' : 'border-rose-200/70 bg-rose-100/35'
-                  }`}>
-                    {app.completed ? (
-                      <CheckCircle className="w-5 h-5 text-emerald-500" />
-                    ) : (
-                      <Loader className="w-5 h-5 text-rose-500 animate-spin" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-bold text-slate-950">{app.name}</div>
-                    <div className="text-sm font-medium text-slate-500">
-                      {app.completed ? 'Completed' : 'Removing files...'}
-                      {app.progress && ` (${app.progress})`}
-                    </div>
-                  </div>
+            {progressTotal > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-sm font-medium text-slate-600 mb-2">
+                  <span>Progress</span>
+                  <span>{progressCurrent} of {progressTotal}</span>
                 </div>
-                
-                {app.files.length > 0 && (
-                  <div className="space-y-1 ml-11">
-                    {app.files.slice(-5).map((file, fileIndex) => (
-                      <div key={fileIndex} className="text-sm flex items-center gap-2 text-slate-500">
-                        <Check className="w-3 h-3 flex-shrink-0 text-emerald-500" />
-                        <span className="font-mono text-xs truncate">
-                          {file.replace(/^\/Users\/[^\/]+/, '~')}
-                        </span>
-                      </div>
-                    ))}
-                    {app.files.length > 5 && (
-                      <div className="text-xs font-medium text-slate-500 ml-5">
-                        {app.files.length} files removed
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Card>
-            ))}
-
-            {summary && (
-              <div className="flex items-center gap-3 px-4 py-3">
-                <CheckCircle className="w-5 h-5 text-emerald-500" />
-                <div className="flex items-center gap-3">
-                  <div>
-                    <div className="font-bold text-slate-950 mb-1">Uninstall Complete</div>
-                    <div className="text-sm font-medium text-slate-600">{sanitizeCliSummary(summary)}</div>
-                  </div>
+                <div
+                  className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40"
+                  role="progressbar"
+                  aria-valuenow={Math.round(progressPercent)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Uninstall progress"
+                >
+                  <div
+                    className="h-full bg-gradient-to-r from-[rgba(var(--page-accent-rgb),0.70)] to-[var(--page-accent)] transition-all duration-300"
+                    style={{ width: `${progressPercent}%` }}
+                  />
                 </div>
               </div>
             )}
+
+            <div className="flex items-center gap-3 py-2">
+              <Info className="w-5 h-5 text-amber-500" />
+              <span className="text-sm font-medium text-slate-600">
+                Do not close this window until the process completes
+              </span>
+            </div>
           </div>
-        </div>
+
+          <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-auto">
+            <div ref={executeListRef} className="space-y-4">
+              <div className="flex justify-center py-6">
+                <AppRemovalAnimation progressPercent={progressPercent} />
+              </div>
+
+              {executingApps.map((app, appIndex) => (
+                <Card key={appIndex} className={`${LIST_CARD} ${app.completed ? 'border-emerald-300/50' : ''}`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`p-2 rounded-2xl border backdrop-blur-xl ${app.completed ? 'border-emerald-200/70 bg-emerald-100/35' : 'border-rose-200/70 bg-rose-100/35'
+                      }`}>
+                      {app.completed ? (
+                        <CheckCircle className="w-5 h-5 text-emerald-500" />
+                      ) : (
+                        <Loader className="w-5 h-5 text-[var(--page-accent)] animate-spin" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-bold text-slate-950">{app.name}</div>
+                      <div className="text-sm font-medium text-slate-500">
+                        {app.completed ? 'Completed' : 'Removing files...'}
+                        {app.progress && ` (${app.progress})`}
+                      </div>
+                    </div>
+                  </div>
+
+                  {app.files.length > 0 && (
+                    <div className="space-y-1 ml-11">
+                      {app.files.slice(-5).map((file, fileIndex) => (
+                        <div key={fileIndex} className="text-sm flex items-center gap-2 text-slate-500">
+                          <Check className="w-3 h-3 flex-shrink-0 text-emerald-500" />
+                          <span className="font-mono text-xs truncate">
+                            {file.replace(/^\/Users\/[^\/]+/, '~')}
+                          </span>
+                        </div>
+                      ))}
+                      {app.files.length > 5 && (
+                        <div className="text-xs font-medium text-slate-500 ml-5">
+                          {app.files.length} files removed
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              ))}
+
+              {summary && (
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <CheckCircle className="w-5 h-5 text-emerald-500" />
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <div className="font-bold text-slate-950 mb-1">Uninstall Complete</div>
+                      <div className="text-sm font-medium text-slate-600">{sanitizeCliSummary(summary)}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1642,54 +1643,53 @@ export function UninstallPage() {
       : sanitizeCliSummary(resultOutput) || 'An error occurred during uninstallation';
 
     return (
-      <div className={UNINSTALL_SHELL}>
+      <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
         <div className="relative flex h-full items-center justify-center">
-        <div className="w-full max-w-2xl p-8 text-center">
-          <div className="space-y-6">
-          <div className={`inline-flex rounded-full border p-6 shadow-[0_18px_48px_rgba(15,23,42,0.10)] backdrop-blur-xl ${
-            result?.ok ? 'border-emerald-200/70 bg-emerald-100/35' : 'border-red-200/70 bg-red-100/35'
-          }`}>
-            {result?.ok ? (
-              <CheckCircle className="w-12 h-12 text-emerald-500" />
-            ) : (
-              <AlertCircle className="w-12 h-12 text-red-500" />
-            )}
-          </div>
-          <div>
-            <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-2">
-              {result?.ok ? 'Uninstall Complete' : 'Uninstall Failed'}
-            </h2>
-            <p className="font-medium text-slate-600">
-              {resultSummary}
-            </p>
-          </div>
-          {result?.ok && parsedResult.apps.length > 0 && (
-            <div className="mx-auto max-h-[300px] max-w-xl space-y-2 overflow-auto text-left">
-              {parsedResult.apps.map((app, index) => (
-                <div key={`${app.name}-${index}`} className="flex items-start gap-3 px-2 py-2">
-                  <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
-                  <div className="min-w-0">
-                    <div className="font-bold text-slate-950">{app.name}</div>
-                    <div className="text-sm font-medium text-slate-500">
-                      {app.files.length > 0 ? `${app.files.length} file${app.files.length === 1 ? '' : 's'} removed` : 'Removed'}
+          <div className="w-full max-w-2xl p-8 text-center">
+            <div className="space-y-6">
+              <div className={`inline-flex rounded-full border p-6 shadow-[0_18px_48px_rgba(15,23,42,0.10)] backdrop-blur-xl ${result?.ok ? 'border-emerald-200/70 bg-emerald-100/35' : 'border-red-200/70 bg-red-100/35'
+                }`}>
+                {result?.ok ? (
+                  <CheckCircle className="w-12 h-12 text-emerald-500" />
+                ) : (
+                  <AlertCircle className="w-12 h-12 text-red-500" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-2">
+                  {result?.ok ? 'Uninstall Complete' : 'Uninstall Failed'}
+                </h2>
+                <p className="font-medium text-slate-600">
+                  {resultSummary}
+                </p>
+              </div>
+              {result?.ok && parsedResult.apps.length > 0 && (
+                <div className="mx-auto max-h-[300px] max-w-xl space-y-2 overflow-auto text-left">
+                  {parsedResult.apps.map((app, index) => (
+                    <div key={`${app.name}-${index}`} className="flex items-start gap-3 px-2 py-2">
+                      <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-950">{app.name}</div>
+                        <div className="text-sm font-medium text-slate-500">
+                          {app.files.length > 0 ? `${app.files.length} file${app.files.length === 1 ? '' : 's'} removed` : 'Removed'}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
+              {result && !result.ok && (
+                <pre className="mx-auto max-h-[300px] max-w-xl overflow-auto whitespace-pre-wrap text-left font-mono text-sm text-slate-600">
+                  {resultSummary}
+                </pre>
+              )}
+              <Button onClick={reset} className="gap-2 rounded-full bg-[var(--page-accent)] shadow-[0_18px_40px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]">
+                <Check className="w-4 h-4" />
+                Done
+              </Button>
             </div>
-          )}
-          {result && !result.ok && (
-            <pre className="mx-auto max-h-[300px] max-w-xl overflow-auto whitespace-pre-wrap text-left font-mono text-sm text-slate-600">
-              {resultSummary}
-            </pre>
-          )}
-          <Button onClick={reset} className="gap-2 rounded-full bg-rose-500 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600">
-            <Check className="w-4 h-4" />
-            Done
-          </Button>
           </div>
-        </div>
         </div>
       </div>
     );
@@ -1697,28 +1697,28 @@ export function UninstallPage() {
 
   if (stage === 'error') {
     return (
-      <div className={UNINSTALL_SHELL}>
+      <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
         <div className="relative flex h-full items-center justify-center">
-        <Card className={`w-full max-w-2xl overflow-hidden rounded-[2rem] p-8 text-center ${GLASS_CARD}`}>
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(239,68,68,0.18),transparent_42%)]" />
-          <div className="relative space-y-6">
-          <div className="inline-flex rounded-full border border-red-200/70 bg-red-100/35 p-6 shadow-[0_18px_48px_rgba(239,68,68,0.16)] backdrop-blur-xl">
-            <AlertCircle className="w-12 h-12 text-red-500" />
-          </div>
-          <div>
-            <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-2">
-              {error?.title || 'Error'}
-            </h2>
-            <p className="font-medium text-slate-600">
-              {error?.message || 'An unknown error occurred'}
-            </p>
-          </div>
-          <Button onClick={reset} className="rounded-full bg-rose-500 shadow-[0_18px_40px_rgba(244,63,94,0.24)] hover:bg-rose-600">
-            Try Again
-          </Button>
-          </div>
-        </Card>
+          <Card className={`w-full max-w-2xl overflow-hidden rounded-[2rem] p-8 text-center ${GLASS_CARD}`}>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(239,68,68,0.18),transparent_42%)]" />
+            <div className="relative space-y-6">
+              <div className="inline-flex rounded-full border border-red-200/70 bg-red-100/35 p-6 shadow-[0_18px_48px_rgba(239,68,68,0.16)] backdrop-blur-xl">
+                <AlertCircle className="w-12 h-12 text-red-500" />
+              </div>
+              <div>
+                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-2">
+                  {error?.title || 'Error'}
+                </h2>
+                <p className="font-medium text-slate-600">
+                  {error?.message || 'An unknown error occurred'}
+                </p>
+              </div>
+              <Button onClick={reset} className="rounded-full bg-[var(--page-accent)] shadow-[0_18px_40px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]">
+                Try Again
+              </Button>
+            </div>
+          </Card>
         </div>
       </div>
     );

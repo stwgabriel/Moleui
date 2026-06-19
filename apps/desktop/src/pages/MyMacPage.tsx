@@ -35,6 +35,9 @@ import {
   type BatteryHistoryPoint,
 } from '@/utils/batteryPrediction';
 
+const INITIAL_STATUS_PROCESS_LIMIT = 40;
+const FULL_STATUS_FETCH_DELAY_MS = 2_500;
+const PROCESS_ICON_FETCH_DELAY_MS = 1_200;
 const MAX_HISTORY = 30;
 const BATTERY_SAMPLE_INTERVAL = 6 * 60_000;
 const PROCESS_MENU_WIDTH = 232;
@@ -500,9 +503,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
   const requestedProcessIconsRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
 
-  const fetchMetrics = useCallback(async (isInitial = false) => {
-    void isInitial;
-
+  const fetchMetrics = useCallback(async (processLimit?: number) => {
     try {
       setError(null);
 
@@ -510,7 +511,9 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
         throw new Error('Desktop API not available');
       }
 
-      const result = await window.moleDesktop.runStatus();
+      const result = await window.moleDesktop.runStatus(
+        processLimit != null ? { processLimit } : undefined,
+      );
 
       if (!result.ok) {
         throw new Error(result.stderr || 'Failed to fetch metrics');
@@ -541,9 +544,12 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
 
   useEffect(() => {
     mountedRef.current = true;
+    let fullFetchTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function loadCachedData() {
       const cached = await getMyMacMetrics();
+      let hasFreshCache = false;
+
       if (cached && mountedRef.current) {
         try {
           const cachedBatteryHistory = parseBatteryHistory(cached.batteryHistory);
@@ -551,6 +557,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
           setBatteryHistory(cachedBatteryHistory);
 
           if (Date.now() - cached.timestamp <= 60000) {
+            hasFreshCache = true;
             const cachedMetrics = JSON.parse(cached.metrics) as SystemMetrics;
             const cachedHistory = parseHistory(cached.history);
 
@@ -562,18 +569,35 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
           console.error('Failed to parse cached metrics');
         }
       }
-      fetchMetrics(true);
+
+      if (hasFreshCache) {
+        fullFetchTimer = setTimeout(() => {
+          if (mountedRef.current) {
+            void fetchMetrics();
+          }
+        }, 1_000);
+      } else {
+        void fetchMetrics(INITIAL_STATUS_PROCESS_LIMIT);
+        fullFetchTimer = setTimeout(() => {
+          if (mountedRef.current) {
+            void fetchMetrics();
+          }
+        }, FULL_STATUS_FETCH_DELAY_MS);
+      }
     }
 
-    loadCachedData();
+    void loadCachedData();
 
     let interval: ReturnType<typeof setInterval> | null = null;
     if (autoRefresh) {
-      interval = setInterval(() => fetchMetrics(false), 2000);
+      interval = setInterval(() => {
+        void fetchMetrics();
+      }, 2000);
     }
 
     return () => {
       mountedRef.current = false;
+      if (fullFetchTimer) clearTimeout(fullFetchTimer);
       if (interval) clearInterval(interval);
     };
   }, [autoRefresh, fetchMetrics]);
@@ -650,10 +674,13 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
       }
     }
 
-    void loadProcessIcons();
+    const iconTimer = setTimeout(() => {
+      void loadProcessIcons();
+    }, PROCESS_ICON_FETCH_DELAY_MS);
 
     return () => {
       isCancelled = true;
+      clearTimeout(iconTimer);
     };
   }, [metrics, processIcons, processIconMisses]);
 
@@ -808,8 +835,15 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
         {error && !metrics ? (
           <Card className="p-8 text-center">
             <p className="text-accent-danger mb-4">{error}</p>
-            <Button onClick={() => fetchMetrics(true)}>Retry</Button>
+            <Button onClick={() => void fetchMetrics()}>Retry</Button>
           </Card>
+        ) : !metrics ? (
+          <div className="flex h-full min-h-0 items-center justify-center" role="status" aria-label="Loading system metrics">
+            <div className="flex flex-col items-center gap-4">
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-violet-300/30 border-t-violet-600" />
+              <p className="text-sm font-medium text-slate-500">Loading your Mac...</p>
+            </div>
+          </div>
         ) : metrics && (
           <div
             className="grid h-full min-h-0 grid-cols-4 gap-2"

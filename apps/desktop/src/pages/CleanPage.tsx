@@ -20,6 +20,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
+import { featureAccentVars } from '@/lib/featureAccents';
 import type { PageConfig } from '@/types';
 import { formatBytes, parseSizeToBytes, stripAnsi } from '@/utils/format';
 import { usePaywall } from '@/hooks/usePaywall';
@@ -29,6 +30,8 @@ type Stage = 'idle' | 'analyzing' | 'results' | 'cleaning' | 'complete';
 type GroupStatus = 'pending' | 'active' | 'ready' | 'cleaning' | 'complete' | 'empty' | 'error';
 type CleanupCommand = 'clean' | 'purge' | 'installer';
 type CategoryBadgeTone = 'selected' | 'excluded' | 'attention' | 'running' | 'queued' | 'done' | 'clean' | 'found';
+
+const cleanAccentStyle = featureAccentVars('clean');
 
 interface LogEntry {
   text: string;
@@ -78,10 +81,10 @@ const GROUP_ICONS: Record<CleanupGroup['icon'], LucideIcon> = {
 };
 
 const categoryBadgeClassByTone: Record<CategoryBadgeTone, string> = {
-  selected: 'bg-violet-50 text-violet-600 ring-1 ring-violet-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  selected: 'bg-[rgba(var(--page-accent-rgb),0.10)] text-[var(--page-accent)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
   excluded: 'bg-slate-100/80 text-slate-500 ring-1 ring-slate-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]',
   attention: 'bg-rose-50 text-rose-500 ring-1 ring-rose-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
-  running: 'bg-violet-50 text-violet-600 ring-1 ring-violet-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
+  running: 'bg-[rgba(var(--page-accent-rgb),0.10)] text-[var(--page-accent)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)] shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
   queued: 'bg-slate-100/80 text-slate-500 ring-1 ring-slate-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]',
   done: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
   clean: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]',
@@ -455,8 +458,8 @@ function makeItemId(groupId: string, line: string, index: number) {
 function parseCleanableLine(group: CleanupGroup, line: string, currentSection: string, index: number): CleanupItem | null {
   if (!line || isSummaryLine(line) || isSectionHeader(line) || isSkippedLine(line)) return null;
 
-  if (group.command === 'clean' && group.sections?.length && currentSection && !group.sections.includes(currentSection)) {
-    return null;
+  if (group.command === 'clean' && group.sections?.length) {
+    if (!currentSection || !group.sections.includes(currentSection)) return null;
   }
 
   const size = parseLineSize(line);
@@ -1001,11 +1004,11 @@ export function CleanPage() {
     const isDone = !active && (itemCount > 0 || isClean || hasError);
     const statusLabel = active ? 'Scanning' : hasError ? 'Issue' : isClean ? 'Clean' : itemCount > 0 ? 'Found' : '';
     const stateClassName = active
-      ? 'border-dashed border-violet-400 bg-white/88 shadow-[0_16px_44px_rgba(109,93,252,0.16)] animate-clean-card-pulse'
+      ? 'border-dashed border-[var(--page-accent)] bg-white/88 shadow-[0_16px_44px_var(--page-accent-glow)] animate-clean-card-pulse'
       : hasError
         ? 'border-rose-300 bg-rose-50/88 shadow-[0_12px_34px_rgba(244,63,94,0.12)]'
         : isDone
-          ? 'border-violet-500 bg-violet-50/90 shadow-[0_12px_34px_rgba(109,93,252,0.13)]'
+          ? 'border-[var(--page-accent)] bg-[rgba(var(--page-accent-rgb),0.08)] shadow-[0_12px_34px_var(--page-accent-glow)]'
           : 'border-slate-200/90 bg-white/70 shadow-none opacity-75';
     const iconStateClassName = active || isDone ? item.iconClassName : 'bg-slate-100 text-slate-400 shadow-none';
 
@@ -1021,9 +1024,9 @@ export function CleanPage() {
         <div className="min-w-0">
           <div className={`truncate text-[clamp(0.72rem,1vw,1rem)] font-black leading-tight ${active || isDone ? 'text-slate-950' : 'text-slate-500'}`}>{item.label}</div>
           <div className="mt-1 flex min-w-0 items-center gap-[clamp(0.25rem,0.45vw,0.5rem)] text-[clamp(0.6rem,0.74vw,0.75rem)] font-black">
-            <span className={active || isDone ? 'text-violet-600' : 'text-slate-400'}>{formatGigValue(showSize)}</span>
+            <span className={active || isDone ? 'text-[var(--page-accent)]' : 'text-slate-400'}>{formatGigValue(showSize)}</span>
             {statusLabel && <span className="h-1 w-1 rounded-full bg-slate-300" />}
-            {statusLabel && <span className={`truncate ${active ? 'text-violet-500' : hasError ? 'text-rose-500' : isClean ? 'text-emerald-500' : 'text-slate-500'}`}>{statusLabel}</span>}
+            {statusLabel && <span className={`truncate ${active ? 'text-[var(--page-accent)]' : hasError ? 'text-rose-500' : isClean ? 'text-emerald-500' : 'text-slate-500'}`}>{statusLabel}</span>}
           </div>
         </div>
       </div>
@@ -1046,8 +1049,8 @@ export function CleanPage() {
       <section
         key={group.id}
         className={`relative border-b border-slate-900/[0.07] transition-colors duration-300 first:rounded-t-[1.55rem] last:border-b-0 last:rounded-b-[1.55rem] ${
-          isError ? 'bg-rose-50/28' : isActive ? 'bg-violet-50/24 animate-clean-card-pulse' : 'hover:bg-white/38'
-        } ${canSelect && isSelected ? 'shadow-[inset_5px_0_0_rgba(109,93,252,0.32)]' : ''}`}
+          isError ? 'bg-rose-50/28' : isActive ? 'bg-[rgba(var(--page-accent-rgb),0.08)] animate-clean-card-pulse' : 'hover:bg-white/38'
+        } ${canSelect && isSelected ? 'shadow-[inset_5px_0_0_rgba(var(--page-accent-rgb),0.32)]' : ''}`}
       >
         <div className="group flex w-full items-center gap-[clamp(0.8rem,1.15vw,1.25rem)] px-[clamp(0.8rem,1.35vw,1.35rem)] py-[clamp(0.85rem,1.2vw,1.2rem)] text-left transition">
           {canSelect && (
@@ -1058,8 +1061,8 @@ export function CleanPage() {
               aria-pressed={isSelected}
               className={`flex h-[clamp(1.35rem,1.75vw,1.7rem)] w-[clamp(1.35rem,1.75vw,1.7rem)] shrink-0 items-center justify-center rounded-full border transition-all ${
                 isSelected
-                  ? 'border-violet-500 bg-violet-600 text-white shadow-[0_8px_18px_rgba(109,93,252,0.26),0_0_0_5px_rgba(109,93,252,0.10)]'
-                  : 'border-slate-300 bg-white/76 text-transparent shadow-[0_6px_14px_rgba(83,76,148,0.06)] hover:border-violet-300 hover:text-violet-300'
+                  ? 'border-[var(--page-accent)] bg-[var(--page-accent)] text-white shadow-[0_8px_18px_var(--page-accent-glow),0_0_0_5px_rgba(var(--page-accent-rgb),0.10)]'
+                  : 'border-slate-300 bg-white/76 text-transparent shadow-[0_6px_14px_rgba(83,76,148,0.06)] hover:border-[rgba(var(--page-accent-rgb),0.45)] hover:text-[rgba(var(--page-accent-rgb),0.55)]'
               }`}
             >
               <Check className="h-[clamp(0.8rem,1vw,1rem)] w-[clamp(0.8rem,1vw,1rem)]" strokeWidth={3} />
@@ -1071,15 +1074,15 @@ export function CleanPage() {
             aria-controls={detailsId}
             aria-expanded={group.expanded}
             onClick={() => toggleExpanded(group.id)}
-            className="flex min-w-0 flex-1 items-center gap-[clamp(0.8rem,1.15vw,1.25rem)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
+            className="flex min-w-0 flex-1 items-center gap-[clamp(0.8rem,1.15vw,1.25rem)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--page-accent-rgb),0.45)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
           >
             <div
               className={`flex h-[clamp(2.75rem,3.7vw,4.05rem)] w-[clamp(2.75rem,3.7vw,4.05rem)] shrink-0 items-center justify-center rounded-[1.05rem] border bg-white/76 backdrop-blur-xl ${
                 isActive
-                  ? 'border-violet-200/90 text-violet-600'
+                  ? 'border-[rgba(var(--page-accent-rgb),0.24)] text-[var(--page-accent)]'
                   : isError
                     ? 'border-rose-200/90 text-rose-500'
-                    : 'border-violet-100/80 text-violet-500'
+                    : 'border-[rgba(var(--page-accent-rgb),0.14)] text-[var(--page-accent)]'
               }`}
             >
               {isActive ? <Loader2 className="h-[clamp(1.25rem,1.65vw,1.65rem)] w-[clamp(1.25rem,1.65vw,1.65rem)] animate-spin" strokeWidth={2.15} /> : <Icon className="h-[clamp(1.25rem,1.65vw,1.65rem)] w-[clamp(1.25rem,1.65vw,1.65rem)]" strokeWidth={2.15} />}
@@ -1106,7 +1109,7 @@ export function CleanPage() {
             aria-controls={detailsId}
             aria-expanded={group.expanded}
             onClick={() => toggleExpanded(group.id)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/62 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/62 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--page-accent-rgb),0.45)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf9ff]"
             aria-label={`${group.expanded ? 'Collapse' : 'Expand'} ${group.name}`}
           >
             {group.expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
@@ -1119,7 +1122,7 @@ export function CleanPage() {
               ref={(element) => {
                 itemListRefs.current[group.id] = element;
               }}
-              className="ml-[clamp(3.55rem,4.9vw,5.25rem)] max-h-[190px] overflow-y-auto rounded-[1.1rem] border border-violet-100/80 bg-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] backdrop-blur-xl custom-scrollbar"
+              className="ml-[clamp(3.55rem,4.9vw,5.25rem)] max-h-[190px] overflow-y-auto rounded-[1.1rem] border border-[rgba(var(--page-accent-rgb),0.14)] bg-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] backdrop-blur-xl custom-scrollbar"
             >
               {group.items.length > 0 ? (
                 group.items.map((item) => (
@@ -1128,13 +1131,13 @@ export function CleanPage() {
                     type="button"
                     onClick={() => toggleItem(group.id, item.id)}
                     aria-pressed={item.selected}
-                    className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_1.35rem] items-center gap-[clamp(0.55rem,0.95vw,0.9rem)] border-b border-slate-900/[0.06] px-[clamp(0.75rem,1.15vw,1rem)] py-[clamp(0.65rem,0.95vw,0.85rem)] text-left transition-colors last:border-b-0 hover:bg-violet-50/54"
+                    className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_1.35rem] items-center gap-[clamp(0.55rem,0.95vw,0.9rem)] border-b border-slate-900/[0.06] px-[clamp(0.75rem,1.15vw,1rem)] py-[clamp(0.65rem,0.95vw,0.85rem)] text-left transition-colors last:border-b-0 hover:bg-[rgba(var(--page-accent-rgb),0.08)]"
                   >
                     <span className="flex min-w-0 items-center gap-3">
-                      <span className={`h-2 w-2 shrink-0 rounded-full ${item.selected ? 'bg-violet-500 shadow-[0_0_0_4px_rgba(109,93,252,0.11)]' : 'bg-slate-300 shadow-[0_0_0_4px_rgba(148,163,184,0.11)]'}`} />
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${item.selected ? 'bg-[var(--page-accent)] shadow-[0_0_0_4px_rgba(var(--page-accent-rgb),0.11)]' : 'bg-slate-300 shadow-[0_0_0_4px_rgba(148,163,184,0.11)]'}`} />
                       <span className={`truncate text-[clamp(0.75rem,0.9vw,0.88rem)] font-bold ${item.selected ? 'text-slate-700' : 'text-slate-400'}`}>{item.label}</span>
                     </span>
-                    <span className={`shrink-0 rounded-full px-[clamp(0.55rem,0.8vw,0.7rem)] py-[clamp(0.28rem,0.42vw,0.36rem)] text-[clamp(0.64rem,0.78vw,0.76rem)] font-black leading-none ${item.selected ? 'bg-violet-50 text-violet-600 ring-1 ring-violet-100/95' : 'bg-slate-100/80 text-slate-400 ring-1 ring-slate-200/80'}`}>
+                    <span className={`shrink-0 rounded-full px-[clamp(0.55rem,0.8vw,0.7rem)] py-[clamp(0.28rem,0.42vw,0.36rem)] text-[clamp(0.64rem,0.78vw,0.76rem)] font-black leading-none ${item.selected ? 'bg-[rgba(var(--page-accent-rgb),0.10)] text-[var(--page-accent)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)]' : 'bg-slate-100/80 text-slate-400 ring-1 ring-slate-200/80'}`}>
                       {formatBytes(item.size)}
                     </span>
                     <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" />
@@ -1142,9 +1145,9 @@ export function CleanPage() {
                 ))
               ) : (
                 <div className="flex min-w-0 items-center gap-3 px-[clamp(0.75rem,1.15vw,1rem)] py-[clamp(0.75rem,1vw,0.95rem)]">
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-violet-500 shadow-[0_0_0_4px_rgba(109,93,252,0.11)]" />
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--page-accent)] shadow-[0_0_0_4px_rgba(var(--page-accent-rgb),0.11)]" />
                   <span className="truncate text-[clamp(0.75rem,0.9vw,0.88rem)] font-bold text-slate-500">Waiting for cleanup output...</span>
-                  {isActive && <Loader2 className="ml-auto h-4 w-4 shrink-0 animate-spin text-violet-500" />}
+                  {isActive && <Loader2 className="ml-auto h-4 w-4 shrink-0 animate-spin text-[var(--page-accent)]" />}
                 </div>
               )}
             </div>
@@ -1160,8 +1163,8 @@ export function CleanPage() {
 
   if (stage === 'complete') {
     return (
-      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] p-7">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(109,93,252,0.18),transparent_36%),radial-gradient(circle_at_16%_88%,rgba(34,197,94,0.12),transparent_34%)]" />
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] p-7" style={cleanAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(var(--page-accent-rgb),0.18),transparent_36%),radial-gradient(circle_at_16%_88%,rgba(34,197,94,0.12),transparent_34%)]" />
         <div className="relative flex h-full items-center justify-center">
           <div className="w-full max-w-xl rounded-[1.4rem] border border-white/80 bg-white/70 p-8 text-center shadow-[0_24px_80px_rgba(83,76,148,0.16)] backdrop-blur-2xl">
             <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-500 shadow-[0_18px_45px_rgba(34,197,94,0.16)]">
@@ -1169,7 +1172,7 @@ export function CleanPage() {
             </div>
             <h2 className="text-3xl font-black text-slate-950">Cleanup complete</h2>
             <p className="mt-2 text-sm font-semibold text-slate-500">Mole recovered approximately {formatGigValue(cleanedSize)} from the selected cleanup targets.</p>
-            <Button icon={Check} onClick={reset} size="lg" className="mt-8 rounded-full bg-violet-600 px-8 shadow-[0_18px_44px_rgba(109,93,252,0.28)] hover:bg-violet-700">
+            <Button icon={Check} onClick={reset} size="lg" className="mt-8 rounded-full bg-[var(--page-accent)] px-8 shadow-[0_18px_44px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]">
               Done
             </Button>
           </div>
@@ -1179,8 +1182,8 @@ export function CleanPage() {
   }
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(109,93,252,0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(236,72,153,0.07),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+    <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950" style={cleanAccentStyle}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(236,72,153,0.07),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
 
       <div className="relative flex h-full min-h-0 flex-col">
         <header className="flex shrink-0 items-start justify-between gap-4">
@@ -1198,7 +1201,7 @@ export function CleanPage() {
                 Stop
               </Button>
             ) : (
-              <Button variant="secondary" icon={RefreshCcw} onClick={requestAnalyze} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-violet-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
+              <Button variant="secondary" icon={RefreshCcw} onClick={requestAnalyze} className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-[var(--page-accent)] shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]">
                 Scan Again
               </Button>
             )}
@@ -1208,11 +1211,11 @@ export function CleanPage() {
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,0.96fr)_minmax(0,1fr)] gap-[clamp(1.25rem,3vw,4rem)]">
           <section className="relative min-h-0 min-w-0 my-auto">
             <div className="relative mx-auto mt-[clamp(0.15rem,0.8vw,1rem)] h-[clamp(290px,42vh,620px)] max-w-[720px]">
-              <div className="absolute inset-[8%] rounded-full border border-violet-100" />
-              <div className="absolute inset-[18%] rounded-full border border-violet-100" />
-              <div className="absolute inset-[28%] rounded-full border border-violet-200" />
+              <div className="absolute inset-[8%] rounded-full border border-[rgba(var(--page-accent-rgb),0.12)]" />
+              <div className="absolute inset-[18%] rounded-full border border-[rgba(var(--page-accent-rgb),0.12)]" />
+              <div className="absolute inset-[28%] rounded-full border border-[rgba(var(--page-accent-rgb),0.20)]" />
               <div className="clean-orbit-marker absolute inset-[18%]" />
-              <div className="absolute left-1/2 top-1/2 h-[clamp(160px,14vw,290px)] w-[clamp(160px,14vw,290px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-[radial-gradient(circle_at_38%_26%,#f3c4ff_0%,#9e72ff_46%,#6847ef_100%)] shadow-[0_28px_90px_rgba(109,93,252,0.32),inset_0_1px_1px_rgba(255,255,255,0.8)]" />
+              <div className="absolute left-1/2 top-1/2 h-[clamp(160px,14vw,290px)] w-[clamp(160px,14vw,290px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-[radial-gradient(circle_at_38%_26%,rgba(var(--page-accent-rgb),0.35)_0%,var(--page-accent)_58%,var(--page-accent-hover)_100%)] shadow-[0_28px_90px_var(--page-accent-glow),inset_0_1px_1px_rgba(255,255,255,0.8)]" />
               <div className="absolute left-1/2 top-1/2 z-10 flex h-[clamp(160px,14vw,290px)] w-[clamp(160px,14vw,290px)] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full text-white">
                 <Sparkles className="mb-2 h-[clamp(1.45rem,2vw,2rem)] w-[clamp(1.45rem,2vw,2rem)] animate-sparkle" />
                 <div className="max-w-[88%] whitespace-nowrap text-center text-[clamp(1.65rem,3vw,3.65rem)] font-black leading-none">{formatGigValue(displaySize).replace(' ', '\u00a0')}</div>
@@ -1272,7 +1275,7 @@ export function CleanPage() {
           <section className="flex min-h-0 min-w-0 flex-col pt-[clamp(0.4rem,1.65vw,2rem)]">
             <div className="mb-[clamp(0.6rem,1vw,1rem)] flex items-center justify-between gap-3">
               <h2 className="text-[clamp(0.95rem,1.3vw,1.25rem)] font-black text-slate-600">Junk Categories</h2>
-              <div className="rounded-full bg-white/70 px-3 py-1 text-[clamp(0.72rem,0.88vw,0.82rem)] font-black text-violet-600 shadow-[0_8px_24px_rgba(83,76,148,0.06)]">
+              <div className="rounded-full bg-white/70 px-3 py-1 text-[clamp(0.72rem,0.88vw,0.82rem)] font-black text-[var(--page-accent)] shadow-[0_8px_24px_rgba(83,76,148,0.06)]">
                 {categoryItemCountLabel(foundItemCount)}
               </div>
             </div>
@@ -1281,14 +1284,14 @@ export function CleanPage() {
               <div ref={categoryListRef} onScroll={updateCategoryScrollShadow} className="h-full min-h-0 overflow-auto pr-2 custom-scrollbar">
                 <div>
                   {visibleGroups.length > 0 && (
-                    <div className="overflow-hidden rounded-[1.55rem] border border-violet-100/75 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.84)] backdrop-blur-2xl">
+                    <div className="overflow-hidden rounded-[1.55rem] border border-[rgba(var(--page-accent-rgb),0.14)] bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.84)] backdrop-blur-2xl">
                       {visibleGroups.map(renderCategoryCard)}
                     </div>
                   )}
 
                   {stage !== 'analyzing' && foundGroups.length === 0 && (
-                    <div className="rounded-[1.15rem] border border-violet-100 bg-white/62 p-8 text-center">
-                      <Sparkles className="mx-auto h-10 w-10 text-violet-500" />
+                    <div className="rounded-[1.15rem] border border-[rgba(var(--page-accent-rgb),0.14)] bg-white/62 p-8 text-center">
+                      <Sparkles className="mx-auto h-10 w-10 text-[var(--page-accent)]" />
                       <h3 className="mt-3 text-xl font-black text-slate-950">Ready for a cleanup scan</h3>
                       <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-relaxed text-slate-500">Mole will scan safe cleanup areas and build review cards from the junk it actually finds.</p>
                     </div>
@@ -1307,7 +1310,7 @@ export function CleanPage() {
             onClick={startCleaning}
             disabled={stage === 'analyzing' || stage === 'cleaning' || (stage === 'results' && selectedItemCount === 0)}
             size="lg"
-            className="min-w-[min(450px,42vw)] rounded-full bg-violet-600 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_rgba(109,93,252,0.32)] hover:bg-violet-700 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
+            className="min-w-[min(450px,42vw)] rounded-full bg-[var(--page-accent)] px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)] [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
           >
             {stage === 'analyzing'
                 ? `Scanning ${formatGigValue(displaySize)}`

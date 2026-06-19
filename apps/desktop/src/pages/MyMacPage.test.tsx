@@ -219,7 +219,7 @@ describe('MyMacPage layout', () => {
     render(<MyMacPage onNavigate={vi.fn()} />);
 
     const getProcessIcons = vi.mocked(window.moleDesktop.getProcessIcons!);
-    await waitFor(() => expect(getProcessIcons).toHaveBeenCalled());
+    await waitFor(() => expect(getProcessIcons).toHaveBeenCalled(), { timeout: 2_000 });
 
     const firstIconRequest = getProcessIcons.mock.calls[0];
     expect(firstIconRequest).toBeDefined();

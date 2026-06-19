@@ -1,4 +1,5 @@
 import type { PageId } from '@/types';
+import type { CSSProperties } from 'react';
 
 export type AccentPageId = Exclude<PageId, 'home'>;
 
@@ -52,3 +53,17 @@ export const FEATURE_ACCENTS_BY_ICON: Record<string, FeatureAccent> = {
   Database: FEATURE_ACCENTS.analyze,
   PieChart: FEATURE_ACCENTS.analyze,
 };
+
+export function featureAccentVars(pageId: AccentPageId): CSSProperties {
+  const accent = FEATURE_ACCENTS[pageId];
+
+  return {
+    '--page-accent': accent.accent,
+    '--page-accent-hover': accent.accentHover,
+    '--page-accent-rgb': accent.rgb,
+    '--page-accent-glow': accent.glow,
+    '--color-accent-primary': accent.accent,
+    '--color-accent-primary-hover': accent.accentHover,
+    '--shadow-accent': `0 8px 24px ${accent.glow}`,
+  } as CSSProperties;
+}

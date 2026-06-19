@@ -1,8 +1,31 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SettingsWindow } from './SettingsWindow';
 
+const mocks = vi.hoisted(() => ({
+  useSubscription: vi.fn(),
+}));
+
+vi.mock('@/hooks/useSubscription', () => ({
+  useSubscription: mocks.useSubscription,
+}));
+
+function subscriptionFixture(overrides: Partial<ReturnType<typeof mocks.useSubscription>> = {}) {
+  return {
+    isSubscribed: true,
+    isDeveloperUnlocked: false,
+    isSignedIn: true,
+    isLoading: false,
+    status: 'active',
+    country: 'US',
+    startCheckout: vi.fn().mockResolvedValue(undefined),
+    openBillingPortal: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
 describe('SettingsWindow', () => {
   beforeEach(() => {
+    mocks.useSubscription.mockReturnValue(subscriptionFixture());
     window.moleDesktop = {
       getSettingsProfile: vi.fn().mockResolvedValue({
         deviceName: 'Gabriel-MacBook-Pro',
@@ -75,6 +98,54 @@ describe('SettingsWindow', () => {
 
     await waitFor(() => {
       expect(window.moleDesktop.getBackgroundSystems).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('opens checkout from the subscription panel inside the app window', async () => {
+    let resolveCheckout!: () => void;
+    const startCheckout = vi.fn(() => new Promise<void>((resolve) => {
+      resolveCheckout = resolve;
+    }));
+    mocks.useSubscription.mockReturnValue(subscriptionFixture({
+      isSubscribed: false,
+      status: 'none',
+      startCheckout,
+    }));
+
+    render(<SettingsWindow />);
+
+    fireEvent.click(screen.getByRole('button', { name: /subscribe in app/i }));
+
+    expect(startCheckout).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('button', { name: /opening checkout/i })).toBeDisabled();
+
+    resolveCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /subscribe in app/i })).not.toBeDisabled();
+    });
+  });
+
+  it('opens the billing portal from the subscription panel', async () => {
+    let resolvePortal!: () => void;
+    const openBillingPortal = vi.fn(() => new Promise<void>((resolve) => {
+      resolvePortal = resolve;
+    }));
+    mocks.useSubscription.mockReturnValue(subscriptionFixture({
+      openBillingPortal,
+    }));
+
+    render(<SettingsWindow />);
+
+    fireEvent.click(screen.getByRole('button', { name: /manage billing/i }));
+
+    expect(openBillingPortal).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('button', { name: /opening billing/i })).toBeDisabled();
+
+    resolvePortal();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /manage billing/i })).not.toBeDisabled();
     });
   });
 });

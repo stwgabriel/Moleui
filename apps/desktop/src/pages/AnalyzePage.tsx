@@ -10,9 +10,8 @@ import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { StartScreen } from '@/components/common/StartScreen';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { Spinner } from '@/components/ui/Spinner';
 import { getFileIconCategory } from '@/lib/fileIcons';
+import { featureAccentVars } from '@/lib/featureAccents';
 import { formatBytes, stripAnsi } from '@/utils/format';
 import { usePersistentState } from '@/utils/persistentState';
 import { usePaywall } from '@/hooks/usePaywall';
@@ -22,6 +21,8 @@ type Stage = 'idle' | 'scanning' | 'results' | 'error';
 type AnalyzeMode = 'disk' | 'home' | 'downloads' | 'custom';
 type QuickAnalyzeMode = Exclude<AnalyzeMode, 'custom'>;
 type NavigationAnimationDirection = 'down' | 'up';
+
+const analyzeAccentStyle = featureAccentVars('analyze');
 
 interface AnalyzeEntry {
   name: string;
@@ -763,65 +764,76 @@ export function AnalyzePage() {
   // ── Path Picker ──────────────────────────────────────────────────────────
   if (stage === 'idle' && view === 'pick') {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8">
-        <Card className="w-full max-w-lg p-8 space-y-6">
-          <div className="text-center">
-            <div className="inline-flex p-4 rounded-2xl bg-analyze/10 mb-4">
-              <BarChart3 className="w-8 h-8 text-analyze" />
+      <div className="relative h-full min-h-0 overflow-y-auto bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(1.25rem,3vw,3rem)] pt-[clamp(1.5rem,3.8vw,4rem)] text-slate-950" style={analyzeAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+
+        <div className="relative flex min-h-full items-center justify-center text-center">
+          <main className="flex w-full max-w-[56rem] flex-col items-center">
+            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl">
+              <span className="absolute inset-[-0.38rem] rounded-full border-2 border-[rgba(var(--page-accent-rgb),0.18)] border-r-[var(--page-accent)] border-t-[var(--page-accent-hover)]" aria-hidden="true" />
+              <BarChart3 className="relative h-[42%] w-[42%]" strokeWidth={2.6} />
             </div>
-            <h2 className="text-2xl font-bold text-text-primary mb-1">Choose Scan Location</h2>
-            <p className="text-sm text-text-secondary">Select a folder to analyze its disk usage</p>
-          </div>
 
-          {/* Quick paths */}
-          <div className="grid grid-cols-3 gap-3">
-            {QUICK_PATHS.map(({ mode, label, icon: Icon }) => (
-              <button
-                key={mode}
-                onClick={() => selectAnalyzeMode(mode)}
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${selectedMode === mode
-                  ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
-                  : 'border-surface-hover bg-surface text-text-secondary hover:border-accent-primary/40 hover:text-text-primary'
-                  }`}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="text-xs font-medium">{label}</span>
-              </button>
-            ))}
-          </div>
+            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950">
+              Choose scan location.
+            </h1>
+            <p className="mt-5 max-w-[35rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500">
+              Pick a starting point and Mole will build a storage map for that folder.
+            </p>
 
-          {/* Custom path input */}
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
-              Custom Path
-            </label>
-            <div className="relative">
-              <Folder className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
-              <input
-                type="text"
-                value={pathInput}
-                onChange={(e) => {
-                  const nextPath = e.target.value;
-                  setSelectedMode(modeForPath(nextPath));
-                  setPathInput(nextPath);
-                  setScanPath(nextPath);
-                }}
-                placeholder="/path/to/folder"
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-surface border border-surface-hover text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-primary/30 focus:border-accent-primary transition-all font-mono text-sm"
-              />
+            <div className="mt-8 w-full rounded-[1.75rem] border border-white/60 bg-white/42 p-[clamp(1rem,2vw,1.4rem)] shadow-[0_24px_76px_rgba(83,76,148,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {QUICK_PATHS.map(({ mode, label, path, icon: Icon }) => (
+                  <button
+                    key={mode}
+                    onClick={() => selectAnalyzeMode(mode)}
+                    className={`group flex min-h-[8.5rem] flex-col items-center justify-center gap-3 rounded-[1.35rem] border p-4 transition-all ${selectedMode === mode
+                      ? 'border-[rgba(var(--page-accent-rgb),0.42)] bg-white/78 text-[var(--page-accent)] shadow-[0_18px_48px_rgba(var(--page-accent-rgb),0.16)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)]'
+                      : 'border-white/52 bg-white/36 text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] hover:bg-white/62 hover:text-slate-800 hover:shadow-[0_14px_38px_rgba(83,76,148,0.10)]'
+                      }`}
+                  >
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] transition-transform group-hover:scale-105">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span className="text-sm font-black">{label}</span>
+                    <span className="max-w-full truncate font-mono text-[11px] font-black opacity-60">{path}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-[1.35rem] border border-white/58 bg-white/52 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                <label className="mb-2 block px-1 text-left text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500">
+                  Custom path
+                </label>
+                <div className="relative">
+                  <Folder className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={pathInput}
+                    onChange={(e) => {
+                      const nextPath = e.target.value;
+                      setSelectedMode(modeForPath(nextPath));
+                      setPathInput(nextPath);
+                      setScanPath(nextPath);
+                    }}
+                    placeholder="/path/to/folder"
+                    className="w-full rounded-full border border-white/70 bg-white/76 py-3 pl-11 pr-4 font-mono text-sm font-black text-slate-700 shadow-[0_10px_30px_rgba(83,76,148,0.08)] transition-all placeholder:text-slate-400 focus:border-[var(--page-accent)] focus:outline-none focus:ring-4 focus:ring-[rgba(var(--page-accent-rgb),0.14)]"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                <Button variant="secondary" onClick={reset} className="flex-1 rounded-full border border-white/70 bg-white/70 py-3 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white">
+                  Cancel
+                </Button>
+                <Button onClick={() => startScan()} className="flex-1 gap-2 rounded-full py-3 shadow-[0_16px_42px_rgba(var(--page-accent-rgb),0.22)]">
+                  <Search className="h-4 w-4" />
+                  Start Analysis
+                </Button>
+              </div>
             </div>
-          </div>
-
-          <div className="flex gap-3">
-            <Button variant="secondary" onClick={reset} className="flex-1">
-              Cancel
-            </Button>
-            <Button onClick={() => startScan()} className="flex-1 gap-2">
-              <Search className="w-4 h-4" />
-              Start Analysis
-            </Button>
-          </div>
-        </Card>
+          </main>
+        </div>
       </div>
     );
   }
@@ -829,38 +841,46 @@ export function AnalyzePage() {
   // ── Scanning ─────────────────────────────────────────────────────────────
   if (stage === 'scanning') {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8">
-        <div className="text-center space-y-6 w-full max-w-md">
-          <div className="inline-flex p-6 rounded-full bg-analyze/10 relative">
-            <Spinner size="lg" />
-            <Search className="absolute inset-0 m-auto w-6 h-6 text-analyze" />
-          </div>
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950" style={analyzeAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
 
-          <div>
-            <h2 className="text-2xl font-bold text-text-primary mb-1">Analyzing Disk...</h2>
-            <p className="text-sm text-text-secondary font-mono truncate max-w-xs mx-auto">
-              {scanPath}
+        <div className="relative flex h-full min-h-0 items-center justify-center text-center">
+          <main className="flex w-full max-w-[42rem] flex-col items-center">
+            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl">
+              <span className="absolute inset-[-0.38rem] rounded-full border-2 border-[rgba(var(--page-accent-rgb),0.18)] border-r-[var(--page-accent)] border-t-[var(--page-accent-hover)] animate-spin" aria-hidden="true" />
+              <Search className="relative h-[42%] w-[42%]" strokeWidth={2.6} />
+            </div>
+
+            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950">
+              Reading storage.
+            </h1>
+            <p className="mt-5 max-w-[34rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500">
+              Mole is scanning this location for the first time and building the storage map.
             </p>
-          </div>
 
-          {/* Progress bar */}
-          <div className="space-y-2">
-            <div className="h-2 bg-surface rounded-full overflow-hidden">
+            <div className="mt-7 w-full max-w-[32rem] space-y-3">
+              <div className="truncate rounded-full bg-white/70 px-4 py-2 font-mono text-sm font-black text-slate-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)]">
+                {scanPath}
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white/70 shadow-inner shadow-white/50">
               <div
-                className="h-full bg-gradient-to-r from-analyze to-accent-secondary rounded-full transition-all duration-500 ease-out"
+                className="h-full rounded-full bg-gradient-to-r from-[rgba(var(--page-accent-rgb),0.70)] to-[var(--page-accent)] transition-all duration-500 ease-out"
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <div className="flex items-center justify-between text-xs text-text-tertiary">
-              <span className="truncate max-w-[240px]">{currentFile || 'Scanning...'}</span>
+            <div className="flex items-center justify-between gap-4 text-xs font-bold text-slate-400">
+              <span className="truncate">{currentFile || 'Reading storage...'}</span>
               <span>{Math.round(progress)}%</span>
             </div>
           </div>
 
-          <Button variant="secondary" onClick={stopScan} className="gap-2">
-            <X className="w-4 h-4" />
-            Cancel
-          </Button>
+            <div className="mt-8">
+              <Button variant="secondary" onClick={stopScan} size="lg" className="min-w-[min(260px,42vw)] rounded-full border border-white/70 bg-white/70 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
+                <X className="w-4 h-4" />
+                Cancel
+              </Button>
+            </div>
+          </main>
         </div>
       </div>
     );
@@ -869,7 +889,7 @@ export function AnalyzePage() {
   // ── Error ────────────────────────────────────────────────────────────────
   if (stage === 'error') {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8">
+      <div className="h-full flex flex-col items-center justify-center p-8" style={analyzeAccentStyle}>
         <div className="text-center space-y-6 max-w-md">
           <div className="inline-flex p-6 rounded-full bg-accent-danger/10">
             <AlertCircle className="w-12 h-12 text-accent-danger" />
@@ -916,7 +936,7 @@ export function AnalyzePage() {
       : '';
 
     return (
-      <div className="relative h-full overflow-y-auto p-6 xl:overflow-hidden">
+      <div className="relative h-full overflow-y-auto p-6 xl:overflow-hidden" style={analyzeAccentStyle}>
         {/* Breadcrumb navigation bar */}
         <div className="relative z-50 mb-7 flex items-center gap-2 rounded-full border border-white/55 bg-white/28 px-4 py-3 shadow-[0_16px_48px_rgba(109,93,252,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
           <button
@@ -1192,7 +1212,7 @@ export function AnalyzePage() {
                                 className={`group relative w-full overflow-hidden rounded-[1.35rem] border border-white/50 bg-white/30 p-3 text-left shadow-sm transition hover:bg-white/46 ${!entry.is_dir ? 'cursor-default' : ''}`}
                               >
                                 <div
-                                  className="absolute inset-y-0 left-0 rounded-[1.35rem] bg-violet-200/38 transition-[width] duration-300"
+                                  className="absolute inset-y-0 left-0 rounded-[1.35rem] bg-[rgba(var(--page-accent-rgb),0.16)] transition-[width] duration-300"
                                   style={{ width: `${Math.min(100, Math.max(3, percentage))}%` }}
                                 />
                                 <div className="relative flex items-center gap-3">

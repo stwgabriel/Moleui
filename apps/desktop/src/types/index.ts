@@ -79,6 +79,7 @@ export interface MoleDesktopAPI {
     getCliEvents: () => Promise<CliMonitorEvent[]>;
     clearCliEvents: () => Promise<{ ok: boolean; message?: string }>;
     onCliEvent: (callback: (event: CliMonitorEvent) => void) => void;
+    onUnlockApp: (callback: () => void) => void;
     removeListeners: () => void;
   };
   myMacCache?: {
@@ -98,7 +99,7 @@ export interface MoleDesktopAPI {
   openActivityMonitor: () => Promise<{ ok: boolean; message?: string }>;
   signalProcess: (pid: number, signal: 'SIGTERM' | 'SIGKILL') => Promise<{ ok: boolean; message?: string }>;
   getProcessIcons?: (processes: Array<{ pid: number; name?: string; command?: string }>) => Promise<{ ok: boolean; icons: Record<number, string>; missing?: number[]; message?: string }>;
-  runStatus: () => Promise<MoleResult>;
+  runStatus: (options?: { processLimit?: number }) => Promise<MoleResult>;
   uninstall: {
     list: () => Promise<MoleResult>;
     killList: () => Promise<{ ok: boolean; message: string }>;

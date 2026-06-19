@@ -680,6 +680,51 @@ body {
 .slide-in-down { animation: slide-in-down 360ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .slide-out-down { animation: slide-out-down 400ms cubic-bezier(0.4, 0, 0.2, 1); }
 
+.mole-native-login-form,
+.mole-native-login-form * {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.mole-native-login-form :where(.cl-rootBox, .cl-cardBox, .cl-card, .cl-main, .cl-form, .cl-formField, .cl-formFieldRow, .cl-formFieldInput, .cl-formButtonPrimary, .cl-socialButtons, .cl-socialButtonsBlockButton, input, button) {
+  width: 100% !important;
+}
+
+.mole-native-login-form :where(.cl-cardBox, .cl-card) {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.mole-native-login-form .cl-card {
+  padding: 0 !important;
+}
+
+.mole-native-login-form :where(.cl-header, .cl-logoBox, .cl-footer, .cl-footerPages, [class*="cl-footer"], [class*="developmentMode"], [class*="devMode"]) {
+  display: none !important;
+}
+
+.mole-native-login-form :where(.cl-rootBox, .cl-cardBox, .cl-card, .cl-main, .cl-form, .cl-formField, .cl-formFieldRow, .cl-formFieldInputGroup) {
+  overflow: visible !important;
+}
+
+.mole-native-login-form :where(.cl-main, .cl-form, .cl-formField, .cl-formFieldRow, .cl-formFieldInputShowPasswordButton) {
+  box-shadow: none !important;
+}
+
+.mole-native-login-form :where(.cl-formFieldInput, input) {
+  border-radius: 0.75rem !important;
+}
+
+.mole-native-login-form :where(.cl-formButtonPrimary, button[type="submit"]) {
+  border-radius: 0.875rem !important;
+}
+
+.mole-native-login-form .cl-formFieldInput:focus {
+  outline: none !important;
+}
+
 /* ============================================================
    CUSTOM SCROLLBAR
    ============================================================ */

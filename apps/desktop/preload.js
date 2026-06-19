@@ -80,8 +80,12 @@ contextBridge.exposeInMainWorld("moleDesktop", {
     onCliEvent: (callback) => {
       ipcRenderer.on("mole:developer:event", (_, event) => callback(event));
     },
+    onUnlockApp: (callback) => {
+      ipcRenderer.on("mole:developer:unlock-app", () => callback());
+    },
     removeListeners: () => {
       ipcRenderer.removeAllListeners("mole:developer:event");
+      ipcRenderer.removeAllListeners("mole:developer:unlock-app");
     },
   },
   myMacCache: {
@@ -95,7 +99,13 @@ contextBridge.exposeInMainWorld("moleDesktop", {
     enable: () => invokeWithLog("mole:touchid:enable", "touchid enable"),
     disable: () => invokeWithLog("mole:touchid:disable", "touchid disable"),
   },
-  runStatus: () => invokeWithLog("mole:status", "status --json"),
+  runStatus: (options) => {
+    const processLimit = options?.processLimit;
+    const label = Number.isFinite(processLimit)
+      ? `status --json --process-limit ${processLimit}`
+      : "status --json";
+    return invokeWithLog("mole:status", label, options);
+  },
   openExternal: (url) => ipcRenderer.invoke("mole:open-external", url),
   copyText: (text) => ipcRenderer.invoke("mole:copy-text", text),
   revealPath: (commandPath) => ipcRenderer.invoke("mole:reveal-path", commandPath),

@@ -17,6 +17,7 @@ const MAX_CLI_MONITOR_EVENTS = 1200;
 const MAX_CLI_EVENT_TEXT = 24000;
 const MAIN_WINDOW_SIZE = { width: 1280, height: 860, minWidth: 1180, minHeight: 760 };
 const LOGIN_WINDOW_SIZE = { width: 880, height: 640, minWidth: 760, minHeight: 560 };
+const BILLING_WINDOW_SHOW_TIMEOUT_MS = 900;
 
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("enable-gpu-rasterization");
@@ -30,7 +31,11 @@ const appIconCache = new Map();
 const cliMonitorEvents = [];
 let nextCliRunId = 1;
 let applicationSearchIndex = null;
+let applicationSearchIndexPromise = null;
 let systemApplicationIndex = null;
+let systemApplicationIndexPromise = null;
+const BATTERY_SAMPLER_START_DELAY_MS = 15_000;
+const APPLICATION_INDEX_METADATA_BATCH_SIZE = 24;
 const applicationNameLookupCache = new Map();
 let batterySamplerInterval = null;
 let batterySampleInFlight = false;
@@ -333,7 +338,7 @@ function runMole(args, options = {}) {
 
     const child = spawn(executable, args, {
       cwd: runtimeDir(),
-      env: { ...process.env },
+      env: { ...process.env, MOLE_DESKTOP: "1" },
       detached: process.platform !== "win32",
     });
 
@@ -702,7 +707,10 @@ async function sampleBatteryMetrics() {
 function startBatterySampler() {
   if (batterySamplerInterval) return;
 
-  void sampleBatteryMetrics();
+  setTimeout(() => {
+    void sampleBatteryMetrics();
+  }, BATTERY_SAMPLER_START_DELAY_MS);
+
   batterySamplerInterval = setInterval(() => {
     void sampleBatteryMetrics();
   }, BATTERY_SAMPLE_INTERVAL_MS);
@@ -774,9 +782,37 @@ function normalizeAppLookupName(value) {
     .toLowerCase();
 }
 
-function getApplicationSearchIndex() {
-  if (applicationSearchIndex) return applicationSearchIndex;
+function yieldToEventLoop() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
+async function scanApplicationDirectory(directory, depth, appPaths, visited) {
+  if (depth < 0 || visited.has(directory)) return;
+  visited.add(directory);
+
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(directory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+    const entryPath = path.join(directory, entry.name);
+
+    if (entry.name.endsWith(".app")) {
+      addUniquePath(appPaths, entryPath);
+      continue;
+    }
+
+    if (!entry.name.startsWith(".")) {
+      await scanApplicationDirectory(entryPath, depth - 1, appPaths, visited);
+    }
+  }
+}
+
+async function buildApplicationSearchIndex() {
   const roots = [
     "/Applications",
     path.join(os.homedir(), "Applications"),
@@ -789,41 +825,45 @@ function getApplicationSearchIndex() {
   const appPaths = [];
   const visited = new Set();
 
-  function scanDirectory(directory, depth) {
-    if (depth < 0 || visited.has(directory)) return;
-    visited.add(directory);
-
-    let entries = [];
-    try {
-      entries = fs.readdirSync(directory, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-      const entryPath = path.join(directory, entry.name);
-
-      if (entry.name.endsWith(".app")) {
-        addUniquePath(appPaths, entryPath);
-        continue;
-      }
-
-      if (!entry.name.startsWith(".")) {
-        scanDirectory(entryPath, depth - 1);
-      }
-    }
+  for (const root of roots) {
+    await scanApplicationDirectory(root, 3, appPaths, visited);
+    await yieldToEventLoop();
   }
 
-  roots.forEach((root) => scanDirectory(root, 3));
-  applicationSearchIndex = appPaths;
   return appPaths;
 }
 
-function getSystemApplicationIndex() {
-  if (systemApplicationIndex) return systemApplicationIndex;
+function warmApplicationSearchIndex() {
+  if (applicationSearchIndex) return Promise.resolve(applicationSearchIndex);
+  if (applicationSearchIndexPromise) return applicationSearchIndexPromise;
 
-  const entries = getApplicationSearchIndex().map(readApplicationMetadata);
+  applicationSearchIndexPromise = buildApplicationSearchIndex()
+    .then((appPaths) => {
+      applicationSearchIndex = appPaths;
+      return appPaths;
+    })
+    .catch((error) => {
+      applicationSearchIndexPromise = null;
+      throw error;
+    });
+
+  return applicationSearchIndexPromise;
+}
+
+async function getApplicationSearchIndex() {
+  if (applicationSearchIndex) return applicationSearchIndex;
+  return warmApplicationSearchIndex();
+}
+
+async function buildSystemApplicationIndex(appPaths) {
+  const entries = [];
+
+  for (let index = 0; index < appPaths.length; index += APPLICATION_INDEX_METADATA_BATCH_SIZE) {
+    const batch = appPaths.slice(index, index + APPLICATION_INDEX_METADATA_BATCH_SIZE);
+    entries.push(...batch.map(readApplicationMetadata));
+    await yieldToEventLoop();
+  }
+
   const byPath = new Map();
   const byLookupName = new Map();
   const byBundleIdentifier = new Map();
@@ -834,8 +874,25 @@ function getSystemApplicationIndex() {
     entry.lookupNames.forEach((lookupName) => addMapListValue(byLookupName, lookupName, entry.path));
   }
 
-  systemApplicationIndex = { entries, byPath, byLookupName, byBundleIdentifier };
-  return systemApplicationIndex;
+  return { entries, byPath, byLookupName, byBundleIdentifier };
+}
+
+async function getSystemApplicationIndex() {
+  if (systemApplicationIndex) return systemApplicationIndex;
+  if (systemApplicationIndexPromise) return systemApplicationIndexPromise;
+
+  systemApplicationIndexPromise = getApplicationSearchIndex()
+    .then((appPaths) => buildSystemApplicationIndex(appPaths))
+    .then((index) => {
+      systemApplicationIndex = index;
+      return index;
+    })
+    .catch((error) => {
+      systemApplicationIndexPromise = null;
+      throw error;
+    });
+
+  return systemApplicationIndexPromise;
 }
 
 function findSpotlightApplicationPaths(processName) {
@@ -873,13 +930,13 @@ function appLookupNamesMatch(appName, lookupName) {
   return shorter.length >= 6 && longer.startsWith(shorter);
 }
 
-function findNamedApplicationPaths(processName) {
+async function findNamedApplicationPaths(processName) {
   const lookupName = normalizeAppLookupName(processName);
   if (!lookupName) return [];
   if (applicationNameLookupCache.has(lookupName)) return applicationNameLookupCache.get(lookupName);
 
   const matches = [];
-  const { entries, byLookupName } = getSystemApplicationIndex();
+  const { entries, byLookupName } = await getSystemApplicationIndex();
 
   (byLookupName.get(lookupName) || []).forEach((appPath) => addUniquePath(matches, appPath));
 
@@ -895,7 +952,7 @@ function findNamedApplicationPaths(processName) {
   return matches;
 }
 
-function systemApplicationIconPaths(appInfo = {}) {
+async function systemApplicationIconPaths(appInfo = {}) {
   const paths = [];
   const appObject = appInfo && typeof appInfo === "object" ? appInfo : {};
   const directPath = typeof appInfo === "string" ? appInfo : appObject.path;
@@ -903,7 +960,7 @@ function systemApplicationIconPaths(appInfo = {}) {
   const names = typeof appInfo === "string"
     ? [path.basename(appInfo)]
     : [appObject.name, appObject.uninstall_name, appObject.uninstallName, appObject.executableName].filter(Boolean);
-  const { byBundleIdentifier } = getSystemApplicationIndex();
+  const { byBundleIdentifier } = await getSystemApplicationIndex();
 
   if (directPath) {
     const existingPath = existingProcessPath(directPath) || (fs.existsSync(directPath) ? directPath : "");
@@ -911,13 +968,16 @@ function systemApplicationIconPaths(appInfo = {}) {
   }
 
   (byBundleIdentifier.get(bundleId) || []).forEach((appPath) => addUniquePath(paths, appPath));
-  names.forEach((name) => findNamedApplicationPaths(name).forEach((appPath) => addUniquePath(paths, appPath)));
+  for (const name of names) {
+    const namedPaths = await findNamedApplicationPaths(name);
+    namedPaths.forEach((appPath) => addUniquePath(paths, appPath));
+  }
 
   return paths;
 }
 
 async function getSystemApplicationIconData(appInfo = {}) {
-  const iconPaths = systemApplicationIconPaths(appInfo);
+  const iconPaths = await systemApplicationIconPaths(appInfo);
 
   for (const iconPath of iconPaths) {
     const result = await getAppIconData(iconPath);
@@ -995,7 +1055,7 @@ return outputLines as text
   return bundlePaths;
 }
 
-function processIconPaths(processInfo, bundlePath = "") {
+async function processIconPaths(processInfo, bundlePath = "") {
   const paths = [];
   const processPath = existingProcessPath(processInfo?.command);
   const processBundlePath = appBundlePath(processPath);
@@ -1004,12 +1064,20 @@ function processIconPaths(processInfo, bundlePath = "") {
   addUniquePath(paths, bundlePath);
   addUniquePath(paths, processBundlePath);
   addUniquePath(paths, processPath);
-  findNamedApplicationPaths(processInfo?.name).forEach((appPath) => addUniquePath(paths, appPath));
-  findNamedApplicationPaths(processExecutableName).forEach((appPath) => addUniquePath(paths, appPath));
-  findNamedApplicationPaths(path.basename(processBundlePath)).forEach((appPath) => addUniquePath(paths, appPath));
-  processIconSlugCandidates(processInfo).forEach((name) => {
-    findNamedApplicationPaths(name).forEach((appPath) => addUniquePath(paths, appPath));
-  });
+
+  if (paths.length > 0) return paths;
+
+  const lookupNames = [
+    processInfo?.name,
+    processExecutableName,
+    path.basename(processBundlePath),
+    ...processIconSlugCandidates(processInfo),
+  ].filter(Boolean);
+
+  for (const name of lookupNames) {
+    const namedPaths = await findNamedApplicationPaths(name);
+    namedPaths.forEach((appPath) => addUniquePath(paths, appPath));
+  }
 
   return paths;
 }
@@ -1059,6 +1127,12 @@ end tell
 }
 
 function configureApplicationMenu() {
+  const unlockAppForDevelopment = () => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send("mole:developer:unlock-app");
+    }
+  };
+
   const template = [
     ...(process.platform === "darwin"
       ? [{
@@ -1109,6 +1183,11 @@ function configureApplicationMenu() {
       ...(isDev
         ? [
           { type: "separator" },
+          {
+            label: "Unlock App Without Paying",
+            click: unlockAppForDevelopment,
+          },
+          { type: "separator" },
           { role: "reload" },
           { role: "forceReload" },
           { type: "separator" },
@@ -1139,6 +1218,14 @@ function centeredWindowBounds({ width, height, minWidth, minHeight }) {
   };
 }
 
+function applyMainWindowBounds(window) {
+  if (!window || window.isDestroyed()) return;
+
+  const nextBounds = centeredWindowBounds(MAIN_WINDOW_SIZE);
+  window.setMinimumSize(nextBounds.minWidth, nextBounds.minHeight);
+  window.setBounds({ x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height }, false);
+}
+
 function createWindow(options = {}) {
   const shouldShow = options.show !== false;
   const bounds = centeredWindowBounds(MAIN_WINDOW_SIZE);
@@ -1167,8 +1254,7 @@ function createWindow(options = {}) {
 
   if (shouldShow) {
     window.once("ready-to-show", () => {
-      const nextBounds = centeredWindowBounds(MAIN_WINDOW_SIZE);
-      window.setBounds({ x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height }, false);
+      applyMainWindowBounds(window);
       window.show();
       window.focus();
     });
@@ -1224,6 +1310,10 @@ function createLoginWindow() {
 
   loadAppWindow(loginWindow, "?window=login");
 
+  loginWindow.once("ready-to-show", () => {
+    loginWindow.show();
+  });
+
   loginWindow.on("closed", () => {
     loginWindow = null;
   });
@@ -1250,7 +1340,9 @@ function openMainWindowAfterAuth() {
 
   if (!mainWindow || mainWindow.isDestroyed()) {
     mainWindow = createWindow();
+    applyMainWindowBounds(mainWindow);
   } else {
+    applyMainWindowBounds(mainWindow);
     mainWindow.show();
     mainWindow.focus();
   }
@@ -1294,6 +1386,52 @@ function isBillingReturnUrl(url) {
   }
 }
 
+function isHttpsUrl(url) {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function billingWindowDataUrl({ title, message, detail }) {
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #fbf9ff; color: #111827; }
+      main { width: min(420px, calc(100vw - 48px)); text-align: center; }
+      .mark { width: 52px; height: 52px; margin: 0 auto 18px; border-radius: 18px; border: 4px solid #ddd6fe; border-top-color: #7c3aed; animation: spin 0.9s linear infinite; }
+      h1 { margin: 0; font-size: 22px; line-height: 1.2; }
+      p { margin: 10px 0 0; color: #64748b; font-size: 14px; line-height: 1.55; }
+      code { display: block; margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: #fff1f2; color: #be123c; white-space: pre-wrap; text-align: left; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true"></div>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(message)}</p>
+      ${detail ? `<code>${escapeHtml(detail)}</code>` : ""}
+    </main>
+  </body>
+</html>`;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
 function openBillingWindow(parentWindow, url, title) {
   if (!isAllowedBillingUrl(url)) {
     return { ok: false, message: "Billing URL is not allowed" };
@@ -1309,6 +1447,7 @@ function openBillingWindow(parentWindow, url, title) {
     minWidth: 760,
     minHeight: 620,
     show: false,
+    backgroundColor: "#fbf9ff",
     title,
     titleBarStyle: "hidden",
     trafficLightPosition: {
@@ -1323,23 +1462,82 @@ function openBillingWindow(parentWindow, url, title) {
     },
   });
 
+  const showBillingWindow = () => {
+    if (billingWindow && !billingWindow.isDestroyed()) {
+      billingWindow.show();
+      billingWindow.focus();
+    }
+  };
+  const showBillingError = (message, detail) => {
+    if (!billingWindow || billingWindow.isDestroyed()) return;
+    billingWindow.loadURL(billingWindowDataUrl({
+      title: "Payment could not load",
+      message,
+      detail,
+    })).catch((error) => {
+      console.warn("Failed to render billing error:", error.message);
+    });
+    showBillingWindow();
+  };
+  const loadBillingUrl = (nextUrl) => {
+    if (!billingWindow || billingWindow.isDestroyed()) return;
+    billingWindow.loadURL(nextUrl).catch((error) => {
+      showBillingError("Moleui could not open the Stripe payment screen in this window.", error.message);
+    });
+  };
+  const closeIfBillingReturn = (nextUrl) => {
+    if (!isBillingReturnUrl(nextUrl)) return false;
+    billingWindow?.close();
+    return true;
+  };
+
   billingWindow.webContents.on("will-navigate", (event, nextUrl) => {
-    if (isBillingReturnUrl(nextUrl)) {
+    if (closeIfBillingReturn(nextUrl)) {
       event.preventDefault();
-      billingWindow?.close();
     }
   });
 
+  billingWindow.webContents.on("will-redirect", (event, nextUrl) => {
+    if (closeIfBillingReturn(nextUrl)) {
+      event.preventDefault();
+    }
+  });
+
+  billingWindow.webContents.on("did-navigate", (_event, nextUrl) => {
+    closeIfBillingReturn(nextUrl);
+  });
+
+  billingWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3 || closeIfBillingReturn(validatedUrl)) return;
+    showBillingError("Stripe did not finish loading inside Moleui.", errorDescription);
+  });
+
   billingWindow.webContents.setWindowOpenHandler(({ url: nextUrl }) => {
-    if (isAllowedBillingUrl(nextUrl)) return { action: "allow" };
     if (isBillingReturnUrl(nextUrl)) {
       billingWindow?.close();
+      return { action: "deny" };
+    }
+    if (isAllowedBillingUrl(nextUrl)) {
+      setImmediate(() => loadBillingUrl(nextUrl));
+      return { action: "deny" };
+    }
+    if (isHttpsUrl(nextUrl)) {
+      shell.openExternal(nextUrl).catch((error) => {
+        console.warn("Failed to open billing link:", error.message);
+      });
     }
     return { action: "deny" };
   });
 
-  billingWindow.loadURL(url);
-  billingWindow.once("ready-to-show", () => billingWindow?.show());
+  billingWindow.loadURL(billingWindowDataUrl({
+    title: title === "Manage Moleui Billing" ? "Opening billing portal..." : "Opening checkout...",
+    message: "Stripe is loading securely inside Moleui.",
+  })).catch((error) => {
+    console.warn("Failed to render billing loading screen:", error.message);
+  });
+  billingWindow.once("ready-to-show", showBillingWindow);
+  setTimeout(showBillingWindow, BILLING_WINDOW_SHOW_TIMEOUT_MS);
+  billingWindow.webContents.once("did-finish-load", () => loadBillingUrl(url));
   billingWindow.on("closed", () => {
     billingWindow = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1373,9 +1571,9 @@ function createSettingsWindow(parentWindow) {
   }
 
   settingsWindow = new BrowserWindow({
-    width: 540,
+    width: 900,
     height: 640,
-    minWidth: 480,
+    minWidth: 900,
     minHeight: 560,
     show: false,
     title: "Settings",
@@ -1446,7 +1644,15 @@ function createCliMonitorWindow(parentWindow) {
   return cliMonitorWindow;
 }
 
-ipcMain.handle("mole:status", async () => runMole(["status", "--json", "--process-limit", "0"]));
+ipcMain.handle("mole:status", async (_event, options = {}) => {
+  const args = ["status", "--json", "--process-limit"];
+  if (options && Number.isFinite(options.processLimit)) {
+    args.push(String(options.processLimit));
+  } else {
+    args.push("0");
+  }
+  return runMole(args);
+});
 
 ipcMain.handle("mole:process:icons", async (_event, processes) => {
   if (!Array.isArray(processes)) {
@@ -1457,7 +1663,7 @@ ipcMain.handle("mole:process:icons", async (_event, processes) => {
   const resolvedProcessIconEntries = await mapWithConcurrency(processes, 8, async (proc) => ({
     pid: proc?.pid,
     processInfo: proc,
-    iconPaths: processIconPaths(proc, bundlePathsByPid.get(Number(proc?.pid))),
+    iconPaths: await processIconPaths(proc, bundlePathsByPid.get(Number(proc?.pid))),
   }));
   const processIconEntries = resolvedProcessIconEntries.filter(({ pid, iconPaths }) => Number.isFinite(pid) && iconPaths.length > 0);
 
@@ -1880,6 +2086,9 @@ ipcMain.handle("mole:signal-process", async (_event, pid, signal) => {
 app.whenReady().then(() => {
   configureApplicationMenu();
   configureMacStartupService();
+  setImmediate(() => {
+    void warmApplicationSearchIndex();
+  });
   startBatterySampler();
 
   const openedAsHidden = wasOpenedAsHiddenLoginItem();

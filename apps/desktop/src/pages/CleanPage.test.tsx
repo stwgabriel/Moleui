@@ -270,6 +270,29 @@ describe('CleanPage', () => {
     expect(screen.getByText('User app cache 174 items')).toBeInTheDocument();
   });
 
+  it('ignores global clean status sizes before section output', async () => {
+    localStorage.clear();
+    vi.mocked(window.moleDesktop.clean.execute).mockImplementation(async (options) => {
+      if (options.command === 'clean') {
+        return {
+          ok: true,
+          stdout: '⚙ Apple Silicon | Free space: 36.23GB\n➤ User essentials\n  → User app cache 174 items, 3.31GB dry\n',
+          stderr: '',
+          exitCode: 0,
+        } as any;
+      }
+
+      return { ok: true, stdout: '', stderr: '', exitCode: 0 } as any;
+    });
+
+    render(<CleanPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /scan for junk/i }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /start cleaning 3\.3 GB/i })).toBeInTheDocument());
+    expect(screen.queryByText(/36\.2 GB/)).not.toBeInTheDocument();
+  });
+
   it('parses purge dry-run artifacts emitted by non-interactive cleanup runs', async () => {
     localStorage.clear();
     vi.mocked(window.moleDesktop.clean.execute).mockImplementation(async (options) => {
