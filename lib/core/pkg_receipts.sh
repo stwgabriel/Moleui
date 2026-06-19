@@ -9,25 +9,6 @@ if [[ -n "${MOLE_PKG_RECEIPTS_LOADED:-}" ]]; then
 fi
 readonly MOLE_PKG_RECEIPTS_LOADED=1
 
-_mole_pkg_receipt_app_root() {
-    local rel_path="${1#/}"
-    [[ -n "$rel_path" ]] || return 1
-
-    local app_path="/$rel_path"
-    case "$app_path" in
-        /usr/local/*.app | /opt/*.app)
-            printf '%s\n' "$app_path"
-            return 0
-            ;;
-        /usr/local/*.app/* | /opt/*.app/*)
-            printf '%s.app\n' "${app_path%%.app/*}"
-            return 0
-            ;;
-    esac
-
-    return 1
-}
-
 pkg_receipt_nonstandard_app_paths() {
     if ! command -v pkgutil > /dev/null 2>&1; then
         return 0

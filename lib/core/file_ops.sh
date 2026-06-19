@@ -63,6 +63,52 @@ format_duration_human() {
 # Path Validation
 # ============================================================================
 
+_mole_normalize_deletion_policy_path() {
+    local path="$1"
+    local slash="/"
+    local double_slash="//"
+
+    while [[ "$path" == *"$double_slash"* ]]; do
+        path="${path//$double_slash/$slash}"
+    done
+
+    local trimmed="${path%/}"
+    [[ -n "$trimmed" ]] && printf '%s\n' "$trimmed" || printf '%s\n' "$path"
+}
+
+# Deletion policy only. App/data protection stays in app_protection.sh.
+_mole_is_critical_deletion_path() {
+    local path="$1"
+
+    case "$path" in
+        / | \
+            /bin | /bin/* | \
+            /sbin | /sbin/* | \
+            /usr | /usr/bin | /usr/bin/* | /usr/sbin | /usr/sbin/* | /usr/lib | /usr/lib/* | \
+            /System | /System/* | \
+            /Library/Apple | /Library/Apple/* | \
+            /Library/Extensions | /Library/Extensions/* | \
+            /Library/Keychains | /Library/Keychains/* | \
+            /Applications/Finder.app | /Applications/Finder.app/* | \
+            /Applications/Safari.app | /Applications/Safari.app/* | \
+            /Users | /Users/Shared | /Users/Guest | /Users/Guest/*)
+            return 0
+            ;;
+        /private)
+            return 0
+            ;;
+        /etc | /etc/* | /private/etc | /private/etc/*)
+            return 0
+            ;;
+        /var | /var/db | /var/db/* | /var/audit | /var/audit/* | \
+            /private/var | /private/var/db | /private/var/db/* | /private/var/audit | /private/var/audit/*)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
 # Validate path for deletion (absolute, no traversal, not system dir)
 validate_path_for_deletion() {
     local path="$1"
@@ -71,36 +117,6 @@ validate_path_for_deletion() {
     if [[ -z "$path" ]]; then
         log_error "Path validation failed: empty path"
         return 1
-    fi
-
-    # Check symlink target if path is a symbolic link
-    if [[ -L "$path" ]]; then
-        local link_target
-        link_target=$(readlink "$path" 2> /dev/null) || {
-            log_error "Cannot read symlink: $path"
-            return 1
-        }
-
-        # Resolve relative symlinks to absolute paths for validation
-        local resolved_target="$link_target"
-        if [[ "$link_target" != /* ]]; then
-            local link_dir
-            link_dir=$(dirname "$path")
-            resolved_target=$(cd "$link_dir" 2> /dev/null && cd "$(dirname "$link_target")" 2> /dev/null && pwd)/$(basename "$link_target") || resolved_target=""
-        fi
-
-        # Validate resolved target against protected paths
-        if [[ -n "$resolved_target" ]]; then
-            case "$resolved_target" in
-                / | /System | /System/* | /bin | /bin/* | /sbin | /sbin/* | \
-                    /usr | /usr/bin | /usr/bin/* | /usr/lib | /usr/lib/* | \
-                    /etc | /etc/* | /private/etc | /private/etc/* | \
-                    /Library/Extensions | /Library/Extensions/*)
-                    log_error "Symlink points to protected system path: $path -> $resolved_target"
-                    return 1
-                    ;;
-            esac
-        fi
     fi
 
     # Check path is absolute
@@ -123,15 +139,44 @@ validate_path_for_deletion() {
         return 1
     fi
 
+    local policy_path
+    policy_path=$(_mole_normalize_deletion_policy_path "$path")
+
+    # Check symlink target if path is a symbolic link
+    if [[ -L "$path" ]]; then
+        local link_target
+        link_target=$(readlink "$path" 2> /dev/null) || {
+            log_error "Cannot read symlink: $path"
+            return 1
+        }
+
+        # Resolve relative symlinks to absolute paths for validation
+        local resolved_target="$link_target"
+        if [[ "$link_target" != /* ]]; then
+            local link_dir
+            link_dir=$(dirname "$path")
+            resolved_target=$(cd "$link_dir" 2> /dev/null && cd "$(dirname "$link_target")" 2> /dev/null && pwd)/$(basename "$link_target") || resolved_target=""
+        fi
+
+        # Validate resolved target against protected paths
+        if [[ -n "$resolved_target" ]]; then
+            resolved_target=$(_mole_normalize_deletion_policy_path "$resolved_target")
+            if _mole_is_critical_deletion_path "$resolved_target"; then
+                log_error "Symlink points to protected system path: $path -> $resolved_target"
+                return 1
+            fi
+        fi
+    fi
+
     # Allow deletion of coresymbolicationd cache (safe system cache that can be rebuilt)
-    case "$path" in
+    case "$policy_path" in
         /System/Library/Caches/com.apple.coresymbolicationd/data | /System/Library/Caches/com.apple.coresymbolicationd/data/*)
             return 0
             ;;
     esac
 
     # Allow known safe paths under /private
-    case "$path" in
+    case "$policy_path" in
         /private/tmp | /private/tmp/* | \
             /private/var/tmp | /private/var/tmp/* | \
             /private/var/log | /private/var/log/* | \
@@ -146,30 +191,16 @@ validate_path_for_deletion() {
     esac
 
     # Check path isn't critical system directory
-    case "$path" in
-        / | /bin | /bin/* | /sbin | /sbin/* | /usr | /usr/bin | /usr/bin/* | /usr/sbin | /usr/sbin/* | /usr/lib | /usr/lib/* | /System | /System/* | /Library/Extensions | /Library/Extensions/*)
-            log_error "Path validation failed: critical system directory: $path"
-            return 1
-            ;;
-        /private)
-            log_error "Path validation failed: critical system directory: $path"
-            return 1
-            ;;
-        /etc | /etc/* | /private/etc | /private/etc/*)
-            log_error "Path validation failed: /etc contains critical system files: $path"
-            return 1
-            ;;
-        /var | /var/db | /var/db/* | /private/var | /private/var/db | /private/var/db/*)
-            log_error "Path validation failed: /var/db contains system databases: $path"
-            return 1
-            ;;
-    esac
+    if _mole_is_critical_deletion_path "$policy_path"; then
+        log_error "Path validation failed: critical system path: $path"
+        return 1
+    fi
 
     # Check if path is protected (keychains, system settings, etc)
     if declare -f should_protect_path > /dev/null 2>&1; then
-        if should_protect_path "$path"; then
+        if should_protect_path "$policy_path"; then
             if [[ "${MO_DEBUG:-0}" == "1" ]]; then
-                log_warning "Path validation: protected path skipped: $path"
+                log_warning "Path validation: protected path skipped: $policy_path"
             fi
             return 1
         fi
@@ -188,8 +219,11 @@ safe_remove() {
     local silent="${2:-false}"
     local precomputed_size_kb="${3:-}"
 
-    # Validate path
-    if ! validate_path_for_deletion "$path"; then
+    # Validate path. Silent cleanup callers still need the same policy result,
+    # but should not print one validation warning per skipped cache item.
+    if [[ "$silent" == "true" ]]; then
+        validate_path_for_deletion "$path" 2> /dev/null || return 1
+    elif ! validate_path_for_deletion "$path"; then
         return 1
     fi
 
@@ -300,6 +334,10 @@ safe_remove_symlink() {
     local use_sudo="${2:-false}"
 
     if [[ ! -L "$path" ]]; then
+        return 1
+    fi
+
+    if ! validate_path_for_deletion "$path"; then
         return 1
     fi
 
@@ -456,7 +494,7 @@ safe_sudo_remove() {
 # Usage: mole_delete <path> [needs_sudo=false]
 #
 # Environment:
-#   MOLE_DELETE_MODE      "permanent" (default) or "trash"
+#   MOLE_DELETE_MODE      "permanent" (default) or "trash"; other values fail
 #   MOLE_DRY_RUN=1        Log intent, do not delete
 #   MOLE_TEST_TRASH_DIR   Test-only override; Trash moves go here via `mv`
 #                         instead of Finder/trash CLI. Required for bats.
@@ -475,6 +513,19 @@ mole_delete() {
 
     [[ -z "$path" ]] && return 1
 
+    case "$mode" in
+        permanent | trash) ;;
+        *)
+            _mole_delete_log "$mode" "unknown" "invalid-mode" "$path"
+            if [[ -z "${_MOLE_INVALID_MODE_WARNED:-}" ]]; then
+                _MOLE_INVALID_MODE_WARNED=1
+                export _MOLE_INVALID_MODE_WARNED
+                printf 'Error: invalid MOLE_DELETE_MODE: %s (expected "permanent" or "trash")\n' "$mode" >&2
+            fi
+            return 1
+            ;;
+    esac
+
     # Nothing to do if path does not exist (but a broken symlink still counts).
     if [[ ! -e "$path" && ! -L "$path" ]]; then
         return 0
@@ -486,7 +537,7 @@ mole_delete() {
     # up front to avoid a no-op Trash move followed by a validation failure.
     # The rejection itself is recorded in the forensic log so audit trails
     # can distinguish refused-by-policy from never-attempted.
-    if [[ ! -L "$path" ]] && ! validate_path_for_deletion "$path"; then
+    if ! validate_path_for_deletion "$path"; then
         _mole_delete_log "$mode" "0" "rejected" "$path"
         return 1
     fi
@@ -532,22 +583,23 @@ mole_delete() {
         fi
     fi
 
-    # Trash mode: attempt Trash move first, fall through to permanent removal
-    # on failure so destructive operations never get silently skipped.
+    # Trash mode is a recoverable-delete contract. If Trash is unavailable,
+    # fail closed instead of silently switching to permanent removal.
     if [[ "$mode" == "trash" ]]; then
         if _mole_move_to_trash "$path" "$needs_sudo"; then
             _mole_delete_log "trash" "$size_kb" "ok" "$path"
             log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "TRASHED" "$path" "${size_kb}KB"
             return 0
         fi
-        # User explicitly chose Trash for recoverability. Surface the fallback
-        # to permanent rm once per session so they know an "undo" isn't there.
-        if [[ -z "${_MOLE_TRASH_FALLBACK_WARNED:-}" ]]; then
-            _MOLE_TRASH_FALLBACK_WARNED=1
-            export _MOLE_TRASH_FALLBACK_WARNED
-            printf 'Warning: Trash unavailable, removing permanently. Subsequent files this session also bypass Trash.\n' >&2
+        _mole_delete_log "trash" "$size_kb" "trash-failed" "$path"
+        log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "SKIPPED" "$path" "trash-failed"
+        if [[ -z "${_MOLE_TRASH_UNAVAILABLE_WARNED:-}" ]]; then
+            _MOLE_TRASH_UNAVAILABLE_WARNED=1
+            export _MOLE_TRASH_UNAVAILABLE_WARNED
+            printf 'Error: Trash unavailable; refusing permanent delete. Use --permanent to delete immediately.\n' >&2
         fi
-        debug_log "Trash move failed, falling back to permanent delete: $path"
+        debug_log "Trash move failed, refusing permanent delete: $path"
+        return 1
     fi
 
     # Permanent path. Delegate to the existing safe_* helpers so path
@@ -564,10 +616,6 @@ mole_delete() {
 
     local status_label="ok"
     [[ $rc -ne 0 ]] && status_label="error"
-    # Mark the trash-mode fallback so forensics can tell why rm was used.
-    if [[ "$mode" == "trash" && "$status_label" == "ok" ]]; then
-        status_label="trash-fallback-rm"
-    fi
     _mole_delete_log "$mode" "$size_kb" "$status_label" "$path"
     return "$rc"
 }
@@ -825,7 +873,7 @@ safe_find_delete() {
     # #738, #744, #757); enforcing here makes the protection structural so
     # new clean_* functions get whitelist enforcement for free.
     while IFS= read -r -d '' match; do
-        if should_protect_path "$match"; then
+        if declare -f should_protect_path > /dev/null 2>&1 && should_protect_path "$match"; then
             continue
         fi
         if declare -f is_path_whitelisted > /dev/null && is_path_whitelisted "$match"; then
@@ -904,14 +952,11 @@ safe_sudo_find_delete() {
 
 # Get path size in KB (returns 0 if not found)
 #
-# For regular files and symlinks, prefer 'stat' over 'du': it avoids the
-# fork+pipe cost of 'du | awk' on every call, which adds up in tight loops
-# (e.g. external-volume ._* sweeps, Application Support log scans). 'du -skP'
-# and 'stat -f%z' both report logical size without following symlinks on
-# macOS, and the 1KB-rounded outputs match for the file types we encounter
-# (logs, caches, leftovers). Directories still go through 'du' because 'stat'
-# only reports a single directory entry, not recursive content size. .app
-# bundles continue to go through mdls because APFS clones make 'du'
+# For regular files and symlinks, prefer allocated blocks from 'stat' over
+# logical byte length. Sparse cache files can have a logical size far larger
+# than the disk, so cleanup totals must track reclaimable disk usage. Directories
+# still go through 'du' because 'stat' only reports a single directory entry.
+# .app bundles continue to go through mdls because APFS clones make 'du'
 # under-report large bundles like Xcode.
 get_path_size_kb() {
     local path="$1"
@@ -932,13 +977,13 @@ get_path_size_kb() {
         fi
     fi
 
-    # Fast path for regular files and symlinks: avoid forking 'du'.
+    # Fast path for regular files and symlinks: avoid forking 'du'. macOS stat
+    # reports allocated blocks in 512-byte units, matching du's disk-usage view.
     if [[ -f "$path" || -L "$path" ]]; then
-        local bytes
-        bytes=$(stat -f%z "$path" 2> /dev/null || echo "")
-        if [[ "$bytes" =~ ^[0-9]+$ ]]; then
-            # Round up to whole KB to match 'du -skP' semantics.
-            echo $(((bytes + 1023) / 1024))
+        local blocks
+        blocks=$(stat -f%b "$path" 2> /dev/null || echo "")
+        if [[ "$blocks" =~ ^[0-9]+$ ]]; then
+            echo $(((blocks + 1) / 2))
             return
         fi
     fi

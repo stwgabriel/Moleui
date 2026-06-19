@@ -153,6 +153,7 @@ debug_timer_start() {
     local varname="$1"
     local ts
     ts=$(perl -MTime::HiRes -e 'printf "%.3f\n", Time::HiRes::time()' 2> /dev/null || date +%s)
+    # eval: indirect write by name; bash 3.2 has no nameref
     eval "$varname=$ts"
 }
 
@@ -161,6 +162,7 @@ debug_timer_end() {
     local label="$1"
     local start_var="$2"
     local start_ts
+    # eval: indirect read by name; bash 3.2 has no nameref
     eval "start_ts=\$$start_var"
     [[ -z "$start_ts" ]] && return 0
     local end_ts
@@ -363,33 +365,6 @@ log_system_info() {
 
     # Notification to stderr
     echo -e "${GRAY}[DEBUG] Debug logging enabled. Session log: $DEBUG_LOG_FILE${NC}" >&2
-}
-
-# ============================================================================
-# Command Execution Wrappers
-# ============================================================================
-
-# Run command silently (ignore errors)
-run_silent() {
-    "$@" > /dev/null 2>&1 || true
-}
-
-# Run command with error logging
-run_logged() {
-    local cmd="$1"
-    # Log to main file, and also to debug file if enabled
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
-        if ! "$@" 2>&1 | tee -a "$LOG_FILE" | tee -a "$DEBUG_LOG_FILE" > /dev/null; then
-            log_warning "Command failed: $cmd"
-            return 1
-        fi
-    else
-        if ! "$@" 2>&1 | tee -a "$LOG_FILE" > /dev/null; then
-            log_warning "Command failed: $cmd"
-            return 1
-        fi
-    fi
-    return 0
 }
 
 # ============================================================================

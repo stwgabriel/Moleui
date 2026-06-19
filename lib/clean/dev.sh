@@ -50,8 +50,8 @@ clean_corepack_cache() {
             return 0
             ;;
     esac
-    if command -v corepack > /dev/null 2>&1 && run_with_timeout 2 corepack --version > /dev/null 2>&1; then
-        clean_tool_cache "Corepack cache" "$corepack_home" run_with_timeout 20 corepack cache clean
+    if command -v corepack > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" corepack --version > /dev/null 2>&1; then
+        clean_tool_cache "Corepack cache" "$corepack_home" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" corepack cache clean
     else
         safe_clean "$corepack_home"/* "Corepack cache"
     fi
@@ -59,13 +59,13 @@ clean_corepack_cache() {
 
 clean_uv_cache() {
     local uv_cache_path="$HOME/.cache/uv"
-    if command -v uv > /dev/null 2>&1 && run_with_timeout 2 uv --version > /dev/null 2>&1; then
+    if command -v uv > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" uv --version > /dev/null 2>&1; then
         local detected_cache
-        detected_cache=$(run_with_timeout 2 uv cache dir 2> /dev/null || true)
+        detected_cache=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" uv cache dir 2> /dev/null || true)
         if [[ -n "$detected_cache" && "$detected_cache" == /* ]]; then
             uv_cache_path="$detected_cache"
         fi
-        clean_tool_cache "uv cache" "$uv_cache_path" run_with_timeout 20 uv cache prune
+        clean_tool_cache "uv cache" "$uv_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" uv cache prune
     else
         safe_clean "$uv_cache_path"/* "uv cache"
     fi
@@ -100,9 +100,9 @@ clean_conda_metadata_caches() {
     fi
 
     local conda_cache_hint="$HOME/.conda/pkgs"
-    if command -v conda > /dev/null 2>&1 && run_with_timeout 2 conda --version > /dev/null 2>&1; then
+    if command -v conda > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" conda --version > /dev/null 2>&1; then
         clean_tool_cache "conda index/tarball/log caches" "$conda_cache_hint" \
-            run_with_timeout 30 conda clean --yes --index-cache --tarballs --logfiles
+            run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" conda clean --yes --index-cache --tarballs --logfiles
         note_activity
         return 0
     fi
@@ -127,7 +127,7 @@ clean_dev_npm() {
 
     if command -v npm > /dev/null 2>&1; then
         start_section_spinner "Checking npm cache path..."
-        npm_cache_path=$(run_with_timeout 2 npm config get cache 2> /dev/null) || npm_cache_path=""
+        npm_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" npm config get cache 2> /dev/null) || npm_cache_path=""
         stop_section_spinner
 
         if [[ -z "$npm_cache_path" || "$npm_cache_path" != /* ]]; then
@@ -171,14 +171,14 @@ clean_dev_npm() {
     if command -v pnpm > /dev/null 2>&1 && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version > /dev/null 2>&1; then
         local pnpm_store_path
         start_section_spinner "Checking store path..."
-        pnpm_store_path=$(COREPACK_ENABLE_DOWNLOAD_PROMPT=0 run_with_timeout 2 pnpm store path 2> /dev/null) || pnpm_store_path=""
+        pnpm_store_path=$(COREPACK_ENABLE_DOWNLOAD_PROMPT=0 run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" pnpm store path 2> /dev/null) || pnpm_store_path=""
         stop_section_spinner
 
         local pnpm_cache_check="$pnpm_default_store"
         if [[ -n "$pnpm_store_path" && "$pnpm_store_path" == /* ]]; then
             pnpm_cache_check="$pnpm_store_path"
         fi
-        COREPACK_ENABLE_DOWNLOAD_PROMPT=0 clean_tool_cache "pnpm cache" "$pnpm_cache_check" run_with_timeout 20 pnpm store prune
+        COREPACK_ENABLE_DOWNLOAD_PROMPT=0 clean_tool_cache "pnpm cache" "$pnpm_cache_check" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" pnpm store prune
     else
         debug_log "pnpm is unavailable, leaving global pnpm store for manual review: $pnpm_default_store"
     fi
@@ -189,7 +189,7 @@ clean_dev_npm() {
     local bun_dry_run="${DRY_RUN:-false}"
     if command -v bun > /dev/null 2>&1 && bun --version > /dev/null 2>&1; then
         if [[ -t 1 ]]; then start_section_spinner "Checking bun cache path..."; fi
-        bun_cache_path=$(run_with_timeout 2 bun pm cache 2> /dev/null) || bun_cache_path=""
+        bun_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" bun pm cache 2> /dev/null) || bun_cache_path=""
         if [[ -t 1 ]]; then stop_section_spinner; fi
 
         if [[ -z "$bun_cache_path" || "$bun_cache_path" != /* ]]; then
@@ -210,7 +210,7 @@ clean_dev_npm() {
             if [[ -t 1 ]]; then
                 start_section_spinner "Cleaning bun cache..."
             fi
-            if run_with_timeout 10 bun pm cache rm > /dev/null 2>&1; then
+            if run_with_timeout "$MOLE_TIMEOUT_PKG_LIST_SEC" bun pm cache rm > /dev/null 2>&1; then
                 bun_cache_cleaned=true
             fi
             if [[ -t 1 ]]; then
@@ -256,7 +256,7 @@ clean_dev_python() {
     # Check pip3 is functional (not just macOS stub that triggers CLT install dialog)
     if command -v pip3 > /dev/null 2>&1 && pip3 --version > /dev/null 2>&1; then
         local pip_cache_path
-        pip_cache_path=$(run_with_timeout 2 pip3 cache dir 2> /dev/null) || pip_cache_path=""
+        pip_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" pip3 cache dir 2> /dev/null) || pip_cache_path=""
         if [[ -z "$pip_cache_path" || "$pip_cache_path" != /* ]]; then
             pip_cache_path="$HOME/Library/Caches/pip"
         fi
@@ -317,7 +317,7 @@ get_mise_cache_path() {
 
     if command -v mise > /dev/null 2>&1; then
         local mise_cache_path
-        mise_cache_path=$(run_with_timeout 2 mise cache path 2> /dev/null || echo "")
+        mise_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" mise cache path 2> /dev/null || echo "")
         if [[ -n "$mise_cache_path" && "$mise_cache_path" == /* ]]; then
             echo "$mise_cache_path"
             return 0
@@ -400,6 +400,16 @@ check_rust_toolchains() {
         "rustup toolchain list"
 }
 # Docker caches (guarded by daemon check).
+find_orbstack_data_dir() {
+    local candidate
+    for candidate in "$HOME"/Library/Group\ Containers/*dev.orbstack/data; do
+        [[ -d "$candidate" ]] || continue
+        printf '%s\n' "$candidate"
+        return 0
+    done
+    return 1
+}
+
 clean_dev_docker() {
     if command -v docker > /dev/null 2>&1; then
         note_activity
@@ -407,6 +417,21 @@ clean_dev_docker() {
         echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Review: docker system df${NC}"
         echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Prune:  docker system prune --filter until=720h${NC}"
         debug_log "Docker daemon-managed cleanup skipped by default"
+    fi
+
+    local orb_data=""
+    orb_data=$(find_orbstack_data_dir 2> /dev/null || true)
+    if command -v orb > /dev/null 2>&1 || command -v orbctl > /dev/null 2>&1 || [[ -d "$HOME/.orbstack" || -n "$orb_data" ]]; then
+        local orb_size=0
+        if [[ -n "$orb_data" ]]; then
+            orb_size=$(get_path_size_kb "$orb_data" 2> /dev/null || echo 0)
+            [[ "$orb_size" =~ ^[0-9]+$ ]] || orb_size=0
+        fi
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} OrbStack container data · skipped by default ($(bytes_to_human $((orb_size * 1024))))"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Review: docker system df${NC}"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Prune:  docker system prune --filter until=720h${NC}"
+        debug_log "OrbStack daemon-managed data left for manual prune ($orb_size KB)"
     fi
     safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"
 }
@@ -850,6 +875,8 @@ clean_dev_mobile() {
         local unavailable_udid=""
 
         # Check if simctl is accessible and working; timeout prevents hang when CLT-only.
+        # CoreSimulatorService may need >2s to warm up on cold boot, so we retry once
+        # with a longer timeout. See #890.
         local simctl_available=true
         local simctl_probe_ok=false
         if declare -F xcrun > /dev/null 2>&1; then
@@ -857,8 +884,16 @@ clean_dev_mobile() {
                 simctl_probe_ok=true
             fi
         else
-            if run_with_timeout 2 xcrun simctl list devices > /dev/null 2>&1; then
+            if run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" xcrun simctl list devices > /dev/null 2>&1; then
                 simctl_probe_ok=true
+            else
+                sleep 1
+                if run_with_timeout 8 xcrun simctl list devices > /dev/null 2>&1; then # 8s: simctl retry after warmup, see lib/core/timeouts.sh
+                    simctl_probe_ok=true
+                    debug_log "simctl probe succeeded on retry (CoreSimulatorService warmup)"
+                else
+                    debug_log "simctl probe failed after retry (5s + 8s timeouts)"
+                fi
             fi
         fi
         if [[ "$simctl_probe_ok" != "true" ]]; then
@@ -1152,6 +1187,174 @@ clean_dev_jetbrains_logs() {
 # plus the version pointed at by the active CLI symlink (mtime alone is
 # unreliable: Claude Code pre-downloads the next version before flipping
 # the symlink, so newest mtime is not always the active version).
+clean_versioned_agent_root() {
+    local versions_root="$1"
+    local label="$2"
+    local keep_previous="$3"
+    local active_path="${4:-}"
+
+    [[ -d "$versions_root" ]] || return 0
+
+    local -a entries=()
+    local entry
+    while IFS= read -r -d '' entry; do
+        local name
+        name=$(basename "$entry")
+        [[ "$name" == .* ]] && continue
+        [[ ! "$name" =~ ^[0-9] ]] && continue
+        entries+=("$entry")
+    done < <(command find "$versions_root" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2> /dev/null)
+
+    [[ ${#entries[@]} -le "$keep_previous" ]] && return 0
+
+    local -a sorted=()
+    local line
+    while IFS= read -r line; do
+        sorted+=("${line#* }")
+    done < <(
+        local version_entry
+        for version_entry in "${entries[@]}"; do
+            local mtime
+            mtime=$(stat -f%m "$version_entry" 2> /dev/null || echo "0")
+            printf '%s %s\n' "$mtime" "$version_entry"
+        done | sort -rn
+    )
+
+    local idx=0
+    local target
+    for target in "${sorted[@]}"; do
+        if [[ -n "$active_path" && "$target" == "$active_path" ]]; then
+            continue
+        fi
+        if [[ $idx -lt $keep_previous ]]; then
+            idx=$((idx + 1))
+            continue
+        fi
+        safe_clean "$target" "$label"
+        note_activity
+        idx=$((idx + 1))
+    done
+}
+
+count_versioned_agent_entries() {
+    local versions_root="$1"
+    local count=0
+    local entry
+
+    [[ -d "$versions_root" ]] || {
+        echo 0
+        return 0
+    }
+
+    while IFS= read -r -d '' entry; do
+        local name
+        name=$(basename "$entry")
+        [[ "$name" == .* ]] && continue
+        [[ ! "$name" =~ ^[0-9] ]] && continue
+        count=$((count + 1))
+    done < <(command find "$versions_root" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2> /dev/null)
+
+    echo "$count"
+}
+
+claude_desktop_sdk_version_is_safe() {
+    local sdk_version="${1:-}"
+
+    [[ -n "$sdk_version" ]] || return 1
+    [[ "$sdk_version" == .* ]] && return 1
+    [[ "$sdk_version" == *"/"* ]] && return 1
+    [[ "$sdk_version" == *".."* ]] && return 1
+    [[ "$sdk_version" =~ ^[0-9] ]] || return 1
+    return 0
+}
+
+claude_desktop_running() {
+    command -v pgrep > /dev/null 2>&1 || return 1
+
+    pgrep -x "Claude" > /dev/null 2>&1 && return 0
+    pgrep -f "/Claude.app/" > /dev/null 2>&1 && return 0
+    return 1
+}
+
+claude_desktop_sdk_version() {
+    local claude_support="$1"
+    local sdk_file="$claude_support/claude-code-vm/.sdk-version"
+    [[ -f "$sdk_file" ]] || return 1
+
+    local sdk_version
+    sdk_version=$(head -n 1 "$sdk_file" 2> /dev/null | LC_ALL=C tr -d '[:space:]' || true)
+    claude_desktop_sdk_version_is_safe "$sdk_version" || return 1
+
+    printf '%s\n' "$sdk_version"
+}
+
+clean_claude_desktop_bundled_versions() {
+    local keep_previous="$1"
+    local claude_support="$HOME/Library/Application Support/Claude"
+    [[ -d "$claude_support" ]] || return 0
+
+    local -a desktop_specs=(
+        "$claude_support/claude-code|Claude Desktop bundled Claude Code old version"
+        "$claude_support/claude-code-vm|Claude Desktop bundled Claude Code VM old version"
+    )
+
+    local has_multiple_versions=false
+    local spec
+    for spec in "${desktop_specs[@]}"; do
+        local versions_root="${spec%%|*}"
+        [[ -d "$versions_root" ]] || continue
+
+        local version_count
+        version_count=$(count_versioned_agent_entries "$versions_root")
+        [[ "$version_count" =~ ^[0-9]+$ ]] || version_count=0
+        if [[ "$version_count" -gt 1 ]]; then
+            has_multiple_versions=true
+            break
+        fi
+    done
+
+    [[ "$has_multiple_versions" == "true" ]] || return 0
+
+    if claude_desktop_running; then
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Claude Desktop bundled Claude Code cleanup skipped · Claude Desktop is running"
+        return 0
+    fi
+
+    local sdk_version=""
+    sdk_version=$(claude_desktop_sdk_version "$claude_support" || true)
+    if [[ -z "$sdk_version" ]]; then
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Claude Desktop bundled Claude Code active version unknown · skipping cleanup"
+        return 0
+    fi
+
+    for spec in "${desktop_specs[@]}"; do
+        local versions_root="${spec%%|*}"
+        local label="${spec#*|}"
+        [[ -d "$versions_root" ]] || continue
+
+        if [[ ! -e "$versions_root/$sdk_version" ]]; then
+            note_activity
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $label active version unknown · skipping cleanup"
+            return 0
+        fi
+    done
+
+    for spec in "${desktop_specs[@]}"; do
+        local versions_root="${spec%%|*}"
+        local label="${spec#*|}"
+        [[ -d "$versions_root" ]] || continue
+
+        local version_count
+        version_count=$(count_versioned_agent_entries "$versions_root")
+        [[ "$version_count" =~ ^[0-9]+$ ]] || version_count=0
+        [[ "$version_count" -le 1 ]] && continue
+
+        clean_versioned_agent_root "$versions_root" "$label" "$keep_previous" "$versions_root/$sdk_version"
+    done
+}
+
 clean_dev_ai_agents() {
     local keep_previous="${MOLE_AI_AGENTS_KEEP:-1}"
     [[ "$keep_previous" =~ ^[0-9]+$ ]] || keep_previous=1
@@ -1197,44 +1400,10 @@ clean_dev_ai_agents() {
             fi
         fi
 
-        local -a entries=()
-        while IFS= read -r -d '' entry; do
-            local name
-            name=$(basename "$entry")
-            [[ "$name" == .* ]] && continue
-            [[ ! "$name" =~ ^[0-9] ]] && continue
-            entries+=("$entry")
-        done < <(command find "$versions_root" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2> /dev/null)
-
-        [[ ${#entries[@]} -le "$keep_previous" ]] && continue
-
-        local -a sorted=()
-        while IFS= read -r line; do
-            sorted+=("${line#* }")
-        done < <(
-            local entry
-            for entry in "${entries[@]}"; do
-                local mtime
-                mtime=$(stat -f%m "$entry" 2> /dev/null || echo "0")
-                printf '%s %s\n' "$mtime" "$entry"
-            done | sort -rn
-        )
-
-        local idx=0
-        local target
-        for target in "${sorted[@]}"; do
-            if [[ -n "$active_path" && "$target" == "$active_path" ]]; then
-                continue
-            fi
-            if [[ $idx -lt $keep_previous ]]; then
-                idx=$((idx + 1))
-                continue
-            fi
-            safe_clean "$target" "$label"
-            note_activity
-            idx=$((idx + 1))
-        done
+        clean_versioned_agent_root "$versions_root" "$label" "$keep_previous" "$active_path"
     done
+
+    clean_claude_desktop_bundled_versions "$keep_previous"
 }
 
 # Other language tool caches.
@@ -1282,6 +1451,30 @@ codex_desktop_running() {
 
     pgrep -x "Codex" > /dev/null 2>&1 && return 0
     pgrep -f "/Codex.app/" > /dev/null 2>&1 && return 0
+    return 1
+}
+
+# True when the Codex CLI or the Codex Desktop app is running.
+codex_running() {
+    command -v pgrep > /dev/null 2>&1 || return 1
+    pgrep -x "codex" > /dev/null 2>&1 && return 0
+    codex_desktop_running
+}
+
+antigravity_or_gemini_running() {
+    command -v pgrep > /dev/null 2>&1 || return 1
+
+    pgrep -x "Antigravity" > /dev/null 2>&1 && return 0
+    pgrep -f "/Antigravity.app/" > /dev/null 2>&1 && return 0
+    pgrep -x "gemini" > /dev/null 2>&1 && return 0
+    pgrep -f "antigravity-browser-profile" > /dev/null 2>&1 && return 0
+    return 1
+}
+
+chrome_devtools_mcp_running() {
+    command -v pgrep > /dev/null 2>&1 || return 1
+
+    pgrep -f "chrome-devtools-mcp" > /dev/null 2>&1 && return 0
     return 1
 }
 
@@ -1377,6 +1570,195 @@ clean_codex_runtimes() {
     done < <(command find "$runtime_root" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
 }
 
+# Codex CLI and Desktop share state under ~/.codex. Keep it out of default
+# cleanup so app indexes, sessions, credentials, and local thread state survive.
+clean_codex_cli() {
+    local codex_root="$HOME/.codex"
+    [[ -d "$codex_root" ]] || return 0
+
+    if codex_running; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Codex CLI state · skipped (Codex running)"
+        note_activity
+        return 0
+    fi
+
+    echo -e "  ${GRAY}${ICON_WARNING}${NC} Codex CLI state · skipped by default"
+    note_activity
+    debug_log "Codex CLI state left intact by default: $codex_root"
+}
+
+# Shared Chromium Default profile caches that are safe to regenerate.
+clean_chromium_default_caches() {
+    local profile_root="$1"
+    local label="$2"
+
+    [[ -d "$profile_root" ]] || return 0
+
+    safe_clean "$profile_root/Default/Cache"/* "$label browser cache"
+    safe_clean "$profile_root/Default/Code Cache"/* "$label code cache"
+    safe_clean "$profile_root/Default/GPUCache"/* "$label GPU cache"
+    safe_clean "$profile_root/Default/DawnGraphiteCache"/* "$label Dawn cache"
+    safe_clean "$profile_root/Default/DawnWebGPUCache"/* "$label WebGPU cache"
+}
+
+# Antigravity (Gemini) keeps a full Chromium profile under
+# ~/.gemini/antigravity-browser-profile. Clean its regenerable browser
+# caches, mirroring the Antigravity Electron cache cleanup in clean_dev_misc.
+clean_antigravity_caches() {
+    local ag_profile="$HOME/.gemini/antigravity-browser-profile"
+
+    if antigravity_or_gemini_running; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Antigravity/Gemini caches · skipped (Antigravity or Gemini running)"
+        note_activity
+        return 0
+    fi
+
+    if [[ -d "$ag_profile" ]]; then
+        clean_chromium_default_caches "$ag_profile" "Antigravity"
+        safe_clean "$ag_profile/GraphiteDawnCache"/* "Antigravity Graphite cache"
+        safe_clean "$ag_profile/component_crx_cache"/* "Antigravity component cache"
+        safe_clean "$ag_profile/extensions_crx_cache"/* "Antigravity extension cache"
+        clean_service_worker_cache "Antigravity" "$ag_profile/Default/Service Worker/CacheStorage"
+    fi
+    safe_clean "$HOME/.gemini/tmp"/* "Gemini CLI temp files"
+}
+
+clean_chrome_devtools_mcp_caches() {
+    local mcp_profile="$HOME/.cache/chrome-devtools-mcp/chrome-profile"
+
+    if chrome_devtools_mcp_running; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Chrome DevTools MCP caches · skipped (server running)"
+        note_activity
+        return 0
+    fi
+
+    [[ -d "$mcp_profile" ]] || return 0
+
+    clean_chromium_default_caches "$mcp_profile" "Chrome DevTools MCP"
+    safe_clean "$mcp_profile/Default/DawnCache"/* "Chrome DevTools MCP Dawn cache"
+    safe_clean "$mcp_profile/Default/GrShaderCache"/* "Chrome DevTools MCP shader cache"
+    safe_clean "$mcp_profile/Default/GraphiteDawnCache"/* "Chrome DevTools MCP Graphite cache"
+    safe_clean "$mcp_profile/GraphiteDawnCache"/* "Chrome DevTools MCP Graphite cache"
+    safe_clean "$mcp_profile/component_crx_cache"/* "Chrome DevTools MCP component cache"
+    safe_clean "$mcp_profile/extensions_crx_cache"/* "Chrome DevTools MCP extension cache"
+
+    if declare -f clean_service_worker_cache > /dev/null 2>&1; then
+        clean_service_worker_cache "Chrome DevTools MCP" "$mcp_profile/Default/Service Worker/CacheStorage"
+    fi
+}
+
+# Project roots scanned for agent worktrees. Override with a colon-separated
+# MOLE_AGENT_WORKTREE_PATHS list (e.g. "$HOME/work:$HOME/oss").
+agent_worktree_search_roots() {
+    if [[ -n "${MOLE_AGENT_WORKTREE_PATHS:-}" ]]; then
+        local saved_ifs="$IFS"
+        IFS=':'
+        # shellcheck disable=SC2206
+        local -a custom=($MOLE_AGENT_WORKTREE_PATHS)
+        IFS="$saved_ifs"
+        [[ ${#custom[@]} -gt 0 ]] && printf '%s\n' "${custom[@]}"
+        return 0
+    fi
+    printf '%s\n' \
+        "$HOME/code" "$HOME/Code" "$HOME/dev" "$HOME/Projects" \
+        "$HOME/GitHub" "$HOME/Workspace" "$HOME/Repos" \
+        "$HOME/Development" "$HOME/www" "$HOME/src"
+}
+
+# Returns 0 only when a worktree is safe to remove: no uncommitted or untracked
+# changes, and no commits reachable from HEAD that are missing from every
+# remote-tracking ref. A repo with no remotes therefore keeps every worktree,
+# which is the intended conservative behavior.
+agent_worktree_is_disposable() {
+    local wt="$1"
+    run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$wt" rev-parse --is-inside-work-tree > /dev/null 2>&1 || return 1
+    if [[ -n "$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$wt" status --porcelain 2> /dev/null)" ]]; then
+        return 1
+    fi
+    # A clean, pushed worktree can still hold stashed work; keep it if so.
+    if [[ -n "$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$wt" stash list 2> /dev/null)" ]]; then
+        return 1
+    fi
+    local local_only
+    local_only=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$wt" rev-list --count HEAD --not --remotes 2> /dev/null || echo 1)
+    [[ "$local_only" =~ ^[0-9]+$ ]] || return 1
+    [[ "$local_only" -eq 0 ]] || return 1
+    return 0
+}
+
+# AI coding agents (Claude Code and similar) create isolated git worktrees under
+# <project>/.claude/worktrees/ for background or parallel runs. Each is a full
+# checkout (node_modules, build output, and so on) that is never cleaned up
+# automatically, so they accumulate across projects. They may also hold
+# uncommitted or unpushed work, so this is skipped by default. Set
+# MOLE_AGENT_WORKTREES=1 to remove only the worktrees that are fully clean.
+clean_dev_agent_worktrees() {
+    local scan_timeout=20
+
+    local -a containers=()
+    local root container
+    while IFS= read -r root; do
+        [[ -d "$root" ]] || continue
+        while IFS= read -r -d '' container; do
+            containers+=("$container")
+        done < <(run_with_timeout "$scan_timeout" command find "$root" -maxdepth 6 -type d -path "*/.claude/worktrees" -prune -print0 2> /dev/null)
+    done < <(agent_worktree_search_roots)
+
+    [[ ${#containers[@]} -gt 0 ]] || return 0
+
+    local force="${MOLE_AGENT_WORKTREES:-}"
+
+    # Default: report reclaimable size only, never delete (may hold agent work).
+    if [[ -z "$force" || "$force" == "0" ]]; then
+        local total_kb=0 size_kb=0 count=0 wt
+        for container in "${containers[@]}"; do
+            while IFS= read -r -d '' wt; do
+                size_kb=$(get_path_size_kb "$wt" 2> /dev/null || echo 0)
+                [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+                total_kb=$((total_kb + size_kb))
+                count=$((count + 1))
+            done < <(command find "$container" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+        done
+        [[ "$count" -gt 0 ]] || return 0
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} AI agent worktrees · skipped by default ($count in .claude/worktrees, $(bytes_to_human $((total_kb * 1024))))"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Remove clean worktrees: MOLE_AGENT_WORKTREES=1 mo clean${NC}"
+        debug_log "AI agent worktrees left intact by default ($count dirs, $total_kb KB)"
+        return 0
+    fi
+
+    # Opt-in: remove only fully clean worktrees; keep anything with unsaved work.
+    local parent_repo kept=0
+    local wt
+    for container in "${containers[@]}"; do
+        parent_repo="${container%/.claude/worktrees}"
+        while IFS= read -r -d '' wt; do
+            if should_protect_path "$wt"; then
+                continue
+            fi
+            if agent_worktree_is_disposable "$wt"; then
+                safe_clean "$wt" "AI agent worktree"
+                # Tidy the parent repo's worktree registry once the dir is gone.
+                # In dry-run the directory remains, so prune is skipped. Agent
+                # worktrees are usually git-locked, and a plain prune skips a
+                # locked entry even when its directory is missing, so unlock it
+                # first and prune with --expire=now to drop the stale entry.
+                if [[ ! -d "$wt" && -e "$parent_repo/.git" ]]; then
+                    run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$parent_repo" worktree unlock "$wt" > /dev/null 2>&1 || true
+                    run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$parent_repo" worktree prune --expire=now > /dev/null 2>&1 || true
+                fi
+            else
+                kept=$((kept + 1))
+                note_activity
+                echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Kept agent worktree (unsaved work): ${wt/#$HOME/~}${NC}"
+            fi
+        done < <(command find "$container" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+    done
+    if [[ "$kept" -gt 0 ]]; then
+        debug_log "Kept $kept AI agent worktree(s) with unsaved work"
+    fi
+}
+
 # Misc dev tool caches.
 clean_dev_misc() {
     safe_clean ~/Library/Caches/com.unity3d.*/* "Unity cache"
@@ -1393,6 +1775,8 @@ clean_dev_misc() {
         safe_clean ~/Library/Application\ Support/Antigravity/DawnGraphiteCache/* "Antigravity Dawn cache"
         safe_clean ~/Library/Application\ Support/Antigravity/DawnWebGPUCache/* "Antigravity WebGPU cache"
     fi
+    # Antigravity browser profile caches (~/.gemini)
+    clean_antigravity_caches
     # Filo (Electron)
     if [[ -d ~/Library/Application\ Support/Filo ]]; then
         safe_clean ~/Library/Application\ Support/Filo/production/Cache/* "Filo cache"
@@ -1433,10 +1817,14 @@ clean_dev_misc() {
     fi
     # Codex Desktop runtimes contain active Node/Python dependencies.
     clean_codex_runtimes
+    # Codex CLI working-directory caches (~/.codex)
+    clean_codex_cli
     # Cursor Agent session logs (versions cleaned separately in clean_dev_ai_agents)
     [[ -d "$HOME/.local/share/cursor-agent" ]] && safe_find_delete "$HOME/.local/share/cursor-agent" "*.log" "$MOLE_LOG_AGE_DAYS" "f"
     # Playwright cached browser binaries
     safe_clean ~/Library/Caches/ms-playwright/* "Playwright browsers"
+    # Chrome DevTools MCP keeps a Chromium profile; clean only rebuildable caches.
+    clean_chrome_devtools_mcp_caches
     # Claude Code state under ~/.claude can include persistent memory,
     # plugin registry data, hooks, and session context. Do not clean it
     # automatically; users can remove specific paths manually if needed.
@@ -1478,37 +1866,6 @@ clean_dev_haskell() {
 clean_dev_ocaml() {
     safe_clean ~/.opam/download-cache/* "Opam cache"
 }
-# Editor caches.
-# Note: ~/Library/Application Support/Code/User/workspaceStorage contains workspace settings - excluded from cleanup
-clean_dev_editors() {
-    safe_clean ~/Library/Caches/com.microsoft.VSCode/Cache/* "VS Code cached data"
-    safe_clean ~/Library/Application\ Support/Code/CachedData/* "VS Code cached data"
-    safe_clean ~/Library/Application\ Support/Code/DawnGraphiteCache/* "VS Code Dawn cache"
-    safe_clean ~/Library/Application\ Support/Code/DawnWebGPUCache/* "VS Code WebGPU cache"
-    safe_clean ~/Library/Application\ Support/Code/GPUCache/* "VS Code GPU cache"
-    safe_clean ~/Library/Application\ Support/Code/CachedExtensionVSIXs/* "VS Code extension cache"
-    safe_clean ~/Library/Application\ Support/Code/WebStorage/* "VS Code WebStorage"
-    clean_service_worker_cache "VS Code" "$HOME/Library/Application Support/Code/Service Worker/CacheStorage"
-    if ! pgrep -x "Code" > /dev/null 2>&1; then
-        safe_clean ~/Library/Application\ Support/Code/Service\ Worker/ScriptCache/* "VS Code Service Worker ScriptCache"
-    fi
-    safe_clean ~/Library/Caches/Zed/* "Zed cache"
-    safe_clean ~/Library/Caches/copilot/* "GitHub Copilot cache"
-    safe_clean ~/.cache/vscode-ripgrep/* "VS Code ripgrep cache"
-    if [[ -d ~/Library/Application\ Support/Cursor ]]; then
-        safe_clean ~/Library/Caches/Cursor/* "Cursor cache"
-        safe_clean ~/Library/Application\ Support/Cursor/CachedData/* "Cursor cached data"
-        safe_clean ~/Library/Application\ Support/Cursor/CachedExtensionVSIXs/* "Cursor extension cache"
-        safe_clean ~/Library/Application\ Support/Cursor/WebStorage/* "Cursor WebStorage"
-        safe_clean ~/Library/Application\ Support/Cursor/GPUCache/* "Cursor GPU cache"
-        safe_clean ~/Library/Application\ Support/Cursor/DawnGraphiteCache/* "Cursor Dawn cache"
-        safe_clean ~/Library/Application\ Support/Cursor/DawnWebGPUCache/* "Cursor WebGPU cache"
-        clean_service_worker_cache "Cursor" "$HOME/Library/Application Support/Cursor/Service Worker/CacheStorage"
-        if ! pgrep -x "Cursor" > /dev/null 2>&1; then
-            safe_clean ~/Library/Application\ Support/Cursor/Service\ Worker/ScriptCache/* "Cursor Service Worker ScriptCache"
-        fi
-    fi
-}
 # Main developer tools cleanup sequence.
 clean_developer_tools() {
     stop_section_spinner
@@ -1534,6 +1891,7 @@ clean_developer_tools() {
     clean_dev_jetbrains_toolbox
     clean_dev_jetbrains_logs
     clean_dev_ai_agents
+    clean_dev_agent_worktrees
     clean_dev_other_langs
     clean_dev_cicd
     clean_dev_database

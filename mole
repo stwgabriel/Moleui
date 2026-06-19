@@ -7,13 +7,48 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+declare -a MOLE_CLI_ARGS=()
+MOLE_CLI_DEBUG=false
+
+mole_collect_cli_args() {
+    local arg
+
+    MOLE_CLI_ARGS=()
+    MOLE_CLI_DEBUG=false
+    for arg in "$@"; do
+        case "$arg" in
+            --debug)
+                MOLE_CLI_DEBUG=true
+                ;;
+            *)
+                MOLE_CLI_ARGS+=("$arg")
+                ;;
+        esac
+    done
+}
+
+mole_dispatch_history_early() {
+    [[ "${MOLE_TEST_MODE:-0}" == "1" && "${MOLE_SKIP_MAIN:-0}" == "1" ]] && return 0
+
+    mole_collect_cli_args "$@"
+    [[ "${MOLE_CLI_ARGS[0]:-}" == "history" ]] || return 0
+
+    [[ "$MOLE_CLI_DEBUG" == "true" ]] && export MO_DEBUG=1
+    if [[ "${#MOLE_CLI_ARGS[@]}" -gt 1 ]]; then
+        exec "$SCRIPT_DIR/bin/history.sh" "${MOLE_CLI_ARGS[@]:1}"
+    fi
+    exec "$SCRIPT_DIR/bin/history.sh"
+}
+
+mole_dispatch_history_early "$@"
+
 source "$SCRIPT_DIR/lib/core/common.sh"
 source "$SCRIPT_DIR/lib/core/commands.sh"
 
 trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
-VERSION="1.38.1"
+VERSION="1.42.0"
 MOLE_TAGLINE="Deep clean and optimize your Mac."
 
 is_touchid_configured() {
@@ -130,11 +165,9 @@ is_homebrew_mole_path() {
 }
 
 # Install detection (Homebrew vs manual).
-# Default path checks only the active script, keeping source-tree commands fast.
-# Pass --include-path when update/remove flows intentionally need to inspect
-# an installed `mole` found through PATH.
+# Always follows the invoked Mole script, never PATH, so update and remove act
+# on the Mole the user actually ran instead of another copy earlier in PATH.
 is_homebrew_install() {
-    local include_path_lookup="${1:-}"
     local has_brew=false
     if command -v brew > /dev/null 2>&1; then
         has_brew=true
@@ -142,19 +175,7 @@ is_homebrew_install() {
 
     local mole_path
     mole_path=$(resolve_mole_source_path || true)
-    if is_homebrew_mole_path "$mole_path" "$has_brew"; then
-        return 0
-    fi
-
-    if [[ "$include_path_lookup" == "--include-path" ]]; then
-        local path_mole
-        path_mole=$(command -v mole 2> /dev/null || true)
-        if [[ -n "$path_mole" && "$path_mole" != "$mole_path" ]] && is_homebrew_mole_path "$path_mole" "$has_brew"; then
-            return 0
-        fi
-    fi
-
-    return 1
+    is_homebrew_mole_path "$mole_path" "$has_brew"
 }
 
 get_install_channel() {
@@ -188,7 +209,7 @@ get_latest_commit_from_github() {
     local sha
     sha=$(curl -fsSL --connect-timeout 2 --max-time 3 \
         "https://api.github.com/repos/stwgabriel/moleui/commits/main" 2> /dev/null |
-        grep '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]\{40\}"' | head -1 | sed -E 's/.*"sha"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+        grep '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]\{40\}"' | head -1 | sed -E 's/.*"sha"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/') || sha=""
     echo "$sha"
 }
 
@@ -243,14 +264,6 @@ check_for_updates() {
     )
 }
 
-show_update_notification() {
-    local msg_cache="$HOME/.cache/mole/update_message"
-    if [[ -f "$msg_cache" && -s "$msg_cache" ]]; then
-        cat "$msg_cache"
-        echo
-    fi
-}
-
 # UI helpers
 show_brand_banner() {
     cat << EOF
@@ -286,7 +299,7 @@ show_version() {
     fi
 
     local disk_free
-    disk_free=$(df -h / 2> /dev/null | awk 'NR==2 {print $4}' || echo "Unknown")
+    disk_free=$(get_free_space)
 
     local install_method="Manual"
     if is_homebrew_install; then
@@ -335,6 +348,7 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "Manage protected items"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "Preview app uninstall"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo history --json" "$NC" "Export cleanup history"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "Preview project purge"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo installer --dry-run" "$NC" "Preview installer cleanup"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "Preview Touch ID setup"
@@ -363,7 +377,7 @@ update_mole() {
     }
     trap '_update_cleanup; update_interrupted=true; echo ""; exit 130' INT TERM
 
-    if is_homebrew_install --include-path; then
+    if is_homebrew_install; then
         if [[ "$nightly_update" == "true" ]]; then
             local review_icon="${ICON_REVIEW:-☞}"
             log_error "Nightly update is only available for script installations. Homebrew installs follow stable releases."
@@ -374,16 +388,44 @@ update_mole() {
         exit 0
     fi
 
+    # Resolve the invoked Mole up front so the installer targets this manual
+    # install, not another mole earlier in PATH. Fail before any download.
+    local mole_path
+    if ! mole_path=$(resolve_mole_source_path); then
+        log_error "Unable to resolve current Mole path"
+        exit 1
+    fi
+    local install_dir
+    if ! install_dir="$(cd "$(dirname "$mole_path")" && pwd)"; then
+        log_error "Unable to resolve current Mole install directory"
+        exit 1
+    fi
+
     local latest=""
     local download_label="Downloading latest version..."
     local install_label="Installing update..."
     local final_success_label="latest version"
+    local switch_to_stable_channel=false
 
     if [[ "$nightly_update" == "true" ]]; then
         latest="main"
         download_label="Downloading nightly installer..."
         install_label="Installing nightly update..."
         final_success_label="nightly build (main)"
+
+        if [[ "$force_update" != "true" ]]; then
+            local installed_commit latest_commit
+            installed_commit=$(get_install_commit)
+            latest_commit=$(get_latest_commit_from_github)
+
+            if [[ "$installed_commit" =~ ^[0-9a-f]{7,40}$ && "$latest_commit" =~ ^[0-9a-f]{40}$ &&
+                "${installed_commit:0:7}" == "${latest_commit:0:7}" ]]; then
+                echo ""
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest nightly, ${latest_commit:0:7}"
+                echo ""
+                exit 0
+            fi
+        fi
     else
         latest=$(get_latest_version_from_github)
         [[ -z "$latest" ]] && latest=$(get_latest_version)
@@ -400,7 +442,15 @@ update_mole() {
             exit 1
         fi
 
-        if [[ "$VERSION" == "$latest" && "$force_update" != "true" ]]; then
+        local install_channel
+        install_channel=$(get_install_channel)
+        if [[ "$install_channel" == "nightly" || "$install_channel" == "dev" ]]; then
+            switch_to_stable_channel=true
+        fi
+
+        if [[ "$switch_to_stable_channel" == "true" ]]; then
+            install_label="Switching to stable channel..."
+        elif [[ "$VERSION" == "$latest" && "$force_update" != "true" ]]; then
             echo ""
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${VERSION}"
             echo ""
@@ -462,11 +512,6 @@ update_mole() {
 
     if [[ -t 1 ]]; then stop_inline_spinner; fi
     chmod +x "$tmp_installer"
-
-    local mole_path
-    mole_path="$(command -v mole 2> /dev/null || echo "$0")"
-    local install_dir
-    install_dir="$(cd "$(dirname "$mole_path")" && pwd)"
 
     local requires_sudo="false"
     if [[ ! -w "$install_dir" ]]; then
@@ -539,7 +584,7 @@ update_mole() {
             echo "$install_output" | tail -10 >&2 # Show last 10 lines of error
             exit 1
         fi
-    elif [[ "$force_update" == "true" ]]; then
+    elif [[ "$force_update" == "true" || "$switch_to_stable_channel" == "true" ]]; then
         if install_output=$(MOLE_VERSION="$update_tag" "$tmp_installer" --prefix "$install_dir" --config "$config_dir" 2>&1); then
             process_install_output "$install_output" "$latest" "$final_success_label"
         else
@@ -883,6 +928,12 @@ interactive_main_menu() {
         exit 0
     }
 
+    launch_menu_command() {
+        show_cursor
+        drain_pending_input 0.1
+        exec "$@"
+    }
+
     trap cleanup_and_exit INT
     hide_cursor
 
@@ -901,34 +952,28 @@ interactive_main_menu() {
             "UP") ((current_option > 1)) && ((current_option--)) ;;
             "DOWN") ((current_option < 5)) && ((current_option++)) ;;
             "ENTER")
-                show_cursor
                 case $current_option in
-                    1) exec "$SCRIPT_DIR/bin/clean.sh" ;;
-                    2) exec "$SCRIPT_DIR/bin/uninstall.sh" ;;
-                    3) exec "$SCRIPT_DIR/bin/optimize.sh" ;;
-                    4) exec "$SCRIPT_DIR/bin/analyze.sh" ;;
-                    5) exec "$SCRIPT_DIR/bin/status.sh" ;;
+                    1) launch_menu_command "$SCRIPT_DIR/bin/clean.sh" ;;
+                    2) launch_menu_command "$SCRIPT_DIR/bin/uninstall.sh" ;;
+                    3) launch_menu_command "$SCRIPT_DIR/bin/optimize.sh" ;;
+                    4) launch_menu_command "$SCRIPT_DIR/bin/analyze.sh" ;;
+                    5) launch_menu_command "$SCRIPT_DIR/bin/status.sh" ;;
                 esac
                 ;;
             "CHAR:1")
-                show_cursor
-                exec "$SCRIPT_DIR/bin/clean.sh"
+                launch_menu_command "$SCRIPT_DIR/bin/clean.sh"
                 ;;
             "CHAR:2")
-                show_cursor
-                exec "$SCRIPT_DIR/bin/uninstall.sh"
+                launch_menu_command "$SCRIPT_DIR/bin/uninstall.sh"
                 ;;
             "CHAR:3")
-                show_cursor
-                exec "$SCRIPT_DIR/bin/optimize.sh"
+                launch_menu_command "$SCRIPT_DIR/bin/optimize.sh"
                 ;;
             "CHAR:4")
-                show_cursor
-                exec "$SCRIPT_DIR/bin/analyze.sh"
+                launch_menu_command "$SCRIPT_DIR/bin/analyze.sh"
                 ;;
             "CHAR:5")
-                show_cursor
-                exec "$SCRIPT_DIR/bin/status.sh"
+                launch_menu_command "$SCRIPT_DIR/bin/status.sh"
                 ;;
             "MORE")
                 show_cursor
@@ -963,16 +1008,11 @@ interactive_main_menu() {
 # CLI dispatch
 main() {
     local -a args=()
-    for arg in "$@"; do
-        case "$arg" in
-            --debug)
-                export MO_DEBUG=1
-                ;;
-            *)
-                args+=("$arg")
-                ;;
-        esac
-    done
+    mole_collect_cli_args "$@"
+    [[ "$MOLE_CLI_DEBUG" == "true" ]] && export MO_DEBUG=1
+    if [[ "${#MOLE_CLI_ARGS[@]}" -gt 0 ]]; then
+        args=("${MOLE_CLI_ARGS[@]}")
+    fi
 
     case "${args[0]:-""}" in
         "optimize" | "optimise")

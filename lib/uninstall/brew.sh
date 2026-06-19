@@ -108,6 +108,7 @@ _detect_cask_via_resolved_path() {
 # Only succeeds if exactly one cask matches (avoids wrong uninstall)
 _detect_cask_via_caskroom_search() {
     local app_bundle_name="$1"
+    local app_path="${2:-}"
     [[ -z "$app_bundle_name" ]] && return 1
 
     local -a tokens=()
@@ -132,6 +133,14 @@ _detect_cask_via_caskroom_search() {
     # Only succeed if exactly one unique token found and it's installed
     if ((${#uniq[@]} == 1)) && [[ -n "${uniq[0]}" ]]; then
         get_brew_cask_list | grep -qxF "${uniq[0]}" || return 1
+        local info_output
+        info_output=$(HOMEBREW_NO_ENV_HINTS=1 brew info --cask "${uniq[0]}" 2> /dev/null) || return 1
+        if [[ -n "$app_path" ]] &&
+            ! grep -qF "$app_path" <<< "$info_output" &&
+            ! grep -qF "/Applications/$app_bundle_name" <<< "$info_output" &&
+            ! grep -qF "$app_bundle_name" <<< "$info_output"; then
+            return 1
+        fi
         echo "${uniq[0]}"
         return 0
     fi
@@ -159,8 +168,13 @@ _detect_cask_via_brew_list() {
     local cask_name
     cask_name=$(get_brew_cask_list | grep -Fix "$app_name_lower") || return 1
 
-    # Verify this cask actually owns this app path
-    HOMEBREW_NO_ENV_HINTS=1 brew info --cask "$cask_name" 2> /dev/null | grep -qF "$app_path" || return 1
+    # Verify this cask actually owns this app path or app bundle.
+    local info_output
+    info_output=$(HOMEBREW_NO_ENV_HINTS=1 brew info --cask "$cask_name" 2> /dev/null) || return 1
+    grep -qF "$app_path" <<< "$info_output" ||
+        grep -qF "/Applications/$app_bundle_name" <<< "$info_output" ||
+        grep -qF "$app_bundle_name" <<< "$info_output" ||
+        return 1
     echo "$cask_name"
 }
 
@@ -184,7 +198,7 @@ get_brew_cask_name() {
 
     # Try each detection method in order (fast to slow)
     _detect_cask_via_resolved_path "$app_path" && return 0
-    _detect_cask_via_caskroom_search "$app_bundle_name" && return 0
+    _detect_cask_via_caskroom_search "$app_bundle_name" "$app_path" && return 0
     _detect_cask_via_symlink_check "$app_path" && return 0
     _detect_cask_via_brew_list "$app_path" "$app_bundle_name" && return 0
 

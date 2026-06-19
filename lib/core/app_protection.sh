@@ -17,589 +17,10 @@ if ! declare -p WHITELIST_PATTERNS &> /dev/null; then
     declare -a WHITELIST_PATTERNS=()
 fi
 
-# Application Management
-
-# ============================================================================
-# Performance Note:
-# - SYSTEM_CRITICAL_BUNDLES_FAST: Fast wildcard patterns for cleanup operations
-# - SYSTEM_CRITICAL_BUNDLES: Detailed list for uninstall protection (lazy-loaded)
-# ============================================================================
-
-# Fast patterns for cleanup operations (used by should_protect_data)
-# These wildcards provide adequate protection with minimal performance impact
-readonly SYSTEM_CRITICAL_BUNDLES_FAST=(
-    "com.apple.*"
-    "loginwindow"
-    "dock"
-    "systempreferences"
-    "finder"
-    "safari"
-    "backgroundtaskmanagement*"
-    "keychain*"
-    "security*"
-    "bluetooth*"
-    "wifi*"
-    "network*"
-    "tcc"
-    "notification*"
-    "accessibility*"
-    "universalaccess*"
-    "HIToolbox*"
-    "textinput*"
-    "TextInput*"
-    "keyboard*"
-    "Keyboard*"
-    "inputsource*"
-    "InputSource*"
-    "keylayout*"
-    "KeyLayout*"
-    "GlobalPreferences"
-    ".GlobalPreferences"
-    "org.pqrs.Karabiner*"
-    # CUPS printing subsystem ships with macOS; there is no parent .app to
-    # anchor it, so org.cups.* prefs always look "orphaned" to bundle-ID
-    # matching. Deleting them wipes the default printer and recent-printer
-    # list, which users see as lost saved printers. See #731.
-    "org.cups.*"
-)
-
-# Detailed list for uninstall protection
-# Critical system components protected from uninstallation
-# Note: We explicitly list system components instead of using "com.apple.*" wildcard
-# to allow uninstallation of user-installed Apple apps (Xcode, Final Cut Pro, etc.)
-readonly SYSTEM_CRITICAL_BUNDLES=(
-    # Core system applications (in /System/Applications/)
-    "com.apple.finder"
-    "com.apple.dock"
-    "com.apple.Safari"
-    "com.apple.mail"
-    "com.apple.systempreferences"
-    "com.apple.SystemSettings"
-    "com.apple.Settings*"
-    "com.apple.controlcenter*"
-    "com.apple.Spotlight"
-    "com.apple.notificationcenterui"
-    "com.apple.loginwindow"
-    "com.apple.Preview"
-    "com.apple.TextEdit"
-    "com.apple.Notes"
-    "com.apple.reminders"
-    "com.apple.iCal"
-    "com.apple.AddressBook"
-    "com.apple.Photos"
-    "com.apple.AppStore"
-    "com.apple.calculator"
-    "com.apple.Dictionary"
-    "com.apple.ScreenSharing"
-    "com.apple.ActivityMonitor"
-    "com.apple.Console"
-    "com.apple.DiskUtility"
-    "com.apple.KeychainAccess"
-    "com.apple.DigitalColorMeter"
-    "com.apple.grapher"
-    "com.apple.Terminal"
-    "com.apple.ScriptEditor2"
-    "com.apple.VoiceOverUtility"
-    "com.apple.BluetoothFileExchange"
-    "com.apple.print.PrinterProxy"
-    "com.apple.systempreferences*"
-    "com.apple.SystemProfiler"
-    "com.apple.FontBook"
-    "com.apple.ColorSyncUtility"
-    "com.apple.audio.AudioMIDISetup"
-    "com.apple.DirectoryUtility"
-    "com.apple.NetworkUtility"
-    "com.apple.exposelauncher"
-    "com.apple.MigrateAssistant"
-    "com.apple.RAIDUtility"
-    "com.apple.BootCampAssistant"
-
-    # System services and daemons
-    "com.apple.SecurityAgent"
-    "com.apple.CoreServices*"
-    "com.apple.SystemUIServer"
-    "com.apple.backgroundtaskmanagement*"
-    "com.apple.loginitems*"
-    "com.apple.sharedfilelist*"
-    "com.apple.sfl*"
-    "com.apple.coreservices*"
-    "com.apple.metadata*"
-    "com.apple.MobileSoftwareUpdate*"
-    "com.apple.SoftwareUpdate*"
-    "com.apple.installer*"
-    "com.apple.frameworks*"
-    "com.apple.security*"
-    "com.apple.keychain*"
-    "com.apple.trustd*"
-    "com.apple.securityd*"
-    "com.apple.cloudd*"
-    "com.apple.iCloud*"
-    "com.apple.WiFi*"
-    "com.apple.airport*"
-    "com.apple.Bluetooth*"
-
-    # Input methods (system built-in)
-    "com.apple.inputmethod.*"
-    "com.apple.inputsource*"
-    "com.apple.TextInput*"
-    "com.apple.CharacterPicker*"
-    "com.apple.PressAndHold*"
-
-    # Legacy pattern-based entries (non com.apple.*)
-    "loginwindow"
-    "dock"
-    "systempreferences"
-    "finder"
-    "safari"
-    "backgroundtaskmanagementagent"
-    "keychain*"
-    "security*"
-    "bluetooth*"
-    "wifi*"
-    "network*"
-    "tcc"
-    "notification*"
-    "accessibility*"
-    "universalaccess*"
-    "HIToolbox*"
-    "textinput*"
-    "TextInput*"
-    "keyboard*"
-    "Keyboard*"
-    "inputsource*"
-    "InputSource*"
-    "keylayout*"
-    "KeyLayout*"
-    "GlobalPreferences"
-    ".GlobalPreferences"
-    "org.pqrs.Karabiner*"
-)
-
-# Apple apps that CAN be uninstalled (from App Store or developer.apple.com)
-readonly APPLE_UNINSTALLABLE_APPS=(
-    "com.apple.dt.*"      # Xcode, Instruments, FileMerge
-    "com.apple.FinalCut*" # Final Cut Pro
-    "com.apple.Motion"
-    "com.apple.Compressor"
-    "com.apple.logic*"      # Logic Pro
-    "com.apple.garageband*" # GarageBand
-    "com.apple.iMovie"
-    "com.apple.iWork.*" # Pages, Numbers, Keynote
-    "com.apple.MainStage*"
-    "com.apple.server.*"    # macOS Server
-    "com.apple.Playgrounds" # Swift Playgrounds
-)
-
-# Applications with sensitive data; protected during cleanup but removable
-readonly DATA_PROTECTED_BUNDLES=(
-    # Input Methods (protected during cleanup, uninstall allowed)
-    "com.tencent.inputmethod.QQInput"
-    "com.sogou.inputmethod.*"
-    "com.baidu.inputmethod.*"
-    "com.googlecode.rimeime.*"
-    "im.rime.*"
-    "*.inputmethod"
-    "*.InputMethod"
-    "*IME"
-
-    # System Utilities & Cleanup
-    "com.nektony.*"
-    "com.macpaw.*"
-    "com.freemacsoft.AppCleaner"
-    "com.omnigroup.omnidisksweeper"
-    "com.daisydiskapp.*"
-    "com.tunabellysoftware.*"
-    "com.grandperspectiv.*"
-    "com.binaryfruit.*"
-
-    # Password Managers
-    "com.1password.*"
-    "com.agilebits.*"
-    "com.lastpass.*"
-    "com.dashlane.*"
-    "com.bitwarden.*"
-    "com.keepassx.*"
-    "org.keepassx.*"
-    "org.keepassxc.*"
-    "com.authy.*"
-    "com.yubico.*"
-
-    # IDEs & Editors
-    "com.jetbrains.*"
-    "JetBrains*"
-    "com.microsoft.VSCode"
-    "com.visualstudio.code.*"
-    "com.sublimetext.*"
-    "com.sublimehq.*"
-    "com.microsoft.VSCodeInsiders"
-    "com.apple.dt.Xcode"
-    "com.coteditor.CotEditor"
-    "com.macromates.TextMate"
-    "com.panic.Nova"
-    "abnerworks.Typora"
-    "com.uranusjr.macdown"
-
-    # AI & LLM Tools
-    "com.todesktop.*"
-    "Cursor"
-    "com.anthropic.claude*"
-    "Claude"
-    "com.openai.chat*"
-    "ChatGPT"
-    "com.openai.codex"
-    "Codex"
-    "codex-runtimes"
-    "com.ollama.ollama"
-    "Ollama"
-    "com.lmstudio.lmstudio"
-    "LM Studio"
-    "co.supertool.chatbox"
-    "page.jan.jan"
-    "com.huggingface.huggingchat"
-    "Gemini"
-    "com.perplexity.Perplexity"
-    "com.drawthings.DrawThings"
-    "com.divamgupta.diffusionbee"
-    "com.exafunction.windsurf"
-    "com.quora.poe.electron"
-    "chat.openai.com.*"
-
-    # Database Clients
-    "com.sequelpro.*"
-    "com.sequel-ace.*"
-    "com.tinyapp.*"
-    "com.dbeaver.*"
-    "com.navicat.*"
-    "com.mongodb.compass"
-    "com.redis.RedisInsight"
-    "com.pgadmin.pgadmin4"
-    "com.eggerapps.Sequel-Pro"
-    "com.valentina-db.Valentina-Studio"
-    "com.dbvis.DbVisualizer"
-
-    # API & Network Tools
-    "com.postmanlabs.mac"
-    "com.konghq.insomnia"
-    "com.CharlesProxy.*"
-    "com.proxyman.*"
-    "com.getpaw.*"
-    "com.luckymarmot.Paw"
-    "com.charlesproxy.charles"
-    "com.telerik.Fiddler"
-    "com.usebruno.app"
-
-    # Network Proxy & VPN Tools (Clash variants - use specific patterns to avoid false positives)
-    "com.clash.*"
-    "ClashX*"
-    "clash-*"
-    "Clash-*"
-    "*-clash"
-    "*-Clash"
-    "clash.*"
-    "Clash.*"
-    "clash_*"
-    "*clash-verge*"
-    "*Clash-Verge*"
-    "clashverge*"
-    "ClashVerge*"
-    "com.nssurge.surge-mac"
-    "*surge*"
-    "*Surge*"
-    "mihomo*"
-    "*openvpn*"
-    "*OpenVPN*"
-    "net.openvpn.*"
-
-    # Proxy Clients
-    "*ShadowsocksX-NG*"
-    "com.qiuyuzhou.*"
-    "*v2ray*"
-    "*V2Ray*"
-    "*v2box*"
-    "*V2Box*"
-    "*nekoray*"
-    "*sing-box*"
-    "*OneBox*"
-    "*hiddify*"
-    "*Hiddify*"
-    "*loon*"
-    "*Loon*"
-    "*quantumult*"
-
-    # Mesh & Corporate VPNs
-    "*tailscale*"
-    "io.tailscale.*"
-    "*zerotier*"
-    "com.zerotier.*"
-    "*1dot1dot1dot1*" # Cloudflare WARP
-    "*cloudflare*warp*"
-    "org.amnezia.*"
-    "*amnezia*"
-    "*Amnezia*"
-    "com.wireguard.*"
-    "*wireguard*"
-    "*WireGuard*"
-
-    # Commercial VPNs
-    "*nordvpn*"
-    "*expressvpn*"
-    "*protonvpn*"
-    "*surfshark*"
-    "*windscribe*"
-    "*mullvad*"
-    "*privateinternetaccess*"
-
-    # Screensaver & Wallpaper
-    "*Aerial.saver*"
-    "com.JohnCoates.Aerial*"
-    "*Fliqlo*"
-    "*fliqlo*"
-
-    # Git & Version Control
-    "com.github.GitHubDesktop"
-    "com.sublimemerge"
-    "com.torusknot.SourceTreeNotMAS"
-    "com.git-tower.Tower*"
-    "com.gitfox.GitFox"
-    "com.github.Gitify"
-    "com.fork.Fork"
-    "com.axosoft.gitkraken"
-
-    # Terminal & Shell
-    "com.googlecode.iterm2"
-    "net.kovidgoyal.kitty"
-    "io.alacritty"
-    "com.github.wez.wezterm"
-    "com.hyper.Hyper"
-    "com.mizage.divvy"
-    "com.fig.Fig"
-    "dev.warp.Warp-Stable"
-    "com.termius-dmg"
-
-    # Docker & Virtualization
-    "com.docker.docker"
-    "com.getutm.UTM"
-    "com.vmware.fusion"
-    "com.parallels.desktop.*"
-    "org.virtualbox.app.VirtualBox"
-    "com.vagrant.*"
-    "com.orbstack.OrbStack"
-
-    # System Monitoring
-    "com.bjango.istatmenus*"
-    "eu.exelban.Stats"
-    "com.monitorcontrol.*"
-    "com.bresink.system-toolkit.*"
-    "com.mediaatelier.MenuMeters"
-    "com.activity-indicator.app"
-    "net.cindori.sensei"
-
-    # Window Management
-    "com.macitbetter.*" # BetterTouchTool, BetterSnapTool
-    "com.hegenberg.*"
-    "com.manytricks.*" # Moom, Witch, etc.
-    "com.divisiblebyzero.*"
-    "com.koingdev.*"
-    "com.if.Amphetamine"
-    "com.lwouis.alt-tab-macos"
-    "net.matthewpalmer.Vanilla"
-    "com.lightheadsw.Caffeine"
-    "com.contextual.Contexts"
-    "com.amethyst.Amethyst"
-    "com.knollsoft.Rectangle"
-    "com.knollsoft.Hookshot"
-    "com.surteesstudios.Bartender"
-    "com.gaosun.eul"
-    "com.pointum.hazeover"
-
-    # Launcher & Automation
-    "com.runningwithcrayons.Alfred"
-    "com.raycast.*"
-    "com.blacktree.Quicksilver"
-    "com.stairways.keyboardmaestro.*"
-    "com.manytricks.Butler"
-    "com.happenapps.Quitter"
-    "com.pilotmoon.scroll-reverser"
-    "org.pqrs.Karabiner-Elements"
-    "com.apple.Automator"
-
-    # Note-Taking
-    "com.bear-writer.*"
-    "com.typora.*"
-    "com.ulyssesapp.*"
-    "com.literatureandlatte.*"
-    "com.dayoneapp.*"
-    "notion.id"
-    "md.obsidian"
-    "com.logseq.logseq"
-    "com.evernote.Evernote"
-    "com.onenote.mac"
-    "com.omnigroup.OmniOutliner*"
-    "net.shinyfrog.bear"
-    "com.goodnotes.GoodNotes"
-    "com.marginnote.MarginNote*"
-    "com.roamresearch.*"
-    "com.reflect.ReflectApp"
-    "com.inkdrop.*"
-
-    # Design & Creative
-    "com.adobe.*"
-    "com.avid.mediacomposer*"
-    "com.bohemiancoding.*"
-    "com.figma.*"
-    "com.framerx.*"
-    "com.zeplin.*"
-    "com.invisionapp.*"
-    "com.principle.*"
-    "com.pixelmatorteam.*"
-    "com.affinitydesigner.*"
-    "com.affinityphoto.*"
-    "com.affinitypublisher.*"
-    "com.linearity.curve"
-    "com.canva.CanvaDesktop"
-    "com.maxon.cinema4d"
-    "com.autodesk.*"
-    "com.sketchup.*"
-    "com.native-instruments.*"
-    "com.fabfilter.*"
-    "com.paceap.*"
-    "com.izotope.*"
-    "iZotope"
-    "com.lasersoft-imaging.*"
-    "app.cotypist.Cotypist"
-
-    # Communication
-    "com.tencent.xinWeChat"
-    "com.tencent.qq"
-    "com.alibaba.DingTalkMac"
-    "com.alibaba.AliLang.osx"
-    "com.alibaba.alilang3.osx.ShipIt"
-    "com.alibaba.AlilangMgr.QueryNetworkInfo"
-    "us.zoom.xos"
-    "com.microsoft.teams*"
-    "com.slack.Slack"
-    "com.hnc.Discord"
-    "app.legcord.Legcord"
-    "org.telegram.desktop"
-    "ru.keepcoder.Telegram"
-    "net.whatsapp.WhatsApp"
-    "com.skype.skype"
-    "com.cisco.webexmeetings"
-    "com.ringcentral.RingCentral"
-    "com.readdle.smartemail-Mac"
-    "com.airmail.*"
-    "com.postbox-inc.postbox"
-    "com.tinyspeck.slackmacgap"
-
-    # Task Management
-    "com.omnigroup.OmniFocus*"
-    "com.culturedcode.*"
-    "com.todoist.*"
-    "com.any.do.*"
-    "com.ticktick.*"
-    "com.microsoft.to-do"
-    "com.trello.trello"
-    "com.asana.nativeapp"
-    "com.clickup.*"
-    "com.monday.desktop"
-    "com.airtable.airtable"
-    "com.notion.id"
-    "com.linear.linear"
-
-    # File Transfer & Sync
-    "com.panic.transmit*"
-    "com.binarynights.ForkLift*"
-    "com.noodlesoft.Hazel"
-    "com.cyberduck.Cyberduck"
-    "io.filezilla.FileZilla"
-    "com.apple.Xcode.CloudDocuments"
-    "com.synology.*"
-
-    # Cloud Storage & Backup
-    "com.dropbox.*"
-    "com.getdropbox.*"
-    "*dropbox*"
-    "ws.agile.*"
-    "com.backblaze.*"
-    "*backblaze*"
-    "com.box.desktop*"
-    "*box.desktop*"
-    "com.microsoft.OneDrive*"
-    "com.microsoft.SyncReporter"
-    "*OneDrive*"
-    "com.google.GoogleDrive"
-    "com.google.keystone*"
-    "*GoogleDrive*"
-    "com.amazon.drive"
-    "com.apple.bird"
-    "com.apple.CloudDocs*"
-    "com.displaylink.*"
-    "com.fujitsu.pfu.ScanSnap*"
-    "com.citrix.*"
-    "org.xquartz.*"
-    "us.zoom.updater*"
-    "com.DigiDNA.iMazing*"
-    "com.shirtpocket.*"
-    "homebrew.mxcl.*"
-
-    # Remote Desktop / Remote Access
-    "org.chromium.chromoting*"
-    "com.google.chrome_remote_desktop*"
-    "com.teamviewer.*"
-    "com.realvnc.*"
-    "com.logmein.*"
-    "com.anydesk.*"
-
-    # Screenshot & Recording
-    "com.cleanshot.*"
-    "com.xnipapp.xnip"
-    "com.reincubate.camo"
-    "com.tunabellysoftware.ScreenFloat"
-    "net.telestream.screenflow*"
-    "com.techsmith.snagit*"
-    "com.techsmith.camtasia*"
-    "com.obsidianapp.screenrecorder"
-    "com.kap.Kap"
-    "com.getkap.*"
-    "com.linebreak.CloudApp"
-    "com.droplr.droplr-mac"
-
-    # Media & Entertainment
-    "com.spotify.client"
-    "com.apple.Music"
-    "com.apple.podcasts"
-    "com.apple.BKAgentService"
-    "com.apple.iBooksX"
-    "com.apple.iBooks"
-    "com.blackmagic-design.*"
-    "com.colliderli.iina"
-    "org.videolan.vlc"
-    "io.mpv"
-    "tv.plex.player.desktop"
-    "com.netease.163music"
-
-    # Web Browsers
-    "Firefox"
-    "org.mozilla.*"
-
-    # Scientific & Professional Software
-    "com.crowdstrike.*"
-    "com.kolide.*"
-    "com.sas.*"
-    "com.mathworks.*"
-    "com.ibm.spss.*"
-    "com.wolfram.*"
-    "com.stata.*"
-    "org.rstudio.*"
-    "com.tableausoftware.*"
-
-    # License & App Stores
-    "com.paddle.Paddle*"
-    "com.quicken.*"
-    "com.setapp.DesktopClient"
-    "com.devmate.*"
-    "org.sparkle-project.Sparkle*"
-)
+# Bundle ID / pattern data is sourced from a sibling file so this file
+# stays focused on logic. See app_protection_data.sh for the lists.
+# shellcheck source=lib/core/app_protection_data.sh
+source "$_MOLE_CORE_DIR/app_protection_data.sh"
 
 # Centralized check for critical system components (case-insensitive)
 is_critical_system_component() {
@@ -659,26 +80,18 @@ build_regex_var() {
             regex="$regex|$p"
         fi
     done
+    # eval: indirect write by name; bash 3.2 has no nameref
     eval "$var_name=\"\$regex\""
 }
 
 # Lazy-loaded regex (only built when needed)
 APPLE_UNINSTALLABLE_REGEX=""
 SYSTEM_CRITICAL_REGEX=""
-SYSTEM_CRITICAL_FAST_REGEX=""
-DATA_PROTECTED_REGEX=""
 
 _ensure_uninstall_regex() {
     if [[ -z "$SYSTEM_CRITICAL_REGEX" ]]; then
         build_regex_var APPLE_UNINSTALLABLE_REGEX "${APPLE_UNINSTALLABLE_APPS[@]}"
         build_regex_var SYSTEM_CRITICAL_REGEX "${SYSTEM_CRITICAL_BUNDLES[@]}"
-    fi
-}
-
-_ensure_data_protection_regex() {
-    if [[ -z "$SYSTEM_CRITICAL_FAST_REGEX" ]]; then
-        build_regex_var SYSTEM_CRITICAL_FAST_REGEX "${SYSTEM_CRITICAL_BUNDLES_FAST[@]}"
-        build_regex_var DATA_PROTECTED_REGEX "${DATA_PROTECTED_BUNDLES[@]}"
     fi
 }
 
@@ -695,6 +108,42 @@ should_protect_from_uninstall() {
     if [[ "$bundle_id" =~ $SYSTEM_CRITICAL_REGEX ]]; then
         return 0
     fi
+
+    return 1
+}
+
+# Print the vendor name when an app must be removed through its official
+# uninstaller instead of Mole's generic Trash/delete path.
+official_uninstaller_vendor() {
+    local bundle_id="${1:-}"
+    local display_name="${2:-}"
+    local app_path="${3:-}"
+    local normalized_bundle normalized_name normalized_path
+    normalized_bundle=$(printf '%s' "$bundle_id" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+    normalized_name=$(printf '%s' "$display_name" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+    normalized_path=$(basename "${app_path:-}" .app | LC_ALL=C tr '[:upper:]' '[:lower:]')
+
+    local rule vendor prefixes fragments prefix fragment
+    local -a _prefixes _fragments
+    for rule in "${OFFICIAL_UNINSTALLER_RULES[@]}"; do
+        IFS='|' read -r vendor prefixes fragments <<< "$rule"
+        IFS=',' read -r -a _prefixes <<< "$prefixes"
+        for prefix in "${_prefixes[@]}"; do
+            [[ -n "$prefix" && "$normalized_bundle" == "$prefix"* ]] && {
+                printf '%s\n' "$vendor"
+                return 0
+            }
+        done
+
+        IFS=',' read -r -a _fragments <<< "$fragments"
+        for fragment in "${_fragments[@]}"; do
+            if [[ -n "$fragment" ]] &&
+                { [[ "$normalized_name" == *"$fragment"* ]] || [[ "$normalized_path" == *"$fragment"* ]]; }; then
+                printf '%s\n' "$vendor"
+                return 0
+            fi
+        done
+    done
 
     return 1
 }
@@ -816,6 +265,10 @@ should_protect_path() {
         */Library/Group\ Containers/com.apple.systempreferences* | */Library/Group\ Containers/com.apple.Settings*)
             return 0
             ;;
+        # OrbStack group containers hold live container filesystem images.
+        */Library/Group\ Containers/*dev.orbstack | */Library/Group\ Containers/*dev.orbstack/* | */.orbstack | */.orbstack/*)
+            return 0
+            ;;
         # Shared file lists for System Settings (macOS Sequoia) - Issue #136
         */com.apple.sharedfilelist/*com.apple.Settings* | */com.apple.sharedfilelist/*com.apple.SystemSettings* | */com.apple.sharedfilelist/*systempreferences*)
             return 0
@@ -851,6 +304,17 @@ should_protect_path() {
             ;;
         # Protect Mole's own runtime logs so cleanup cannot delete its active log targets.
         */Library/Logs/mole | */Library/Logs/mole/ | */Library/Logs/mole/*)
+            return 0
+            ;;
+        # Codex Desktop and CLI keep conversation indexes and app state in cache-
+        # shaped paths. Default cleanup must not remove those records.
+        */Library/Application\ Support/Codex | */Library/Application\ Support/Codex/* | \
+            */Library/Logs/com.openai.codex | */Library/Logs/com.openai.codex/* | \
+            */.codex/sessions | */.codex/sessions/* | \
+            */.codex/auth.json | */.codex/history.jsonl | \
+            */.codex/state_*.sqlite | */.codex/logs_*.sqlite | \
+            */.codex/session_index.jsonl | */.codex/cache/session_index.jsonl | \
+            */.codex/cache/codex_app_directory | */.codex/cache/codex_app_directory/*)
             return 0
             ;;
         # Bluetooth and WiFi configurations
@@ -1041,7 +505,7 @@ _mole_uninstall_is_common_app_name() {
 
 _mole_uninstall_vendor_product_tokens() {
     local bundle_id="${1:-}"
-    [[ "$bundle_id" =~ ^[a-zA-Z0-9][-a-zA-Z0-9]*(\.[a-zA-Z0-9][-a-zA-Z0-9]*)+$ ]] || return 1
+    mole_is_reverse_dns_bundle_id "$bundle_id" || return 1
 
     local product_token="${bundle_id##*.}"
     local without_product="${bundle_id%.*}"
@@ -1147,11 +611,49 @@ find_shared_app_paths() {
     done | sort -u
 }
 
+# Return 0 when `path` looks like a dotdir / XDG state directory belonging to
+# a standalone CLI tool shipped independently of any same-named GUI app.
+# find_app_files uses this to skip candidates that would otherwise nuke
+# unrelated CLI state when uninstalling a same-named GUI app (#993).
+#
+# Lowercase comparison so case-insensitive APFS (~/.Claude vs ~/.claude) is
+# handled. Scope is restricted to four well-known parents so we never skip
+# legitimate non-dotdir locations.
+#
+# The deny-list is inlined rather than read from an array because bats 1.x
+# does not carry readonly arrays from setup() into the @test body, and a
+# regression in any of these names is destructive enough that we never want
+# the safeguard to silently no-op in a fresh subshell.
+_path_belongs_to_independent_cli() {
+    local path="$1"
+    [[ -z "$path" ]] && return 1
+
+    local base parent lc_name
+    base="${path##*/}"
+    parent="${path%/*}"
+    lc_name=$(printf '%s' "${base#.}" | tr '[:upper:]' '[:lower:]')
+    [[ -z "$lc_name" ]] && return 1
+
+    case "$lc_name" in
+        # Keep this list in sync with INDEPENDENT_CLI_DOTDIR_NAMES in
+        # app_protection_data.sh (kept there for discoverability /
+        # documentation; this case is the live source of truth).
+        claude | opencode | codex | gemini) ;;
+        *) return 1 ;;
+    esac
+
+    case "$parent" in
+        "$HOME" | "$HOME/.config" | "$HOME/.local/share" | "$HOME/.cache")
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 # Locate files associated with an application
 find_app_files() {
     local bundle_id="$1"
     local app_name="$2"
-    local app_path="${3:-}" # optional, used for team-id Group Container lookup
 
     # Early validation: require at least one valid identifier
     # Skip scanning if both bundle_id and app_name are invalid
@@ -1187,8 +689,7 @@ find_app_files() {
     # validation. A malformed Info.plist should not be able to traverse out of
     # Library subtrees or broaden matches with glob metacharacters.
     local bundle_id_valid="false"
-    if [[ -n "$bundle_id" && "$bundle_id" != "unknown" && ${#bundle_id} -gt 3 ]] &&
-        [[ "$bundle_id" =~ ^[a-zA-Z0-9][-a-zA-Z0-9]*(\.[a-zA-Z0-9][-a-zA-Z0-9]*)+$ ]]; then
+    if mole_is_reverse_dns_bundle_id "$bundle_id"; then
         bundle_id_valid="true"
     fi
 
@@ -1197,6 +698,7 @@ find_app_files() {
         "$HOME/Library/Application Support/$app_name"
         "$HOME/Library/Caches/$app_name"
         "$HOME/Library/Logs/$app_name"
+
         "$HOME/Library/Services/$app_name.workflow"
         "$HOME/Library/QuickLook/$app_name.qlgenerator"
         "$HOME/Library/Internet Plug-Ins/$app_name.plugin"
@@ -1302,6 +804,13 @@ find_app_files() {
                 ;;
         esac
 
+        # Skip XDG dotdirs that belong to independent CLI tools sharing a name
+        # with the GUI app being uninstalled (issue #993).
+        if _path_belongs_to_independent_cli "$expanded_path"; then
+            debug_log "Skipping independent CLI dotdir: $expanded_path"
+            continue
+        fi
+
         files_to_clean+=("$expanded_path")
     done
 
@@ -1330,8 +839,10 @@ find_app_files() {
         [[ -f ~/Library/Preferences/"$bundle_id".plist ]] && files_to_clean+=("$HOME/Library/Preferences/$bundle_id.plist")
         [[ -d ~/Library/Preferences/"$bundle_id" ]] && files_to_clean+=("$HOME/Library/Preferences/$bundle_id")
         [[ -d ~/Library/Preferences/ByHost ]] && while IFS= read -r -d '' pref; do
-            files_to_clean+=("$pref")
-        done < <(command find ~/Library/Preferences/ByHost -maxdepth 1 \( -name "$bundle_id*.plist" \) -print0 2> /dev/null)
+            if mole_name_starts_with_bundle_id_boundary "$pref" "$bundle_id"; then
+                files_to_clean+=("$pref")
+            fi
+        done < <(command find ~/Library/Preferences/ByHost -maxdepth 1 -type f -name "*.plist" -print0 2> /dev/null)
 
         # User LaunchAgents: wildcard scan for helper plists (e.g., com.example.app.helper.plist)
         [[ -d ~/Library/LaunchAgents ]] && while IFS= read -r -d '' plist; do
@@ -1345,57 +856,10 @@ find_app_files() {
         # Group Containers (special handling)
         if [[ -d ~/Library/Group\ Containers ]]; then
             while IFS= read -r -d '' container; do
-                files_to_clean+=("$container")
-            done < <(command find ~/Library/Group\ Containers -maxdepth 1 \( -name "*$bundle_id*" \) -print0 2> /dev/null)
-
-            # Also search by team ID plus bundle-domain prefix.
-            # Group Containers are named <TeamID>.<group-id> (e.g. FN2V63AD2J.com.tencent).
-            # A raw Team ID match is too broad because one developer account can own
-            # unrelated apps; pair it with the bundle domain prefix instead.
-            if [[ -n "$app_path" && -d "$app_path" ]]; then
-                local _gc_team_id _gc_domain_prefix
-                _gc_team_id=$(codesign -dv "$app_path" 2>&1 | grep -o 'TeamIdentifier=[^ )][^ )]*' | head -1 | cut -d= -f2 || true)
-                _gc_domain_prefix="${bundle_id%.*}"
-                if [[ "$bundle_id_valid" == "true" &&
-                    "$_gc_domain_prefix" == *.* &&
-                    "$_gc_team_id" =~ ^[A-Z0-9]{5,}$ ]]; then
-                    while IFS= read -r -d '' container; do
-                        local _gc_already_added=false
-                        for _gc_existing in "${files_to_clean[@]}"; do
-                            [[ "$_gc_existing" == "$container" ]] && {
-                                _gc_already_added=true
-                                break
-                            }
-                        done
-                        [[ "$_gc_already_added" == "true" ]] && continue
-                        files_to_clean+=("$container")
-                    done < <(
-                        command find ~/Library/Group\ Containers -maxdepth 1 \
-                            \( -name "${_gc_team_id}.${_gc_domain_prefix}*" \
-                            -o -name "${_gc_team_id}.group.${_gc_domain_prefix}*" \
-                            -o -name "${_gc_team_id}.*.${_gc_domain_prefix}*" \) \
-                            -print0 2> /dev/null || true
-                    )
+                if mole_name_has_bundle_id_boundary "$container" "$bundle_id"; then
+                    files_to_clean+=("$container")
                 fi
-            elif [[ "$bundle_id_valid" == "true" ]]; then
-                # Fallback: when app_path is unavailable (e.g., orphan cleanup),
-                # search by bundle domain prefix (e.g., com.tencent from com.tencent.qq)
-                # to catch TeamID-prefixed containers like FN2V63AD2J.com.tencent
-                local _gc_domain_prefix="${bundle_id%.*}"
-                if [[ "$_gc_domain_prefix" == *.* && ${#_gc_domain_prefix} -ge 5 ]]; then
-                    while IFS= read -r -d '' container; do
-                        local _gc_already_added=false
-                        for _gc_existing in "${files_to_clean[@]}"; do
-                            [[ "$_gc_existing" == "$container" ]] && {
-                                _gc_already_added=true
-                                break
-                            }
-                        done
-                        [[ "$_gc_already_added" == "true" ]] && continue
-                        files_to_clean+=("$container")
-                    done < <(command find ~/Library/Group\ Containers -maxdepth 1 \( -name "*$_gc_domain_prefix" \) -print0 2> /dev/null)
-                fi
-            fi
+            done < <(command find ~/Library/Group\ Containers -maxdepth 1 -type d -print0 2> /dev/null)
         fi
 
         # App extensions often use bundle-id-derived directories rather than the
@@ -1412,6 +876,7 @@ find_app_files() {
         for derived_root in "${derived_bundle_roots[@]}"; do
             [[ -d "$derived_root" ]] || continue
             while IFS= read -r -d '' derived_path; do
+                mole_name_has_bundle_id_boundary "$derived_path" "$bundle_id" || continue
                 already_added=false
                 for existing_path in "${files_to_clean[@]}"; do
                     if [[ "$existing_path" == "$derived_path" ]]; then
@@ -1420,7 +885,7 @@ find_app_files() {
                     fi
                 done
                 [[ "$already_added" == "true" ]] || files_to_clean+=("$derived_path")
-            done < <(command find "$derived_root" -maxdepth 1 -type d -name "*$bundle_id*" -print0 2> /dev/null)
+            done < <(command find "$derived_root" -maxdepth 1 -type d -print0 2> /dev/null)
         done
     fi
 
@@ -1576,7 +1041,7 @@ find_app_files() {
         done < <(command find "$vscode_global" -maxdepth 1 -type d -iname "*raycast*" -print0 2> /dev/null)
     fi
 
-    # CrashReporter plists are files named AppName_UUID.plist, not directories.
+    # CrashReporter plists: named AppName_UUID.plist (not subdirectories)
     local crash_reporter_dir="$HOME/Library/Application Support/CrashReporter"
     if [[ -d "$crash_reporter_dir" && ${#nospace_name} -ge 3 ]]; then
         while IFS= read -r -d '' cr; do
@@ -1601,40 +1066,36 @@ get_diagnostic_report_paths_for_app() {
     local exec_name=""
     local nospace_name="${app_name// /}"
 
-    [[ -z "$app_name" || -z "$directory" ]] && return 0
+    [[ -z "$app_path" || -z "$app_name" || -z "$directory" ]] && return 0
     [[ ! -d "$directory" ]] && return 0
 
-    if [[ -n "$app_path" && -f "$app_path/Contents/Info.plist" ]]; then
+    if [[ -f "$app_path/Contents/Info.plist" ]]; then
         exec_name=$(defaults read "$app_path/Contents/Info.plist" CFBundleExecutable 2> /dev/null || echo "")
         if [[ -z "$exec_name" ]]; then
             exec_name=$(grep -A1 "CFBundleExecutable" "$app_path/Contents/Info.plist" 2> /dev/null | grep "<string>" | sed -n 's/.*<string>\([^<]*\)<\/string>.*/\1/p' | head -1)
         fi
     fi
     prefix="${exec_name:-$nospace_name}"
-    [[ -z "$prefix" || ${#prefix} -lt 2 ]] && return 0
-
-    local prefix_lower
-    prefix_lower=$(printf '%s' "$prefix" | tr '[:upper:]' '[:lower:]')
+    [[ -z "$prefix" || ${#prefix} -lt 3 ]] && return 0
 
     local dir_abs
     dir_abs=$(cd "$directory" 2> /dev/null && pwd -P 2> /dev/null) || return 0
     while IFS= read -r -d '' f; do
         [[ -z "$f" ]] && continue
-        local base base_lower
+        local base
         base=$(basename "$f" 2> /dev/null)
-        base_lower=$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')
-        case "$base_lower" in
-            "$prefix_lower".* | "$prefix_lower"_* | "$prefix_lower"-*) ;;
+        case "$base" in
+            "$prefix".* | "$prefix"_* | "$prefix"-*) ;;
             *) continue ;;
         esac
-        case "$base_lower" in
+        case "$base" in
             *.ips | *.crash | *.spin | *.diag) ;;
             *) continue ;;
         esac
         printf '%s\n' "$f"
     done < <(
         find "$dir_abs" -maxdepth 1 -type f \
-            \( -iname "${prefix}.*" -o -iname "${prefix}_*" -o -iname "${prefix}-*" \) \
+            \( -name "${prefix}.*" -o -name "${prefix}_*" -o -name "${prefix}-*" \) \
             -print0 2> /dev/null || true
     )
     return 0
@@ -1734,8 +1195,7 @@ find_app_system_files() {
     # The two -name patterns are anchored at the dot boundary so that, e.g.,
     # bundle "com.foo" matches "com.foo.plist" and "com.foo.helper.plist" but
     # NOT "com.foobar.plist" from an unrelated vendor.
-    if [[ -n "$bundle_id" && "$bundle_id" != "unknown" &&
-        "$bundle_id" =~ ^[a-zA-Z0-9][-a-zA-Z0-9]*(\.[a-zA-Z0-9][-a-zA-Z0-9]*)+$ ]]; then
+    if mole_is_reverse_dns_bundle_id "$bundle_id"; then
         for base in /Library/LaunchAgents /Library/LaunchDaemons; do
             [[ -d "$base" ]] && while IFS= read -r -d '' plist; do
                 system_files+=("$plist")
@@ -1754,14 +1214,18 @@ find_app_system_files() {
 
     # Privileged Helper Tools and Receipts (special handling)
     # Only search with bundle_id if it's valid (not empty and not "unknown")
-    if [[ -n "$bundle_id" && "$bundle_id" != "unknown" && ${#bundle_id} -gt 3 ]]; then
+    if mole_is_reverse_dns_bundle_id "$bundle_id"; then
         [[ -d /Library/PrivilegedHelperTools ]] && while IFS= read -r -d '' helper; do
-            system_files+=("$helper")
-        done < <(command find /Library/PrivilegedHelperTools -maxdepth 1 \( -name "$bundle_id*" \) -print0 2> /dev/null)
+            if mole_name_starts_with_bundle_id_boundary "$helper" "$bundle_id"; then
+                system_files+=("$helper")
+            fi
+        done < <(command find /Library/PrivilegedHelperTools -maxdepth 1 -print0 2> /dev/null)
 
         [[ -d /private/var/db/receipts ]] && while IFS= read -r -d '' receipt; do
-            system_files+=("$receipt")
-        done < <(command find /private/var/db/receipts -maxdepth 1 \( -name "*$bundle_id*" \) -print0 2> /dev/null)
+            if mole_name_starts_with_bundle_id_boundary "$receipt" "$bundle_id"; then
+                system_files+=("$receipt")
+            fi
+        done < <(command find /private/var/db/receipts -maxdepth 1 -print0 2> /dev/null)
     fi
 
     # Raycast system-level files
@@ -1798,9 +1262,8 @@ find_app_receipt_files() {
     # Skip if no bundle ID
     [[ -z "$bundle_id" || "$bundle_id" == "unknown" ]] && return 0
 
-    # Validate bundle_id format to prevent wildcard injection
-    # Only allow alphanumeric characters, dots, hyphens, and underscores
-    if [[ ! "$bundle_id" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+    # Validate bundle_id format to prevent wildcard or defaults-domain abuse.
+    if ! mole_is_reverse_dns_bundle_id "$bundle_id"; then
         debug_log "Invalid bundle_id format: $bundle_id"
         return 0
     fi
@@ -1812,8 +1275,10 @@ find_app_receipt_files() {
     # Usually in /var/db/receipts/
     if [[ -d /private/var/db/receipts ]]; then
         while IFS= read -r -d '' bom; do
-            bom_files+=("$bom")
-        done < <(find /private/var/db/receipts -maxdepth 1 -name "${bundle_id}*.bom" -print0 2> /dev/null)
+            if mole_name_starts_with_bundle_id_boundary "$bom" "$bundle_id"; then
+                bom_files+=("$bom")
+            fi
+        done < <(find /private/var/db/receipts -maxdepth 1 -name "*.bom" -print0 2> /dev/null)
     fi
 
     # Process bom files if any found
@@ -1845,31 +1310,7 @@ find_app_receipt_files() {
                 # Normalize path (remove duplicate slashes)
                 clean_path=$(tr -s "/" <<< "$clean_path")
 
-                # ------------------------------------------------------------------------
-                # Safety check: restrict removal to trusted paths
-                # ------------------------------------------------------------------------
-                local is_safe=false
-
-                # Whitelisted prefixes (exclude /Users, /usr, /opt)
-                case "$clean_path" in
-                    /Applications/*) is_safe=true ;;
-                    /Library/Application\ Support/*) is_safe=true ;;
-                    /Library/Caches/*) is_safe=true ;;
-                    /Library/Logs/*) is_safe=true ;;
-                    /Library/Preferences/*) is_safe=true ;;
-                    /Library/LaunchAgents/*) is_safe=true ;;
-                    /Library/LaunchDaemons/*) is_safe=true ;;
-                    /Library/PrivilegedHelperTools/*) is_safe=true ;;
-                    /Library/Extensions/*) is_safe=false ;;
-                    *) is_safe=false ;;
-                esac
-
-                # Hard blocks
-                case "$clean_path" in
-                    /System/* | /usr/bin/* | /usr/lib/* | /bin/* | /sbin/* | /private/*) is_safe=false ;;
-                esac
-
-                if [[ "$is_safe" == "true" && -e "$clean_path" ]]; then
+                if receipt_payload_path_is_allowlisted "$clean_path" "$bundle_id" && [[ -e "$clean_path" ]]; then
                     # Skip top-level directories
                     if [[ "$clean_path" == "/Applications" || "$clean_path" == "/Library" ]]; then
                         continue
@@ -1892,9 +1333,41 @@ find_app_receipt_files() {
     fi
 }
 
-# Terminate a running application
+receipt_payload_path_is_allowlisted() {
+    local clean_path="$1"
+    local bundle_id="$2"
+    local base
+    base=$(basename "$clean_path")
+
+    [[ -n "$clean_path" && -n "$bundle_id" ]] || return 1
+    mole_is_reverse_dns_bundle_id "$bundle_id" || return 1
+
+    case "$clean_path" in
+        /Library/LaunchAgents/*.plist | /Library/LaunchDaemons/*.plist)
+            [[ "$base" == "$bundle_id.plist" || "$base" == "$bundle_id."*.plist ]]
+            return
+            ;;
+        /Library/PrivilegedHelperTools/*)
+            mole_name_starts_with_bundle_id_boundary "$base" "$bundle_id"
+            return
+            ;;
+        /private/var/db/receipts/*)
+            [[ "$base" == "$bundle_id.bom" || "$base" == "$bundle_id.plist" || "$base" == "$bundle_id."* ]]
+            return
+            ;;
+    esac
+
+    return 1
+}
+
+# Terminate a running application during uninstall.
+# The user has already confirmed removal, so after the graceful Quit Apple
+# Event we escalate through SIGTERM and SIGKILL (and one sudo retry when
+# non-interactive sudo is already cached) to avoid leaving a zombie process
+# after "Uninstall complete". Apps that need to flush state get the graceful
+# Quit window first; apps that stall past it lose unsaved work, which the
+# user has implicitly accepted by confirming.
 force_kill_app() {
-    # Gracefully terminates or force-kills an application
     local app_name="$1"
     local app_path="${2:-""}"
 
@@ -1916,6 +1389,20 @@ force_kill_app() {
     # Use executable name for precise matching, fallback to app name
     local match_pattern="${exec_name:-$app_name}"
 
+    # Defensive guard: even though should_protect_from_uninstall (bin/uninstall.sh)
+    # filters protected bundle IDs out of the selection list, match_pattern comes
+    # from CFBundleExecutable (a string a third-party .app can set freely). Refuse
+    # to AppleScript-Quit or pkill any pattern that exactly matches a critical
+    # system process name. force_kill_app is a public function; future callers
+    # must not be able to weaponise a spoofed executable name to take down Finder,
+    # Dock, loginwindow, etc.
+    case "$match_pattern" in
+        Finder | Dock | loginwindow | WindowServer | SystemUIServer | launchd | coreaudiod | NotificationCenter | ControlCenter | Spotlight)
+            debug_log "force_kill_app: refusing to operate on system process name '$match_pattern'"
+            return 1
+            ;;
+    esac
+
     # Check if process is running using exact match only
     if ! pgrep -x "$match_pattern" > /dev/null 2>&1; then
         return 0
@@ -1930,7 +1417,7 @@ force_kill_app() {
     if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]] &&
         command -v osascript > /dev/null 2>&1; then
         local quit_target=""
-        if [[ "$bundle_id" =~ ^[A-Za-z0-9][-A-Za-z0-9]*(\.[A-Za-z0-9][-A-Za-z0-9]*)+$ ]]; then
+        if mole_is_reverse_dns_bundle_id "$bundle_id"; then
             quit_target="id \"$bundle_id\""
         else
             # Escape embedded double quotes in app_name before passing into
@@ -1939,7 +1426,7 @@ force_kill_app() {
             escaped_name="${escaped_name//\"/\\\"}"
             quit_target="\"$escaped_name\""
         fi
-        run_with_timeout 3 osascript -e "tell application $quit_target to quit" > /dev/null 2>&1 &
+        run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" osascript -e "tell application $quit_target to quit" > /dev/null 2>&1 &
         local quit_pid=$!
         # Poll briefly so the kill ladder skips when the app exits cleanly.
         local quit_wait=20
@@ -1950,32 +1437,35 @@ force_kill_app() {
         wait "$quit_pid" 2> /dev/null || true
     fi
 
+    # Graceful Quit landed: skip the kill ladder entirely.
     if ! pgrep -x "$match_pattern" > /dev/null 2>&1; then
         return 0
     fi
 
-    # Try graceful termination first
+    # Escalate: SIGTERM, then SIGKILL, then one sudo SIGKILL retry when a
+    # cached sudo session is already available (no new prompt). The user
+    # confirmed uninstall, so a still-running process at this point is
+    # blocking a clean result and we trade unsaved state for that.
     pkill -x "$match_pattern" 2> /dev/null || true
     sleep 2
-
-    # Check again after graceful kill
     if ! pgrep -x "$match_pattern" > /dev/null 2>&1; then
         return 0
     fi
 
-    # Force kill if still running
     pkill -9 -x "$match_pattern" 2> /dev/null || true
     sleep 2
-
-    # If still running and sudo is available, try with sudo
-    if pgrep -x "$match_pattern" > /dev/null 2>&1; then
-        if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]] && sudo -n true 2> /dev/null; then
-            sudo pkill -9 -x "$match_pattern" 2> /dev/null || true
-            sleep 2
-        fi
+    if ! pgrep -x "$match_pattern" > /dev/null 2>&1; then
+        return 0
     fi
 
-    # Final check with longer timeout for stubborn processes
+    if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]] &&
+        sudo -n true 2> /dev/null; then
+        sudo pkill -9 -x "$match_pattern" 2> /dev/null || true
+        sleep 2
+    fi
+
+    # Final retries for stubborn processes (e.g. apps mid-fsync that need a
+    # moment to fully exit after SIGKILL).
     local retries=3
     while [[ $retries -gt 0 ]]; do
         if ! pgrep -x "$match_pattern" > /dev/null 2>&1; then
@@ -1985,7 +1475,6 @@ force_kill_app() {
         ((retries--))
     done
 
-    # Still running after all attempts
     pgrep -x "$match_pattern" > /dev/null 2>&1 && return 1 || return 0
 }
 

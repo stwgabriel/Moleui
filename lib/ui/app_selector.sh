@@ -155,6 +155,8 @@ select_apps_for_uninstall() {
         fi
     fi
 
+    drain_pending_input 0.2
+
     # Expose metadata for the paginated menu (optional inputs)
     # - MOLE_MENU_META_EPOCHS: numeric last_used_epoch per item
     # - MOLE_MENU_META_SIZEKB: numeric size in KB per item
@@ -170,6 +172,7 @@ select_apps_for_uninstall() {
         unset MOLE_MENU_META_SIZEKB
     fi
     export MOLE_MENU_FILTER_NAMES="$names_newline"
+    export MOLE_MENU_IGNORE_INITIAL_ENTER=1
 
     # Use paginated menu - result will be stored in MOLE_SELECTION_RESULT
     # Note: paginated_multi_select enters alternate screen and handles clearing
@@ -178,7 +181,7 @@ select_apps_for_uninstall() {
     local exit_code=$?
 
     # Clean env leakage for safety
-    unset MOLE_MENU_META_EPOCHS MOLE_MENU_META_SIZEKB MOLE_MENU_FILTER_NAMES
+    unset MOLE_MENU_META_EPOCHS MOLE_MENU_META_SIZEKB MOLE_MENU_FILTER_NAMES MOLE_MENU_IGNORE_INITIAL_ENTER
     # leave MOLE_MENU_SORT_DEFAULT untouched if user set it globally
 
     if [[ $exit_code -ne 0 ]]; then

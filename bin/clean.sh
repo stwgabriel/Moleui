@@ -18,6 +18,7 @@ source "$SCRIPT_DIR/../lib/clean/apps.sh"
 source "$SCRIPT_DIR/../lib/clean/dev.sh"
 source "$SCRIPT_DIR/../lib/clean/app_caches.sh"
 source "$SCRIPT_DIR/../lib/clean/hints.sh"
+source "$SCRIPT_DIR/../lib/clean/launch_services.sh"
 source "$SCRIPT_DIR/../lib/clean/system.sh"
 source "$SCRIPT_DIR/../lib/clean/user.sh"
 
@@ -151,6 +152,7 @@ PROJECT_ARTIFACT_HINT_ESTIMATED_KB=0
 PROJECT_ARTIFACT_HINT_ESTIMATE_SAMPLES=0
 PROJECT_ARTIFACT_HINT_ESTIMATE_PARTIAL=false
 declare -a DRY_RUN_SEEN_IDENTITIES=()
+declare -a DRY_RUN_SEEN_PATHS=()
 
 # shellcheck disable=SC2329
 note_activity() {
@@ -162,15 +164,95 @@ note_activity() {
 # shellcheck disable=SC2329
 register_dry_run_cleanup_target() {
     local path="$1"
+    local normalized_path
+    normalized_path=$(mole_normalize_path "$path")
+
+    local seen_path
+    if [[ ${#DRY_RUN_SEEN_PATHS[@]} -gt 0 ]]; then
+        for seen_path in "${DRY_RUN_SEEN_PATHS[@]}"; do
+            if [[ "$normalized_path" == "$seen_path" || "$normalized_path" == "$seen_path"/* ]]; then
+                return 1
+            fi
+        done
+    fi
+
     local identity
-    identity=$(mole_path_identity "$path")
+    identity=$(mole_path_identity "$normalized_path")
 
     if [[ ${#DRY_RUN_SEEN_IDENTITIES[@]} -gt 0 ]] && mole_identity_in_list "$identity" "${DRY_RUN_SEEN_IDENTITIES[@]}"; then
         return 1
     fi
 
     DRY_RUN_SEEN_IDENTITIES+=("$identity")
+    DRY_RUN_SEEN_PATHS+=("$normalized_path")
     return 0
+}
+
+read_clean_sudo_choice() {
+    local had_force_char=false
+    local previous_force_char="${MOLE_READ_KEY_FORCE_CHAR:-}"
+    if [[ ${MOLE_READ_KEY_FORCE_CHAR+x} ]]; then
+        had_force_char=true
+    fi
+
+    export MOLE_READ_KEY_FORCE_CHAR=1
+    local choice
+    choice=$(read_key)
+
+    if [[ "$had_force_char" == "true" ]]; then
+        export MOLE_READ_KEY_FORCE_CHAR="$previous_force_char"
+    else
+        unset MOLE_READ_KEY_FORCE_CHAR
+    fi
+
+    printf '%s\n' "$choice"
+}
+
+prompt_for_system_clean() {
+    local prompt_attempt=0
+    while true; do
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+
+        local choice
+        choice=$(read_clean_sudo_choice)
+
+        # ESC aborts, Space skips, Enter (or any typed key, e.g. someone who
+        # starts typing their password) proceeds to authentication.
+        if [[ "$choice" == "QUIT" ]]; then
+            echo -e " ${GRAY}Canceled${NC}"
+            exit 0
+        fi
+
+        if [[ "$choice" == "SPACE" ]]; then
+            echo -e " ${GRAY}Skipped${NC}"
+            echo ""
+            SYSTEM_CLEAN=false
+            break
+        elif [[ "$choice" == "ENTER" || "$choice" == CHAR:* ]]; then
+            printf "\r\033[K" # Clear the prompt line
+            if ensure_sudo_session "System cleanup requires admin access"; then
+                SYSTEM_CLEAN=true
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
+                echo ""
+            else
+                SYSTEM_CLEAN=false
+                echo ""
+                echo -e "${YELLOW}Authentication failed${NC}, continuing with user-level cleanup"
+            fi
+            break
+        else
+            prompt_attempt=$((prompt_attempt + 1))
+            drain_pending_input 0.05
+            if [[ $prompt_attempt -ge 2 ]]; then
+                SYSTEM_CLEAN=false
+                echo -e " ${GRAY}Skipped${NC}"
+                echo ""
+                break
+            fi
+            printf "\r\033[K"
+            echo -e "${YELLOW}${ICON_WARNING}${NC} Press Enter to continue, or Space to skip"
+        fi
+    done
 }
 
 CLEANUP_DONE=false
@@ -384,10 +466,10 @@ get_cleanup_path_size_kb() {
 
     if [[ -f "$path" && ! -L "$path" ]]; then
         if command -v stat > /dev/null 2>&1; then
-            local bytes
-            bytes=$(stat -f%z "$path" 2> /dev/null || echo "0")
-            if [[ "$bytes" =~ ^[0-9]+$ && "$bytes" -gt 0 ]]; then
-                echo $(((bytes + 1023) / 1024))
+            local blocks
+            blocks=$(stat -f%b "$path" 2> /dev/null || echo "0")
+            if [[ "$blocks" =~ ^[0-9]+$ ]]; then
+                echo $(((blocks + 1) / 2))
                 return 0
             fi
         fi
@@ -395,10 +477,10 @@ get_cleanup_path_size_kb() {
 
     if [[ -L "$path" ]]; then
         if command -v stat > /dev/null 2>&1; then
-            local bytes
-            bytes=$(stat -f%z "$path" 2> /dev/null || echo "0")
-            if [[ "$bytes" =~ ^[0-9]+$ && "$bytes" -gt 0 ]]; then
-                echo $(((bytes + 1023) / 1024))
+            local blocks
+            blocks=$(stat -f%b "$path" 2> /dev/null || echo "0")
+            if [[ "$blocks" =~ ^[0-9]+$ ]]; then
+                echo $(((blocks + 1) / 2))
             else
                 echo 0
             fi
@@ -621,17 +703,17 @@ safe_clean() {
             fi
 
             local idx=0
-            local _bytes
-            while IFS= read -r _bytes; do
-                [[ "$_bytes" =~ ^[0-9]+$ ]] || _bytes=0
-                local _kb=$(((_bytes + 1023) / 1024))
+            local _blocks
+            while IFS= read -r _blocks; do
+                [[ "$_blocks" =~ ^[0-9]+$ ]] || _blocks=0
+                local _kb=$(((_blocks + 1) / 2))
                 if [[ "$_kb" -gt 0 ]]; then
                     echo "$_kb 1" > "$temp_dir/result_${idx}"
                 else
                     echo "0 0" > "$temp_dir/result_${idx}"
                 fi
                 idx=$((idx + 1))
-            done < <(stat -f%z "${existing_paths[@]}" 2> /dev/null)
+            done < <(stat -f%b "${existing_paths[@]}" 2> /dev/null)
             while [[ $idx -lt ${#existing_paths[@]} ]]; do
                 echo "0 0" > "$temp_dir/result_${idx}"
                 idx=$((idx + 1))
@@ -912,6 +994,7 @@ start_cleanup() {
     export MOLE_CLEAN_SUDO_AVAILABLE="false"
     log_operation_session_start "clean"
     DRY_RUN_SEEN_IDENTITIES=()
+    DRY_RUN_SEEN_PATHS=()
 
     if [[ -t 1 ]]; then
         printf '\033[2J\033[H'
@@ -981,38 +1064,8 @@ EOF
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
             echo ""
         else
-            echo -ne "${PURPLE}${ICON_ARROW}${NC} Cleanup can use admin access. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
-
-            local choice
-            choice=$(read_key)
-
-            # ESC/Q aborts, Space skips, Enter enables system cleanup.
-            if [[ "$choice" == "QUIT" ]]; then
-                echo -e " ${GRAY}Canceled${NC}"
-                exit 0
-            fi
-
-            if [[ "$choice" == "SPACE" ]]; then
-                echo -e " ${GRAY}Skipped${NC}"
-                echo ""
-                SYSTEM_CLEAN=false
-            elif [[ "$choice" == "ENTER" ]]; then
-                printf "\r\033[K" # Clear the prompt line
-                if ensure_sudo_session "Cleanup requires admin access"; then
-                    SYSTEM_CLEAN=true
-                    export MOLE_CLEAN_SUDO_AVAILABLE="true"
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
-                    echo ""
-                else
-                    SYSTEM_CLEAN=false
-                    echo ""
-                    echo -e "${YELLOW}Authentication failed${NC}, continuing with user-level cleanup"
-                fi
-            else
-                SYSTEM_CLEAN=false
-                echo -e " ${GRAY}Skipped${NC}"
-                echo ""
-            fi
+            prompt_for_system_clean
+            [[ "$SYSTEM_CLEAN" == "true" ]] && export MOLE_CLEAN_SUDO_AVAILABLE="true"
         fi
     else
         echo ""
@@ -1024,6 +1077,9 @@ EOF
             SYSTEM_CLEAN=true
             export MOLE_CLEAN_SUDO_AVAILABLE="true"
             echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"
+        elif [[ "${MOLE_DESKTOP:-0}" == "1" ]]; then
+            SYSTEM_CLEAN=false
+            echo "  ${ICON_LIST} System-level cleanup skipped, desktop mode cannot prompt for sudo"
         elif clean_run_may_need_sudo && ensure_sudo_session "Cleanup requires admin access"; then
             SYSTEM_CLEAN=true
             export MOLE_CLEAN_SUDO_AVAILABLE="true"
@@ -1043,6 +1099,9 @@ perform_cleanup() {
         files_cleaned=0
         total_size_cleaned=0
     fi
+
+    local initial_free_space_kb=""
+    local initial_free_space_display="Unknown"
 
     # Test mode skips expensive scans and returns minimal output.
     local test_mode_enabled=false
@@ -1081,7 +1140,11 @@ perform_cleanup() {
     fi
 
     if [[ "$test_mode_enabled" == "false" && -z "$EXTERNAL_VOLUME_TARGET" ]]; then
-        echo -e "${BLUE}${ICON_ADMIN}${NC} $(detect_architecture) | Free space: $(get_free_space)"
+        if ! initial_free_space_kb=$(get_free_space_kb 2> /dev/null); then
+            initial_free_space_kb=""
+        fi
+        initial_free_space_display=$(format_free_space_kb "$initial_free_space_kb")
+        echo -e "${BLUE}${ICON_ADMIN}${NC} $(detect_architecture) | Free space: $initial_free_space_display"
     fi
 
     if [[ "$test_mode_enabled" == "true" ]]; then
@@ -1255,6 +1318,7 @@ perform_cleanup() {
             clean_orphaned_app_data
             clean_orphaned_system_services
             clean_orphaned_container_stubs
+            clean_stale_launch_services_registrations
             show_user_launch_agent_hint_notice
             show_orphan_dotdir_hint_notice
             end_section
@@ -1317,6 +1381,26 @@ perform_cleanup() {
 
     local -a summary_details=()
 
+    # Emit the "Free space change" (when measurable) and "Free space now" lines.
+    # $1 is the free space in KB captured before cleanup started. Caller appends
+    # each printed line to summary_details.
+    emit_free_space_summary() {
+        local initial_kb="$1"
+        if [[ "$DRY_RUN" == "true" ]]; then
+            printf 'Free space now: %s\n' "$(get_free_space)"
+            return 0
+        fi
+
+        local final_kb
+        if ! final_kb=$(get_free_space_kb 2> /dev/null); then
+            final_kb=""
+        fi
+        if [[ "$initial_kb" =~ ^[0-9]+$ && "$final_kb" =~ ^[0-9]+$ ]]; then
+            printf 'Free space change: %s\n' "$(format_free_space_delta_kb "$((final_kb - initial_kb))")"
+        fi
+        printf 'Free space now: %s\n' "$(format_free_space_kb "$final_kb")"
+    }
+
     if [[ $total_size_cleaned -gt 0 ]]; then
         local freed_size_human
         freed_size_human=$(bytes_to_human_kb "$total_size_cleaned")
@@ -1340,7 +1424,7 @@ perform_cleanup() {
             summary_details+=("Detailed file list: ${GRAY}$EXPORT_LIST_FILE${NC}")
             summary_details+=("Use ${GRAY}mo clean --whitelist${NC} to add protection rules")
         else
-            local summary_line="Space freed: ${GREEN}${freed_size_human}${NC}"
+            local summary_line="Tracked cleanup: ${GREEN}${freed_size_human}${NC}"
 
             if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
                 summary_line+=" | Items cleaned: $files_cleaned | Categories: $total_items"
@@ -1366,9 +1450,10 @@ perform_cleanup() {
                 fi
             fi
 
-            local final_free_space
-            final_free_space=$(get_free_space)
-            summary_details+=("Free space now: $final_free_space")
+            local free_space_line
+            while IFS= read -r free_space_line; do
+                summary_details+=("$free_space_line")
+            done < <(emit_free_space_summary "$initial_free_space_kb")
         fi
     else
         summary_status="info"
@@ -1377,7 +1462,10 @@ perform_cleanup() {
         else
             summary_details+=("System was already clean; no additional space freed.")
         fi
-        summary_details+=("Free space now: $(get_free_space)")
+        local free_space_line
+        while IFS= read -r free_space_line; do
+            summary_details+=("$free_space_line")
+        done < <(emit_free_space_summary "$initial_free_space_kb")
     fi
 
     if [[ $had_errexit -eq 1 ]]; then
@@ -1466,4 +1554,6 @@ main() {
     exit 0
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

@@ -91,6 +91,7 @@ paginated_multi_select() {
     local sort_reverse="${MOLE_MENU_SORT_REVERSE:-false}"
     local filter_text="" # Filter keyword
     local filter_text_lower=""
+    local ignore_initial_enter="${MOLE_MENU_IGNORE_INITIAL_ENTER:-false}"
 
     # Metadata (optional)
     # epochs[i]   -> last_used_epoch (numeric) for item i
@@ -576,6 +577,12 @@ paginated_multi_select() {
 
         local key
         key=$(read_key)
+        if [[ "$ignore_initial_enter" == "true" || "$ignore_initial_enter" == "1" ]]; then
+            ignore_initial_enter=false
+            if [[ "$key" == "ENTER" ]]; then
+                continue
+            fi
+        fi
 
         case "$key" in
             "QUIT")

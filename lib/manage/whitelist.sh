@@ -171,8 +171,8 @@ Prevent Finder .DS_Store|prevent_network_dsstore|optimize_task
 Memory Optimization|memory_pressure_relief|optimize_task
 Network Stack Refresh|network_stack_optimize|optimize_task
 Permission Repair|disk_permissions_repair|optimize_task
-Bluetooth Refresh|bluetooth_reset|optimize_task
 Spotlight Optimization|spotlight_index_optimize|optimize_task
+Spotlight Orphan Rules|spotlight_orphan_rules_cleanup|optimize_task
 Periodic Maintenance|periodic_maintenance|optimize_task
 Shared File Lists|shared_file_list_repair|optimize_task
 Disk Health|disk_verify|optimize_task
@@ -253,6 +253,7 @@ load_whitelist() {
             unique_patterns+=("$pattern")
         done
         CURRENT_WHITELIST_PATTERNS=("${unique_patterns[@]}")
+        WHITELIST_PATTERNS=("${unique_patterns[@]}")
 
         # Migrate legacy optimize config to the new path automatically
         if [[ "$mode" == "optimize" && "$using_legacy" == "true" && "$config_file" != "$WHITELIST_CONFIG_OPTIMIZE" ]]; then
@@ -260,6 +261,7 @@ load_whitelist() {
         fi
     else
         CURRENT_WHITELIST_PATTERNS=()
+        WHITELIST_PATTERNS=()
     fi
 }
 

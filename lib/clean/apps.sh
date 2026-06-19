@@ -50,7 +50,7 @@ clean_ds_store_tree() {
         size_human=$(bytes_to_human "$total_bytes")
         local size_kb=$(((total_bytes + 1023) / 1024))
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $size_human dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$size_kb")
@@ -127,17 +127,17 @@ scan_installed_apps() {
     (
         # Skip AppleScript during tests to avoid permission dialogs
         if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
-            local running_apps=$(run_with_timeout 5 osascript -e 'tell application "System Events" to get bundle identifier of every application process' 2> /dev/null || echo "")
+            local running_apps=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" osascript -e 'tell application "System Events" to get bundle identifier of every application process' 2> /dev/null || echo "")
             echo "$running_apps" | tr ',' '\n' | sed -e 's/^ *//;s/ *$//' -e '/^$/d' -e '/^missing value$/d' > "$scan_tmp_dir/running.txt"
         fi
         # Fallback: lsappinfo is more reliable than osascript
         if command -v lsappinfo > /dev/null 2>&1; then
-            run_with_timeout 3 lsappinfo list 2> /dev/null | grep -o '"CFBundleIdentifier"="[^"]*"' | cut -d'"' -f4 >> "$scan_tmp_dir/running.txt" 2> /dev/null || true
+            run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" lsappinfo list 2> /dev/null | grep -o '"CFBundleIdentifier"="[^"]*"' | cut -d'"' -f4 >> "$scan_tmp_dir/running.txt" 2> /dev/null || true
         fi
     ) &
     pids+=($!)
     (
-        run_with_timeout 5 find ~/Library/LaunchAgents /Library/LaunchAgents \
+        run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" find ~/Library/LaunchAgents /Library/LaunchAgents \
             -name "*.plist" -type f 2> /dev/null |
             xargs -I {} basename {} .plist > "$scan_tmp_dir/agents.txt" 2> /dev/null || true
     ) &
@@ -171,8 +171,34 @@ readonly ORPHAN_NEVER_DELETE_PATTERNS=(
     "com.apple.keychain*"
 )
 
-# Cache file for mdfind results (Bash 3.2 compatible, no associative arrays)
-ORPHAN_MDFIND_CACHE_FILE=""
+# In-memory mdfind result cache (Bash 3.2 compatible, no associative arrays).
+# Newline-delimited strings checked via case glob — no subprocess per lookup.
+_MOLE_MDFIND_FOUND=""
+_MOLE_MDFIND_NOTFOUND=""
+
+_mdfind_cache_check() {
+    local bundle_id="$1"
+    local _nl=$'\n'
+    case "${_nl}${_MOLE_MDFIND_FOUND}${_nl}" in
+        *"${_nl}${bundle_id}${_nl}"*) return 0 ;;
+    esac
+    case "${_nl}${_MOLE_MDFIND_NOTFOUND}${_nl}" in
+        *"${_nl}${bundle_id}${_nl}"*) return 1 ;;
+    esac
+    return 2
+}
+
+_mdfind_cache_store() {
+    local bundle_id="$1"
+    local found="$2"
+    if [[ "$found" == "true" ]]; then
+        _MOLE_MDFIND_FOUND="${_MOLE_MDFIND_FOUND:+${_MOLE_MDFIND_FOUND}
+}${bundle_id}"
+    else
+        _MOLE_MDFIND_NOTFOUND="${_MOLE_MDFIND_NOTFOUND:+${_MOLE_MDFIND_NOTFOUND}
+}${bundle_id}"
+    fi
+}
 
 # Usage: is_bundle_orphaned "bundle_id" "directory_path" "installed_bundles_file"
 is_bundle_orphaned() {
@@ -218,32 +244,21 @@ is_bundle_orphaned() {
         fi
     fi
 
-    # 6. Slow path: mdfind fallback with file-based caching (Bash 3.2 compatible)
+    # 6. Slow path: mdfind fallback with in-memory caching (Bash 3.2 compatible)
     # This catches apps installed in non-standard locations
-    if [[ -n "$bundle_id" ]] && [[ "$bundle_id" =~ ^[a-zA-Z0-9._-]+$ ]] && [[ ${#bundle_id} -ge 5 ]]; then
-        # Initialize cache file if needed
-        if [[ -z "$ORPHAN_MDFIND_CACHE_FILE" ]]; then
-            ensure_mole_temp_root
-            ORPHAN_MDFIND_CACHE_FILE=$(mktemp "$MOLE_RESOLVED_TMPDIR/mole_mdfind_cache.XXXXXX")
-            register_temp_file "$ORPHAN_MDFIND_CACHE_FILE"
-        fi
-
-        # Check cache first (grep is fast for small files)
-        if grep -Fxq "FOUND:$bundle_id" "$ORPHAN_MDFIND_CACHE_FILE" 2> /dev/null; then
+    if mole_is_reverse_dns_bundle_id "$bundle_id"; then
+        local _cache_rc=0
+        _mdfind_cache_check "$bundle_id" || _cache_rc=$?
+        if [[ $_cache_rc -eq 0 ]]; then
             return 1
-        fi
-        if grep -Fxq "NOTFOUND:$bundle_id" "$ORPHAN_MDFIND_CACHE_FILE" 2> /dev/null; then
-            # Already checked, not found - continue to return 0
-            :
-        else
-            # Query mdfind with strict timeout (2 seconds max)
+        elif [[ $_cache_rc -eq 2 ]]; then
             local app_exists
-            app_exists=$(run_with_timeout 5 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
+            app_exists=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
             if [[ -n "$app_exists" ]]; then
-                echo "FOUND:$bundle_id" >> "$ORPHAN_MDFIND_CACHE_FILE"
+                _mdfind_cache_store "$bundle_id" "true"
                 return 1
             else
-                echo "NOTFOUND:$bundle_id" >> "$ORPHAN_MDFIND_CACHE_FILE"
+                _mdfind_cache_store "$bundle_id" "false"
             fi
         fi
     fi
@@ -279,23 +294,18 @@ is_claude_vm_bundle_orphaned() {
         fi
     fi
 
-    if [[ -z "$ORPHAN_MDFIND_CACHE_FILE" ]]; then
-        ensure_mole_temp_root
-        ORPHAN_MDFIND_CACHE_FILE=$(mktemp "$MOLE_RESOLVED_TMPDIR/mole_mdfind_cache.XXXXXX")
-        register_temp_file "$ORPHAN_MDFIND_CACHE_FILE"
-    fi
-
-    if grep -Fxq "FOUND:$claude_bundle_id" "$ORPHAN_MDFIND_CACHE_FILE" 2> /dev/null; then
+    local _cache_rc=0
+    _mdfind_cache_check "$claude_bundle_id" || _cache_rc=$?
+    if [[ $_cache_rc -eq 0 ]]; then
         return 1
-    fi
-    if ! grep -Fxq "NOTFOUND:$claude_bundle_id" "$ORPHAN_MDFIND_CACHE_FILE" 2> /dev/null; then
+    elif [[ $_cache_rc -eq 2 ]]; then
         local app_exists
-        app_exists=$(run_with_timeout 5 mdfind "kMDItemCFBundleIdentifier == '$claude_bundle_id'" 2> /dev/null | head -1 || echo "")
+        app_exists=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" mdfind "kMDItemCFBundleIdentifier == '$claude_bundle_id'" 2> /dev/null | head -1 || echo "")
         if [[ -n "$app_exists" ]]; then
-            echo "FOUND:$claude_bundle_id" >> "$ORPHAN_MDFIND_CACHE_FILE"
+            _mdfind_cache_store "$claude_bundle_id" "true"
             return 1
         fi
-        echo "NOTFOUND:$claude_bundle_id" >> "$ORPHAN_MDFIND_CACHE_FILE"
+        _mdfind_cache_store "$claude_bundle_id" "false"
     fi
 
     return 0
@@ -403,6 +413,7 @@ clean_orphaned_app_data() {
                     fi
                 done
             done
+            # eval: restore shopt state captured by $(shopt -p)
             eval "$_nullglob_state"
         fi
     done
@@ -459,7 +470,6 @@ clean_orphaned_system_services() {
         "homebrew.mxcl.*:"
     )
 
-    local mdfind_cache_file=""
     # Returns 0 (found/protected) when any app backing a system service is installed.
     # app_path may be a pipe-separated list of candidate .app paths; any match = protected.
     # An empty app_path always returns 0 (unconditionally protected).
@@ -496,24 +506,19 @@ clean_orphaned_system_services() {
             esac
         done
 
-        if [[ -n "$bundle_id" ]] && [[ "$bundle_id" =~ ^[a-zA-Z0-9._-]+$ ]] && [[ ${#bundle_id} -ge 5 ]]; then
-            if [[ -z "$mdfind_cache_file" ]]; then
-                ensure_mole_temp_root
-                mdfind_cache_file=$(mktemp "$MOLE_RESOLVED_TMPDIR/mole_mdfind_cache.XXXXXX")
-                register_temp_file "$mdfind_cache_file"
-            fi
-
-            if grep -Fxq "FOUND:$bundle_id" "$mdfind_cache_file" 2> /dev/null; then
+        if mole_is_reverse_dns_bundle_id "$bundle_id"; then
+            local _cache_rc=0
+            _mdfind_cache_check "$bundle_id" || _cache_rc=$?
+            if [[ $_cache_rc -eq 0 ]]; then
                 return 0
-            fi
-            if ! grep -Fxq "NOTFOUND:$bundle_id" "$mdfind_cache_file" 2> /dev/null; then
+            elif [[ $_cache_rc -eq 2 ]]; then
                 local app_found
-                app_found=$(run_with_timeout 5 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
+                app_found=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
                 if [[ -n "$app_found" ]]; then
-                    echo "FOUND:$bundle_id" >> "$mdfind_cache_file"
+                    _mdfind_cache_store "$bundle_id" "true"
                     return 0
                 fi
-                echo "NOTFOUND:$bundle_id" >> "$mdfind_cache_file"
+                _mdfind_cache_store "$bundle_id" "false"
             fi
         fi
 
@@ -700,15 +705,14 @@ clean_orphaned_system_services() {
         local removed_kb=0
 
         for orphan_file in "${orphaned_files[@]}"; do
+            if should_protect_path "$orphan_file"; then
+                debug_log "Skipping protected orphaned service: $orphan_file"
+                skipped_protected_count=$((skipped_protected_count + 1))
+                continue
+            fi
             if [[ "$DRY_RUN" == "true" ]]; then
                 debug_log "[DRY RUN] Would remove orphaned service: $orphan_file"
             else
-                if should_protect_path "$orphan_file"; then
-                    debug_log "Skipping protected orphaned service: $orphan_file"
-                    skipped_protected_count=$((skipped_protected_count + 1))
-                    continue
-                fi
-
                 local file_size_kb=0
                 if has_sudo_session; then
                     file_size_kb=$(sudo -n du -skP "$orphan_file" 2> /dev/null | awk '{print $1}' || echo "0")
@@ -740,23 +744,21 @@ clean_orphaned_system_services() {
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $removed_count orphaned services, about $orphaned_kb_display"
                 note_activity
             fi
-            if [[ $skipped_protected_count -gt 0 || $failed_count -gt 0 ]]; then
-                echo -e "  ${GRAY}${ICON_WARNING}${NC} Orphaned services skipped $skipped_protected_count protected, failed $failed_count"
-            fi
+        fi
+        # Surface protected/failed counts in BOTH dry-run and real-clean so the
+        # two modes agree on what gets touched. Before #886, dry-run silently
+        # reported protected files under "Would remove" and real-clean then
+        # skipped them, leaving the user confused about which files actually
+        # disappeared.
+        if [[ $skipped_protected_count -gt 0 || $failed_count -gt 0 ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Orphaned services skipped $skipped_protected_count protected, failed $failed_count"
         fi
     fi
 
 }
 
-# ============================================================================
-# User LaunchAgents
-# ============================================================================
-
-# User-level LaunchAgents are user-owned automation/configuration, not generic
-# cleanup targets. `mo clean` must not delete them automatically.
-clean_orphaned_launch_agents() {
-    return 0
-}
+# Policy: mo clean does NOT touch user LaunchAgents (~/Library/LaunchAgents),
+# they are user-owned automation and not generic cleanup targets.
 
 # ============================================================================
 # Orphaned container stubs
@@ -802,10 +804,20 @@ clean_orphaned_container_stubs() {
                 ;;
         esac
 
-        if [[ "$bundle_id" =~ ^[a-zA-Z0-9._-]+$ ]] && [[ ${#bundle_id} -ge 5 ]]; then
-            local app_found
-            app_found=$(run_with_timeout 5 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
-            [[ -n "$app_found" ]] && return 0
+        if mole_is_reverse_dns_bundle_id "$bundle_id"; then
+            local _cache_rc=0
+            _mdfind_cache_check "$bundle_id" || _cache_rc=$?
+            if [[ $_cache_rc -eq 0 ]]; then
+                return 0
+            elif [[ $_cache_rc -eq 2 ]]; then
+                local app_found
+                app_found=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
+                if [[ -n "$app_found" ]]; then
+                    _mdfind_cache_store "$bundle_id" "true"
+                    return 0
+                fi
+                _mdfind_cache_store "$bundle_id" "false"
+            fi
         fi
 
         return 1
@@ -857,6 +869,7 @@ clean_orphaned_container_stubs() {
         done
     done
 
+    # eval: restore shopt state captured by $(shopt -p)
     eval "$_ng_state"
 
     if [[ $removed_count -gt 0 ]]; then

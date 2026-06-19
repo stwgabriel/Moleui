@@ -207,6 +207,7 @@ read_key() {
                 fi
                 ;;
             ' ') echo "SPACE" ;; # Allow space in filter mode for selection
+            $'\x03') echo "QUIT" ;;
             [[:print:]]) echo "CHAR:$key" ;;
             *) echo "OTHER" ;;
         esac
@@ -276,10 +277,12 @@ read_key() {
 }
 
 drain_pending_input() {
+    local idle_timeout="${1:-0.01}"
     local drained=0
-    while IFS= read -r -s -n 1 -t 0.01 _ 2> /dev/null; do
+    while IFS= read -r -s -n 1 -t "$idle_timeout" _ 2> /dev/null; do
         drained=$((drained + 1))
         [[ $drained -gt 100 ]] && break
+        idle_timeout="0.01"
     done
     return 0
 }

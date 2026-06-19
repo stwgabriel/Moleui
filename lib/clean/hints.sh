@@ -55,6 +55,21 @@ hint_get_path_size_kb_with_timeout() {
 }
 
 # shellcheck disable=SC2329
+hint_collect_child_dirs_with_timeout() {
+    local parent="$1"
+    local output_file="$2"
+    local timeout_seconds="${3:-1}"
+
+    [[ -d "$parent" ]] || return 1
+    : > "$output_file" || return 1
+
+    # 1s: shallow directory listing should be near-instant on healthy local
+    # paths. Slow/cloud-backed roots are skipped so `mo clean` never appears
+    # stuck while rendering this non-destructive hint.
+    run_with_timeout "$timeout_seconds" find "$parent" -mindepth 1 -maxdepth 1 -type d -print0 > "$output_file" 2> /dev/null
+}
+
+# shellcheck disable=SC2329
 hint_extract_launch_agent_program_path() {
     local plist="$1"
     local program=""
@@ -195,7 +210,7 @@ hint_collect_installed_gui_app_match_texts() {
                 "$(plutil -extract CFBundleDisplayName raw "$info" 2> /dev/null || echo "")"; do
                 [[ -n "$value" && "$value" != "(null)" ]] && printf '%s\n' "$value"
             done
-        done < <(run_with_timeout 2 find "$app_root" -maxdepth 2 -name "*.app" -print0 2> /dev/null || true)
+        done < <(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" find "$app_root" -maxdepth 2 -name "*.app" -print0 2> /dev/null || true)
     done
 
     local -a cask_roots=(
@@ -210,7 +225,7 @@ hint_collect_installed_gui_app_match_texts() {
             [[ -n "$cask_dir" ]] || continue
             cask_name="${cask_dir##*/}"
             printf '%s\n' "$cask_name"
-        done < <(run_with_timeout 1 find "$cask_root" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null || true)
+        done < <(run_with_timeout 1 find "$cask_root" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null || true) # 1s: shallow brew cask dir list, see lib/core/timeouts.sh
     done
 }
 
@@ -277,11 +292,21 @@ probe_project_artifact_hints() {
     PROJECT_ARTIFACT_HINT_ESTIMATED_KB=0
     PROJECT_ARTIFACT_HINT_ESTIMATE_SAMPLES=0
     PROJECT_ARTIFACT_HINT_ESTIMATE_PARTIAL=false
+    PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=false
 
     local max_projects=200
     local max_projects_per_root=0
     local max_nested_per_project=120
     local max_matches=12
+    local list_timeout_seconds=1
+
+    # Wall-clock ceiling for the whole walk. Per-listing finds are already
+    # capped at 1s, but with up to max_projects roots the cumulative scan can
+    # stretch into minutes on busy machines and look hung (#1053). Checked
+    # between iterations so the section degrades gracefully instead of stalling.
+    local hint_budget_seconds="${MOLE_TIMEOUT_HINT_SCAN_SEC:-15}"
+    [[ "$hint_budget_seconds" =~ ^[0-9]+$ ]] || hint_budget_seconds=15
+    local scan_deadline=$((SECONDS + hint_budget_seconds))
 
     local -a target_names=()
     while IFS= read -r target_name; do
@@ -302,17 +327,17 @@ probe_project_artifact_hints() {
     fi
     [[ $max_projects_per_root -gt $max_projects ]] && max_projects_per_root=$max_projects
 
-    local nullglob_was_set=0
-    if shopt -q nullglob; then
-        nullglob_was_set=1
-    fi
-    shopt -s nullglob
-
     local scanned_projects=0
     local stop_scan=false
     local root project_dir nested_dir target_name candidate
+    local project_dirs_file nested_dirs_file
 
     for root in "${scan_roots[@]}"; do
+        if [[ $SECONDS -ge $scan_deadline ]]; then
+            PROJECT_ARTIFACT_HINT_TRUNCATED=true
+            PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+            break
+        fi
         [[ -d "$root" ]] || continue
         local root_projects_scanned=0
 
@@ -339,9 +364,26 @@ probe_project_artifact_hints() {
             continue
         fi
 
-        for project_dir in "$root"/*/; do
+        project_dirs_file=$(mktemp_file "project_artifact_dirs") || {
+            PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+            PROJECT_ARTIFACT_HINT_TRUNCATED=true
+            continue
+        }
+        if ! hint_collect_child_dirs_with_timeout "$root" "$project_dirs_file" "$list_timeout_seconds"; then
+            PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+            PROJECT_ARTIFACT_HINT_TRUNCATED=true
+            rm -f "$project_dirs_file"
+            continue
+        fi
+
+        while IFS= read -r -d '' project_dir; do
+            if [[ $SECONDS -ge $scan_deadline ]]; then
+                PROJECT_ARTIFACT_HINT_TRUNCATED=true
+                PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+                stop_scan=true
+                break
+            fi
             [[ -d "$project_dir" ]] || continue
-            project_dir="${project_dir%/}"
 
             local project_name
             project_name=$(basename "$project_dir")
@@ -369,9 +411,20 @@ probe_project_artifact_hints() {
             [[ "$stop_scan" == "true" ]] && break
 
             local nested_count=0
-            for nested_dir in "$project_dir"/*/; do
+            nested_dirs_file=$(mktemp_file "project_artifact_nested") || {
+                PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+                PROJECT_ARTIFACT_HINT_TRUNCATED=true
+                continue
+            }
+            if ! hint_collect_child_dirs_with_timeout "$project_dir" "$nested_dirs_file" "$list_timeout_seconds"; then
+                PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+                PROJECT_ARTIFACT_HINT_TRUNCATED=true
+                rm -f "$nested_dirs_file"
+                continue
+            fi
+
+            while IFS= read -r -d '' nested_dir; do
                 [[ -d "$nested_dir" ]] || continue
-                nested_dir="${nested_dir%/}"
 
                 local nested_name
                 nested_name=$(basename "$nested_dir")
@@ -396,17 +449,15 @@ probe_project_artifact_hints() {
                 done
 
                 [[ "$stop_scan" == "true" ]] && break
-            done
+            done < "$nested_dirs_file"
+            rm -f "$nested_dirs_file"
 
             [[ "$stop_scan" == "true" ]] && break
-        done
+        done < "$project_dirs_file"
+        rm -f "$project_dirs_file"
 
         [[ "$stop_scan" == "true" ]] && break
     done
-
-    if [[ $nullglob_was_set -eq 0 ]]; then
-        shopt -u nullglob
-    fi
 
     if [[ $PROJECT_ARTIFACT_HINT_COUNT -gt 0 ]]; then
         PROJECT_ARTIFACT_HINT_DETECTED=true
@@ -449,6 +500,14 @@ show_system_data_hint_notice() {
         "$HOME/Library/Mail"
     )
 
+    local orbstack_data
+    for orbstack_data in "$HOME"/Library/Group\ Containers/*dev.orbstack/data; do
+        [[ -d "$orbstack_data" ]] || continue
+        labels+=("OrbStack data")
+        paths+=("$orbstack_data")
+        break
+    done
+
     local i
     for i in "${!paths[@]}"; do
         local path="${paths[$i]}"
@@ -489,6 +548,11 @@ show_project_artifact_hint_notice() {
     probe_project_artifact_hints
 
     if [[ "$PROJECT_ARTIFACT_HINT_DETECTED" != "true" ]]; then
+        if [[ "${PROJECT_ARTIFACT_HINT_SCAN_SKIPPED:-false}" == "true" ]]; then
+            note_activity
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Skipped slow project artifact scan"
+            echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: mo purge"
+        fi
         return 0
     fi
 
@@ -525,6 +589,9 @@ show_project_artifact_hint_notice() {
 
     if [[ -n "$example_text" ]]; then
         echo -e "  ${GRAY}${ICON_SUBLIST}${NC} Examples: ${GRAY}${example_text}${NC}"
+    fi
+    if [[ "${PROJECT_ARTIFACT_HINT_SCAN_SKIPPED:-false}" == "true" ]]; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Some slow locations were skipped"
     fi
     local review_command="mo purge"
     if [[ $PROJECT_ARTIFACT_HINT_ESTIMATE_SAMPLES -gt 0 && $PROJECT_ARTIFACT_HINT_ESTIMATED_KB -eq 0 ]]; then
@@ -665,7 +732,7 @@ _dotdir_owner_collect_tokens() {
 
     if command -v brew > /dev/null 2>&1; then
         local cask_list=""
-        cask_list=$(HOMEBREW_NO_ENV_HINTS=1 run_with_timeout 5 brew list --cask 2> /dev/null) || true
+        cask_list=$(HOMEBREW_NO_ENV_HINTS=1 run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" brew list --cask 2> /dev/null) || true
         if [[ -n "$cask_list" ]]; then
             printf '%s\n' "$cask_list" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cs 'a-z0-9' '\n'
         fi
@@ -718,6 +785,42 @@ dotdir_has_owning_gui_app() {
     return 1
 }
 
+# Collect Claude Code plugin name tokens (the segment before '@' in a
+# "plugin@marketplace" identifier) from the user's plugin config. Plugins own
+# state directories such as ~/.cc-safety-net without installing a matching PATH
+# binary or GUI app, so their dotdirs must not be flagged as orphans.
+hint_collect_claude_plugin_tokens() {
+    local settings="$HOME/.claude/settings.json"
+    local installed="$HOME/.claude/plugins/installed_plugins.json"
+    # `|| true` keeps a no-match grep (the common case: Claude Code installed
+    # but no plugins) from aborting under `set -euo pipefail`.
+    {
+        if [[ -f "$settings" ]]; then
+            plutil -extract enabledPlugins json -o - "$settings" 2> /dev/null |
+                LC_ALL=C grep -oE '"[A-Za-z0-9._-]+@[A-Za-z0-9._-]+"' || true
+        fi
+        if [[ -f "$installed" ]]; then
+            LC_ALL=C grep -oE '"[A-Za-z0-9._-]+@[A-Za-z0-9._-]+"' "$installed" 2> /dev/null || true
+        fi
+    } | sed -E 's/^"//; s/@.*$//' | LC_ALL=C sort -u
+}
+
+# Return 0 when a dotdir name embeds an enabled Claude Code plugin token.
+# e.g. dotdir "cc-safety-net" embeds plugin token "safety-net".
+hint_dotdir_owned_by_claude_plugin() {
+    local dotdir_name="$1"
+    local tokens="$2"
+    [[ -n "$tokens" ]] || return 1
+    local token
+    while IFS= read -r token; do
+        [[ ${#token} -ge 4 ]] || continue
+        if [[ "$dotdir_name" == *"$token"* ]]; then
+            return 0
+        fi
+    done <<< "$tokens"
+    return 1
+}
+
 # Detect ~/.<dir> directories that may belong to uninstalled CLI tools.
 # shellcheck disable=SC2329
 show_orphan_dotdir_hint_notice() {
@@ -730,6 +833,8 @@ show_orphan_dotdir_hint_notice() {
     local -a details=()
     local installed_gui_app_texts=""
     local installed_gui_app_texts_loaded=false
+    local claude_plugin_tokens=""
+    local claude_plugin_tokens_loaded=false
 
     while IFS= read -r dotdir; do
         [[ -d "$dotdir" ]] || continue
@@ -778,6 +883,14 @@ show_orphan_dotdir_hint_notice() {
         done
         [[ "$has_binary" == "true" ]] && continue
 
+        if [[ "$claude_plugin_tokens_loaded" != "true" ]]; then
+            claude_plugin_tokens=$(hint_collect_claude_plugin_tokens)
+            claude_plugin_tokens_loaded=true
+        fi
+        if hint_dotdir_owned_by_claude_plugin "$name" "$claude_plugin_tokens"; then
+            continue
+        fi
+
         if [[ "$installed_gui_app_texts_loaded" != "true" ]]; then
             installed_gui_app_texts=$(hint_collect_installed_gui_app_match_texts)
             installed_gui_app_texts_loaded=true
@@ -787,7 +900,7 @@ show_orphan_dotdir_hint_notice() {
         fi
 
         if [[ -d "$HOME/Library/LaunchAgents" ]]; then
-            if run_with_timeout 2 grep -rlq "$basename" "$HOME/Library/LaunchAgents/" 2> /dev/null; then
+            if run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" grep -rlq "$basename" "$HOME/Library/LaunchAgents/" 2> /dev/null; then
                 continue
             fi
         fi
@@ -809,7 +922,7 @@ show_orphan_dotdir_hint_notice() {
         if [[ ${#labels[@]} -ge $max_hits ]]; then
             break
         fi
-    done < <(run_with_timeout 3 find "$HOME" -maxdepth 1 -mindepth 1 -type d -name '.*' 2> /dev/null | LC_ALL=C sort)
+    done < <(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" find "$HOME" -maxdepth 1 -mindepth 1 -type d -name '.*' 2> /dev/null | LC_ALL=C sort)
 
     [[ ${#labels[@]} -eq 0 ]] && return 0
 

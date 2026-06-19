@@ -88,20 +88,6 @@ needs_permissions_repair() {
     return 1
 }
 
-has_bluetooth_hid_connected() {
-    local bt_report
-    bt_report=$(system_profiler SPBluetoothDataType 2> /dev/null || echo "")
-    if ! echo "$bt_report" | grep -q "Connected: Yes"; then
-        return 1
-    fi
-
-    if echo "$bt_report" | grep -Eiq "Keyboard|Trackpad|Mouse|HID"; then
-        return 0
-    fi
-
-    return 1
-}
-
 is_ac_power() {
     pmset -g batt 2> /dev/null | grep -q "AC Power"
 }
@@ -130,14 +116,30 @@ has_active_vpn_interface() {
             ;;
     esac
 
-    if command -v netstat > /dev/null 2>&1; then
-        if netstat -rn -f inet 2> /dev/null | grep -Eq '[[:space:]]utun[0-9]+($|[[:space:]])'; then
+    # macOS creates utun* interfaces for many non-VPN features (iCloud
+    # Private Relay, Continuity, Handoff, AirDrop, Apple Watch sync, Personal
+    # Hotspot). Bare interface presence therefore over-reports active VPNs and
+    # caused the Network Stack Refresh skip in #959. Use two narrower signals:
+    #
+    #   1. scutil --nc list flags Connected for system-managed VPN connections
+    #      (L2TP, IPsec, IKEv2, Cisco IPSec).
+    #   2. The default route's interface is utun* when a full-tunnel third-party
+    #      VPN (WireGuard, OpenVPN, Tunnelblick, etc.) is routing all traffic.
+    #
+    # Split-tunnel third-party VPNs that do not own the default route will not
+    # be detected; route flushing may briefly disrupt their explicit routes,
+    # which the VPN client re-establishes on its next reconcile.
+    if command -v scutil > /dev/null 2>&1; then
+        if scutil --nc list 2> /dev/null | grep -Eq '^\* \(Connected\)'; then
             return 0
         fi
     fi
 
-    if command -v ifconfig > /dev/null 2>&1; then
-        if ifconfig 2> /dev/null | grep -Eq '^utun[0-9]+:.*<[^>]*(UP|RUNNING)'; then
+    if command -v route > /dev/null 2>&1; then
+        local default_iface
+        default_iface=$(route -n get default 2> /dev/null |
+            awk -F': ' '$1 ~ /^[[:space:]]*interface$/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}')
+        if [[ "$default_iface" =~ ^utun[0-9]+$ ]]; then
             return 0
         fi
     fi
@@ -274,6 +276,13 @@ opt_saved_state_cleanup() {
 # Removed: opt_local_snapshots - Deletes user Time Machine recovery points, breaks backup continuity
 
 opt_fix_broken_configs() {
+    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+        debug_operation_start "Broken Config Repair" "Detect and reset corrupted preference files"
+        debug_operation_detail "Method" "Lint third-party plists in ~/Library/Preferences via plutil and remove corrupted ones"
+        debug_operation_detail "Expected outcome" "Apps reload with fresh preferences instead of failing on a corrupt plist"
+        debug_risk_level "LOW" "Apps regenerate their preference files on next launch"
+    fi
+
     local spinner_started="false"
     if [[ -t 1 ]]; then
         MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking preferences..."
@@ -284,6 +293,10 @@ opt_fix_broken_configs() {
 
     if [[ "$spinner_started" == "true" ]]; then
         stop_inline_spinner
+    fi
+
+    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+        debug_operation_detail "Files repaired" "$broken_prefs"
     fi
 
     export OPTIMIZE_CONFIGS_REPAIRED="${broken_prefs}"
@@ -346,7 +359,7 @@ opt_quarantine_cleanup() {
 
     # Check if database has any entries worth cleaning.
     local row_count
-    row_count=$(run_with_timeout 5 sqlite3 "$quarantine_db" "SELECT COUNT(*) FROM LSQuarantineEvent;" 2> /dev/null || echo "0")
+    row_count=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" sqlite3 "$quarantine_db" "SELECT COUNT(*) FROM LSQuarantineEvent;" 2> /dev/null || echo "0")
 
     if [[ ! "$row_count" =~ ^[0-9]+$ ]] || [[ "$row_count" -eq 0 ]]; then
         opt_msg "Quarantine database already clean"
@@ -356,7 +369,7 @@ opt_quarantine_cleanup() {
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
         local exit_code=0
         set +e
-        run_with_timeout 10 sqlite3 "$quarantine_db" "DELETE FROM LSQuarantineEvent; VACUUM;" 2> /dev/null
+        run_with_timeout "$MOLE_TIMEOUT_PKG_LIST_SEC" sqlite3 "$quarantine_db" "DELETE FROM LSQuarantineEvent; VACUUM;" 2> /dev/null
         exit_code=$?
         set -e
 
@@ -439,7 +452,7 @@ opt_sqlite_vacuum() {
 
             # Skip if freelist is tiny (already compact).
             local page_info=""
-            page_info=$(run_with_timeout 5 sqlite3 "$db_file" "PRAGMA page_count; PRAGMA freelist_count;" 2> /dev/null || echo "")
+            page_info=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" sqlite3 "$db_file" "PRAGMA page_count; PRAGMA freelist_count;" 2> /dev/null || echo "")
             local page_count=""
             local freelist_count=""
             page_count="${page_info%%$'\n'*}"
@@ -458,7 +471,7 @@ opt_sqlite_vacuum() {
             if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
                 local integrity_check=""
                 set +e
-                integrity_check=$(run_with_timeout 10 sqlite3 "$db_file" "PRAGMA integrity_check;" 2> /dev/null)
+                integrity_check=$(run_with_timeout "$MOLE_TIMEOUT_PKG_LIST_SEC" sqlite3 "$db_file" "PRAGMA integrity_check;" 2> /dev/null)
                 local integrity_status=$?
                 set -e
 
@@ -471,7 +484,7 @@ opt_sqlite_vacuum() {
             local exit_code=0
             if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
                 set +e
-                run_with_timeout 20 sqlite3 "$db_file" "VACUUM;" 2> /dev/null
+                run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" sqlite3 "$db_file" "VACUUM;" 2> /dev/null
                 exit_code=$?
                 set -e
 
@@ -709,101 +722,6 @@ opt_disk_permissions_repair() {
     fi
 }
 
-# Bluetooth reset (skip if HID/audio active).
-opt_bluetooth_reset() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
-        debug_operation_start "Bluetooth Reset" "Restart Bluetooth daemon"
-        debug_operation_detail "Method" "Kill bluetoothd daemon (auto-restarts)"
-        debug_operation_detail "Safety" "Skips if active Bluetooth keyboard/mouse/audio detected"
-        debug_operation_detail "Expected outcome" "Fixed Bluetooth connectivity issues"
-        debug_risk_level "LOW" "Daemon auto-restarts, connections auto-reconnect"
-    fi
-
-    local spinner_started="false"
-    local disconnect_notice="Bluetooth devices may disconnect briefly during refresh"
-    if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking Bluetooth..."
-        spinner_started="true"
-    fi
-
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
-        if has_bluetooth_hid_connected; then
-            if [[ "$spinner_started" == "true" ]]; then
-                stop_inline_spinner
-            fi
-            opt_msg "Bluetooth already optimal"
-            return 0
-        fi
-
-        local bt_audio_active=false
-
-        local audio_info
-        audio_info=$(system_profiler SPAudioDataType 2> /dev/null || echo "")
-
-        local default_output
-        default_output=$(echo "$audio_info" | awk '/Default Output Device: Yes/,/^$/' 2> /dev/null || echo "")
-
-        if echo "$default_output" | grep -qi "Transport:.*Bluetooth"; then
-            bt_audio_active=true
-        fi
-
-        if [[ "$bt_audio_active" == "false" ]]; then
-            if system_profiler SPBluetoothDataType 2> /dev/null | grep -q "Connected: Yes"; then
-                local -a media_apps=("Music" "Spotify" "VLC" "QuickTime Player" "TV" "Podcasts" "Safari" "Google Chrome" "Chrome" "Firefox" "Arc" "IINA" "mpv")
-                for app in "${media_apps[@]}"; do
-                    if pgrep -x "$app" > /dev/null 2>&1; then
-                        bt_audio_active=true
-                        break
-                    fi
-                done
-            fi
-        fi
-
-        if [[ "$bt_audio_active" == "true" ]]; then
-            if [[ "$spinner_started" == "true" ]]; then
-                stop_inline_spinner
-            fi
-            opt_msg "Bluetooth already optimal"
-            return 0
-        fi
-
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-            if [[ "$spinner_started" == "true" ]]; then
-                stop_inline_spinner
-            fi
-            opt_msg "Bluetooth already optimal"
-        elif ! optimize_sudo_available; then
-            if [[ "$spinner_started" == "true" ]]; then
-                stop_inline_spinner
-            fi
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Bluetooth reset skipped · admin access required"
-        elif sudo pkill -TERM bluetoothd > /dev/null 2>&1; then
-            if [[ "$spinner_started" == "true" ]]; then
-                stop_inline_spinner
-            fi
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} ${GRAY}${disconnect_notice}${NC}"
-            sleep 1
-            if pgrep -x bluetoothd > /dev/null 2>&1; then
-                sudo pkill -KILL bluetoothd > /dev/null 2>&1 || true
-            fi
-            opt_msg "Bluetooth module restarted"
-            opt_msg "Connectivity issues resolved"
-        else
-            if [[ "$spinner_started" == "true" ]]; then
-                stop_inline_spinner
-            fi
-            opt_msg "Bluetooth already optimal"
-        fi
-    else
-        if [[ "$spinner_started" == "true" ]]; then
-            stop_inline_spinner
-        fi
-        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${disconnect_notice}"
-        opt_msg "Bluetooth module restarted"
-        opt_msg "Connectivity issues resolved"
-    fi
-}
-
 # Spotlight index check/rebuild (only if slow).
 opt_spotlight_index_optimize() {
     local spotlight_status
@@ -857,8 +775,71 @@ opt_spotlight_index_optimize() {
     fi
 }
 
+# Remove orphaned Spotlight search-rule entries.
+# Uninstalling an app (especially Mac App Store apps that synced via iCloud)
+# can leave its bundle id behind in com.apple.spotlight EnabledPreferenceRules,
+# showing up as a dead row in System Settings > Spotlight (#1000). macOS never
+# prunes these, so we drop entries whose app is no longer installed.
+opt_prune_spotlight_orphan_rules() {
+    local domain="com.apple.spotlight"
+    local plist="$HOME/Library/Preferences/${domain}.plist"
+
+    if ! defaults read "$domain" EnabledPreferenceRules &> /dev/null; then
+        opt_msg "Spotlight search rules already clean"
+        return 0
+    fi
+
+    local -a keep=() removed=()
+    local i=0 entry
+    while entry=$(/usr/libexec/PlistBuddy -c "Print :EnabledPreferenceRules:$i" "$plist" 2> /dev/null); do
+        case "$entry" in
+            # Never touch system or Apple rules (e.g. System.iphoneApps); these
+            # pass the reverse-DNS shape check but are not removable app bundles.
+            System.* | com.apple.*)
+                keep+=("$entry")
+                ;;
+            *)
+                # Only act on well-formed bundle ids; bundle_has_installed_app
+                # double-checks with mdfind and a filesystem scan, so a return of
+                # 1 means the app is genuinely gone. Anything else is kept.
+                if mole_is_reverse_dns_bundle_id "$entry" && ! bundle_has_installed_app "$entry"; then
+                    removed+=("$entry")
+                else
+                    keep+=("$entry")
+                fi
+                ;;
+        esac
+        i=$((i + 1))
+    done
+
+    if [[ ${#removed[@]} -eq 0 ]]; then
+        opt_msg "Spotlight search rules already clean"
+        return 0
+    fi
+
+    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+        opt_msg "Would remove ${#removed[@]} orphan Spotlight rule(s)"
+        return 0
+    fi
+
+    # Rewrite the filtered array through cfprefsd (defaults), not by deleting
+    # plist indices in place: this avoids the cfprefsd cache overwriting a direct
+    # file edit, and ensures System Settings reflects the change and it persists.
+    if [[ ${#keep[@]} -gt 0 ]]; then
+        defaults write "$domain" EnabledPreferenceRules -array "${keep[@]}" 2> /dev/null || true
+    else
+        defaults delete "$domain" EnabledPreferenceRules 2> /dev/null || true
+    fi
+
+    opt_msg "Removed ${#removed[@]} orphan Spotlight rule(s)"
+}
+
 # Dock refresh (restart Dock so plist edits take effect).
-# Do not delete *.db files here; desktoppicture.db stores wallpaper state.
+# The previous implementation also wiped every "*.db" under
+# ~/Library/Application Support/Dock, which deleted macOS's
+# desktoppicture.db and reset the user's wallpaper (#995). No .db under
+# that directory needs to be cleared for Dock to refresh — killall plus
+# touching the plist is sufficient.
 opt_dock_refresh() {
     local dock_plist="$HOME/Library/Preferences/com.apple.dock.plist"
     if [[ -f "$dock_plist" ]]; then
@@ -910,6 +891,21 @@ opt_prevent_network_dsstore() {
     fi
 }
 
+# True unless the path lives on an unmounted /Volumes/<disk>. A LaunchAgent
+# program on an external or network volume is not broken while that volume is
+# simply unplugged, so it must not be deleted.
+launch_agent_volume_mounted() {
+    local path="$1"
+    case "$path" in
+        /Volumes/*)
+            local vol="${path#/Volumes/}"
+            vol="${vol%%/*}"
+            [[ -n "$vol" && -d "/Volumes/$vol" ]]
+            ;;
+        *) return 0 ;;
+    esac
+}
+
 # Broken LaunchAgent cleanup.
 opt_launch_agents_cleanup() {
     local agents_dir="$HOME/Library/LaunchAgents"
@@ -931,7 +927,12 @@ opt_launch_agents_cleanup() {
             binary=$(/usr/libexec/PlistBuddy -c "Print :Program" "$plist" 2> /dev/null || true)
         fi
 
-        if [[ -n "$binary" && ! -e "$binary" ]]; then
+        # Only an absolute path that is genuinely missing counts as broken.
+        # Bare names (node, python3) resolve via PATH at launch time, and a
+        # path on an unmounted /Volumes/<disk> just means the drive is
+        # unplugged -- neither is a broken agent.
+        if [[ -n "$binary" && "$binary" == /* && ! -e "$binary" ]] &&
+            launch_agent_volume_mounted "$binary"; then
             broken_count=$((broken_count + 1))
             broken_plists+=("$plist")
         fi
@@ -965,7 +966,7 @@ opt_periodic_maintenance() {
 
     if [[ -f "$daily_log" ]]; then
         local last_mod now age_days
-        last_mod=$(stat -f %m "$daily_log" 2> /dev/null || echo "0")
+        last_mod=$(get_file_mtime "$daily_log")
         now=$(get_epoch_seconds)
         age_days=$(((now - last_mod) / 86400))
 
@@ -1084,7 +1085,7 @@ opt_disk_verify() {
         MOLE_SPINNER_PREFIX="  " start_inline_spinner "Verifying disk filesystem..."
     fi
     local output
-    output=$(run_with_timeout 30 diskutil verifyVolume / 2>&1 || true)
+    output=$(run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" diskutil verifyVolume / 2>&1 || true)
     if [[ -t 1 ]]; then
         stop_inline_spinner
     fi
@@ -1380,8 +1381,8 @@ execute_optimization() {
         memory_pressure_relief) opt_memory_pressure_relief ;;
         network_stack_optimize) opt_network_stack_optimize ;;
         disk_permissions_repair) opt_disk_permissions_repair ;;
-        bluetooth_reset) opt_bluetooth_reset ;;
         spotlight_index_optimize) opt_spotlight_index_optimize ;;
+        spotlight_orphan_rules_cleanup) opt_prune_spotlight_orphan_rules ;;
         launch_agents_cleanup) opt_launch_agents_cleanup ;;
         periodic_maintenance) opt_periodic_maintenance ;;
         shared_file_list_repair) opt_shared_file_list_repair ;;

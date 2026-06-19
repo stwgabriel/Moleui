@@ -45,8 +45,9 @@ _repair_preference_plists_in_dir() {
 
         plutil -lint "$plist_file" > /dev/null 2>&1 && continue
 
-        safe_remove "$plist_file" true > /dev/null 2>&1 || true
-        broken_count=$((broken_count + 1))
+        if safe_remove "$plist_file" true > /dev/null 2>&1; then
+            broken_count=$((broken_count + 1))
+        fi
     done < <(command find "${find_args[@]}" 2> /dev/null || true)
 
     echo "$broken_count"

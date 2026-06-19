@@ -29,8 +29,8 @@ bundle_has_installed_app() {
     local bundle_id="$1"
     [[ -z "$bundle_id" ]] && return 1
 
-    # Reject obviously malformed IDs to avoid feeding junk into mdfind/find.
-    [[ "$bundle_id" =~ ^[a-zA-Z0-9._-]+$ ]] || return 1
+    # Reject malformed IDs to avoid feeding junk into mdfind/find.
+    mole_is_reverse_dns_bundle_id "$bundle_id" || return 1
 
     # Fast path: Spotlight. Gated with a timeout because mdfind has been known
     # to wedge on misconfigured indexes.
@@ -40,7 +40,7 @@ bundle_has_installed_app() {
         # non-zero. Both must fall through to the filesystem scan below.
         local hit=""
         if declare -f run_with_timeout > /dev/null 2>&1; then
-            hit=$(run_with_timeout 2 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1) || true
+            hit=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1) || true
         else
             hit=$(mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1) || true
         fi

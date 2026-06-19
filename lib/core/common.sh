@@ -18,6 +18,7 @@ prepare_mole_tmpdir > /dev/null
 source "$_MOLE_CORE_DIR/log.sh"
 
 source "$_MOLE_CORE_DIR/timeout.sh"
+source "$_MOLE_CORE_DIR/timeouts.sh"
 source "$_MOLE_CORE_DIR/file_ops.sh"
 source "$_MOLE_CORE_DIR/help.sh"
 source "$_MOLE_CORE_DIR/ui.sh"
@@ -122,7 +123,7 @@ update_via_homebrew() {
     if echo "$upgrade_output" | grep -q "already installed"; then
         local installed_version
         installed_version=$(HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 \
-            run_with_timeout 10 brew list --versions mole 2> /dev/null | awk '{print $2}')
+            run_with_timeout "$MOLE_TIMEOUT_PKG_LIST_SEC" brew list --versions mole 2> /dev/null | awk '{print $2}')
         [[ -z "$installed_version" ]] && installed_version=$(mo --version 2> /dev/null | awk '/Mole version/ {print $3; exit}')
         echo ""
         echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${installed_version:-$current_version}"
@@ -135,7 +136,7 @@ update_via_homebrew() {
         echo "$upgrade_output" | grep -Ev "^(==>|Updating Homebrew|Warning:)" || true
         local new_version
         new_version=$(HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 \
-            run_with_timeout 10 brew list --versions mole 2> /dev/null | awk '{print $2}')
+            run_with_timeout "$MOLE_TIMEOUT_PKG_LIST_SEC" brew list --versions mole 2> /dev/null | awk '{print $2}')
         [[ -z "$new_version" ]] && new_version=$(mo --version 2> /dev/null | awk '/Mole version/ {print $3; exit}')
         echo ""
         echo -e "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-$current_version}"
@@ -172,7 +173,13 @@ remove_apps_from_dock() {
     local changed=false
     for target in "${targets[@]}"; do
         local app_path="$target"
+        local bundle_id=""
         local full_path=""
+
+        if [[ "$target" == *"|"* ]]; then
+            app_path="${target%%|*}"
+            bundle_id="${target#*|}"
+        fi
 
         if [[ "$app_path" =~ [[:cntrl:]] ]]; then
             debug_log "Skipping dock removal for path with control chars: $app_path"
@@ -196,30 +203,31 @@ remove_apps_from_dock() {
         [[ -z "$full_path" ]] && continue
 
         local encoded_path="${full_path// /%20}"
+        local raw_path="$full_path"
 
-        # Find the index of the app in persistent-apps
-        local i=0
-        while true; do
-            local label
-            label=$(/usr/libexec/PlistBuddy -c "Print :persistent-apps:$i:tile-data:file-label" "$plist" 2> /dev/null || echo "")
-            [[ -z "$label" ]] && break
+        local dock_array
+        for dock_array in persistent-apps persistent-others recent-apps; do
+            local i=0
+            while true; do
+                local tile_type
+                tile_type=$(/usr/libexec/PlistBuddy -c "Print :$dock_array:$i:tile-type" "$plist" 2> /dev/null || echo "")
+                [[ -z "$tile_type" ]] && break
 
-            local url
-            url=$(/usr/libexec/PlistBuddy -c "Print :persistent-apps:$i:tile-data:file-data:_CFURLString" "$plist" 2> /dev/null || echo "")
-            [[ -z "$url" ]] && {
-                i=$((i + 1))
-                continue
-            }
+                local url dock_bundle_id
+                url=$(/usr/libexec/PlistBuddy -c "Print :$dock_array:$i:tile-data:file-data:_CFURLString" "$plist" 2> /dev/null || echo "")
+                dock_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :$dock_array:$i:tile-data:bundle-identifier" "$plist" 2> /dev/null || echo "")
 
-            # Match by URL-encoded path to handle spaces in app names
-            if [[ -n "$encoded_path" && "$url" == *"$encoded_path"* ]]; then
-                if /usr/libexec/PlistBuddy -c "Delete :persistent-apps:$i" "$plist" 2> /dev/null; then
-                    changed=true
-                    # After deletion, current index i now points to the next item
-                    continue
+                if { [[ -n "$bundle_id" && "$dock_bundle_id" == "$bundle_id" ]] ||
+                    [[ -n "$encoded_path" && "$url" == *"$encoded_path"* ]] ||
+                    [[ -n "$raw_path" && "$url" == *"$raw_path"* ]]; }; then
+                    if /usr/libexec/PlistBuddy -c "Delete :$dock_array:$i" "$plist" 2> /dev/null; then
+                        changed=true
+                        # After deletion, current index i now points to the next item.
+                        continue
+                    fi
                 fi
-            fi
-            i=$((i + 1))
+                i=$((i + 1))
+            done
         done
     done
 

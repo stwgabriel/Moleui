@@ -310,21 +310,3 @@ stop_sudo_session() {
     fi
     MOLE_SUDO_ESTABLISHED="false"
 }
-
-# Register cleanup on script exit
-register_sudo_cleanup() {
-    trap stop_sudo_session EXIT INT TERM
-}
-
-# Predict if operation requires administrative access
-will_need_sudo() {
-    local -a operations=("$@")
-    for op in "${operations[@]}"; do
-        case "$op" in
-            system_update | appstore_update | macos_update | firewall | touchid | rosetta | system_fix)
-                return 0
-                ;;
-        esac
-    done
-    return 1
-}

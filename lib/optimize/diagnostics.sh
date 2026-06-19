@@ -72,7 +72,7 @@ opt_diag_get_hdiutil_info() {
         return 0
     fi
 
-    run_with_timeout 8 hdiutil info 2> /dev/null || true
+    run_with_timeout 8 hdiutil info 2> /dev/null || true # 8s: hdiutil info, see lib/core/timeouts.sh
 }
 
 opt_diag_family_totals() {
@@ -148,6 +148,12 @@ opt_diag_parse_image_mount_pairs() {
     local info="${1:-}"
     awk '
     function extract_mount(line) {
+        # Only /dev/disk* lines list real mount points. Other fields like
+        # image-alias / icon-path / shadow-path may contain absolute paths
+        # but are not mounts and previously produced phantom detach offers.
+        if (line !~ /^\/dev\/disk/) {
+            return ""
+        }
         if (line ~ /[[:space:]]\/.*/) {
             sub(/^.*[[:space:]]\//, "/", line)
             return line
@@ -281,7 +287,7 @@ opt_diag_detach_candidates() {
 
     while IFS=$'\t' read -r image_path mount_path; do
         [[ -z "$mount_path" ]] && continue
-        if run_with_timeout 15 hdiutil detach "$mount_path" > /dev/null 2>&1; then
+        if run_with_timeout 15 hdiutil detach "$mount_path" > /dev/null 2>&1; then # 15s: hdiutil detach, see lib/core/timeouts.sh
             detached=$((detached + 1))
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Detached ${mount_path}"
         else
@@ -314,6 +320,7 @@ opt_diag_offer_detach_candidates() {
         [[ -z "$mount_path" ]] && continue
         echo -e "    ${GRAY}${mount_path}${NC} ← ${image_path}"
     done <<< "$candidates"
+    echo -e "    ${GRAY}${ICON_SUBLIST} Keep one of these mounted: add its path via ${NC}mo optimize --whitelist${GRAY}${NC}"
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Would offer detach for ${count} mounted image(s)"
