@@ -13,7 +13,8 @@
     "web:dev": "bun run --cwd apps/web dev",
     "web:build": "bun run --cwd apps/web build",
     "lint": "turbo run lint",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "stripe:create-test-coupon": "node scripts/create_stripe_test_coupon.mjs"
   },
   "workspaces": [
     "apps/*",

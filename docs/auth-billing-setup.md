@@ -23,10 +23,21 @@ STRIPE_SECRET_KEY=...
 STRIPE_WEBHOOK_SECRET=...
 STRIPE_PRICE_BRL_MONTHLY=...
 STRIPE_PRICE_USD_MONTHLY=...
+STRIPE_CHECKOUT_COUPON_ID=
+STRIPE_CHECKOUT_PROMOTION_CODE_ID=
+STRIPE_CHECKOUT_PROMOTION_CODE=
 APP_CHECKOUT_SUCCESS_URL=https://billing.moleui.local/success
 APP_CHECKOUT_CANCEL_URL=https://billing.moleui.local/cancel
 APP_BILLING_RETURN_URL=https://billing.moleui.local/return
 ```
+
+The checkout action accepts one optional automatic discount. Configure only one of:
+
+- `STRIPE_CHECKOUT_COUPON_ID`, for a Stripe coupon ID such as `moleui_100_off_test`.
+- `STRIPE_CHECKOUT_PROMOTION_CODE_ID`, for a Stripe promotion-code ID such as `promo_...`.
+- `STRIPE_CHECKOUT_PROMOTION_CODE`, for an active code such as `MOLEUI100`.
+
+If none are set, Checkout allows customers to enter promotion codes manually.
 
 ## Stripe Products
 
@@ -38,6 +49,22 @@ Rest of world: USD 5/month
 ```
 
 Set the resulting price IDs in Convex as `STRIPE_PRICE_BRL_MONTHLY` and `STRIPE_PRICE_USD_MONTHLY`.
+
+## 100% Test Coupon
+
+For login and checkout testing, create a 100% off test coupon and promotion code:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_... bun run stripe:create-test-coupon
+```
+
+The default code is `MOLEUI100`, backed by coupon ID `moleui_100_off_test`. The script prints the Stripe promotion-code ID. To apply the discount automatically in the desktop checkout, set this Convex env:
+
+```bash
+STRIPE_CHECKOUT_PROMOTION_CODE_ID=promo_...
+```
+
+Leave the discount env unset if you want the Stripe checkout screen to show the promotion-code entry field instead.
 
 ## Webhook
 
