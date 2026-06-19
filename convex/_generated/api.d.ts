@@ -10,6 +10,7 @@
 
 import type * as billing from "../billing.js";
 import type * as http from "../http.js";
+import type * as stripeWebhook from "../stripeWebhook.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as users from "../users.js";
 
@@ -22,6 +23,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   billing: typeof billing;
   http: typeof http;
+  stripeWebhook: typeof stripeWebhook;
   subscriptions: typeof subscriptions;
   users: typeof users;
 }>;

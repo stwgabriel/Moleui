@@ -7,9 +7,8 @@ import { v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-
 function stripe() {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeSecretKey) throw new Error('STRIPE_SECRET_KEY is not configured');
   return new Stripe(stripeSecretKey);
 }
@@ -25,6 +24,38 @@ function priceIdForCountry(country: string | undefined) {
   const usdPrice = process.env.STRIPE_PRICE_USD_MONTHLY;
   if (!usdPrice) throw new Error('STRIPE_PRICE_USD_MONTHLY is not configured');
   return usdPrice;
+}
+
+async function checkoutDiscountOptions(client: Stripe): Promise<Pick<Stripe.Checkout.SessionCreateParams, 'allow_promotion_codes' | 'discounts'>> {
+  const couponId = process.env.STRIPE_CHECKOUT_COUPON_ID?.trim();
+  const promotionCodeId = process.env.STRIPE_CHECKOUT_PROMOTION_CODE_ID?.trim();
+  const promotionCode = process.env.STRIPE_CHECKOUT_PROMOTION_CODE?.trim();
+  const configuredDiscounts = [couponId, promotionCodeId, promotionCode].filter(Boolean);
+
+  if (configuredDiscounts.length > 1) {
+    throw new Error('Configure only one of STRIPE_CHECKOUT_COUPON_ID, STRIPE_CHECKOUT_PROMOTION_CODE_ID, or STRIPE_CHECKOUT_PROMOTION_CODE');
+  }
+
+  if (couponId) {
+    return { discounts: [{ coupon: couponId }] };
+  }
+
+  if (promotionCodeId) {
+    return { discounts: [{ promotion_code: promotionCodeId }] };
+  }
+
+  if (promotionCode) {
+    const promotionCodes = await client.promotionCodes.list({
+      code: promotionCode,
+      active: true,
+      limit: 10,
+    });
+    const matchingPromotionCode = promotionCodes.data.find((candidate) => candidate.code.toLowerCase() === promotionCode.toLowerCase());
+    if (!matchingPromotionCode) throw new Error(`Stripe promotion code ${promotionCode} was not found or is not active`);
+    return { discounts: [{ promotion_code: matchingPromotionCode.id }] };
+  }
+
+  return { allow_promotion_codes: true };
 }
 
 async function requireUser(ctx: ActionCtx): Promise<Doc<'users'>> {
@@ -61,14 +92,16 @@ export const createCheckoutSession = action({
       });
     }
 
+    const discountOptions = await checkoutDiscountOptions(client);
     const session = await client.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price: priceIdForCountry(args.country ?? user.country), quantity: 1 }],
       success_url: process.env.APP_CHECKOUT_SUCCESS_URL ?? 'https://billing.moleui.local/success',
       cancel_url: process.env.APP_CHECKOUT_CANCEL_URL ?? 'https://billing.moleui.local/cancel',
-      allow_promotion_codes: true,
+      ...discountOptions,
       automatic_tax: { enabled: true },
+      billing_address_collection: 'auto',
       customer_update: {
         address: 'auto',
         name: 'auto',
