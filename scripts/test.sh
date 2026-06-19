@@ -10,8 +10,21 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# Sweep orphaned per-test HOME dirs left behind by killed bats runs.
+# Normal teardown removes them; this only catches the ones that escaped.
+# 60-minute threshold avoids racing with a long-running test in progress.
+if [[ -d "$PROJECT_ROOT/tests" ]]; then
+    find "$PROJECT_ROOT/tests" -maxdepth 1 -type d -name 'tmp-*' -mmin +60 \
+        -exec rm -rf {} + 2> /dev/null || true # SAFE: confined to tests/tmp-*
+fi
+
 # Never allow the scripted test run to trigger real sudo or Touch ID prompts.
 export MOLE_TEST_NO_AUTH=1
+
+# Tests assert deterministic ANSI escape output. Strip any NO_COLOR the
+# developer has set in their shell so the test color-escape assertions
+# match regardless of the host environment.
+unset NO_COLOR
 
 TEST_SYSTEM_STUB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mole-test-stubs.XXXXXX")"
 TEST_GO_HELPER_DIR=""
@@ -223,24 +236,24 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
         bats_opts+=("--timing")
     fi
 
-    # core_performance.bats has wall-clock timing assertions that are skewed by
+    # Some test files include wall-clock timing assertions that are skewed by
     # CPU contention from parallel test workers. When parallel mode is active,
-    # split it out to run sequentially after the parallel batch completes.
-    _perf_files=()
+    # split them out to run sequentially after the parallel batch completes.
+    _sequential_files=()
     if [[ ${#bats_opts[@]} -gt 0 ]]; then
         _all=("$@")
         _rest=()
         if [[ ${#_all[@]} -eq 1 && -d "${_all[0]}" ]]; then
             while IFS= read -r _f; do
                 case "$_f" in
-                    *core_performance.bats) _perf_files+=("$_f") ;;
+                    *core_performance.bats | *regression.bats) _sequential_files+=("$_f") ;;
                     *) _rest+=("$_f") ;;
                 esac
             done < <(find "${_all[0]}" -type f -name '*.bats' | sort)
         else
             for _f in "${_all[@]}"; do
                 case "$_f" in
-                    *core_performance.bats) _perf_files+=("$_f") ;;
+                    *core_performance.bats | *regression.bats) _sequential_files+=("$_f") ;;
                     *) _rest+=("$_f") ;;
                 esac
             done
@@ -285,16 +298,16 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
         fi
     fi
 
-    # Post-run: timing-sensitive perf tests run after parallel workers have
-    # finished so CPU contention does not skew wall-clock assertions.
-    for _pf in ${_perf_files[@]+"${_perf_files[@]}"}; do
+    # Post-run: timing-sensitive tests run after parallel workers have finished
+    # so CPU contention does not skew wall-clock assertions.
+    for _pf in ${_sequential_files[@]+"${_sequential_files[@]}"}; do
         if [[ "${MOLE_TEST_TIMING:-0}" == "1" ]]; then
             bats --timing "$_pf" || _unit_rc=1
         else
             bats "$_pf" || _unit_rc=1
         fi
     done
-    unset _perf_files _pf
+    unset _sequential_files _pf
 
     report_unit_result "$_unit_rc"
 else
@@ -306,8 +319,8 @@ echo "3. Running Go tests..."
 if command -v go > /dev/null 2>&1; then
     mkdir -p "$GO_TEST_CACHE"
     if GOCACHE="$GO_TEST_CACHE" go build ./... > /dev/null 2>&1 &&
-        GOCACHE="$GO_TEST_CACHE" go vet ./cmd/... > /dev/null 2>&1 &&
-        GOCACHE="$GO_TEST_CACHE" go test ./cmd/... > /dev/null 2>&1; then
+        GOCACHE="$GO_TEST_CACHE" go vet ./... > /dev/null 2>&1 &&
+        GOCACHE="$GO_TEST_CACHE" go test ./... > /dev/null 2>&1; then
         printf "${GREEN}${ICON_SUCCESS} Go tests passed${NC}\n"
     else
         printf "${RED}${ICON_ERROR} Go tests failed${NC}\n"

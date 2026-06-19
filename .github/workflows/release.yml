@@ -297,18 +297,70 @@ jobs:
           git push origin HEAD:main
 
       - name: Update Homebrew formula (Official Core)
-        uses: mislav/bump-homebrew-formula-action@ccf2332299a883f6af50a1d2d41e5df7904dd769 # v4.1
-        with:
-          formula-name: mole
-          homebrew-tap: Homebrew/homebrew-core
-          tag-name: ${{ steps.tag_version.outputs.tag }}
-          commit-message: |
-            mole ${{ steps.tag_version.outputs.version }}
-
-            Automated release via GitHub Actions
         env:
-          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
+          TAG: ${{ steps.tag_version.outputs.tag }}
+          VERSION: ${{ steps.tag_version.outputs.version }}
+        # mislav/bump-homebrew-formula-action@v4.1 fatals on the GitHub tarball
+        # HEAD's HTTP 303 redirect (upstream issue #340). Until that lands, do
+        # the bump by hand: sync our fork, edit Formula/m/mole.rb, push, and
+        # open the PR via gh. Keeps the rest of the release flow on the same
+        # rails as the personal-tap step above.
         continue-on-error: true
+        run: |
+          set -euo pipefail
+
+          SOURCE_SHA=$(curl -fsSL "https://github.com/tw93/Mole/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{print $1}')
+          if [[ -z "$SOURCE_SHA" ]]; then
+            echo "Failed to resolve source tarball sha256"
+            exit 1
+          fi
+
+          export GIT_TERMINAL_PROMPT=0
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/tw93/homebrew-core.git"
+          UPSTREAM="https://github.com/Homebrew/homebrew-core.git"
+          WORK_DIR=$(mktemp -d)
+          BRANCH="mole-${VERSION}"
+
+          git clone --depth=1 "$REMOTE" "$WORK_DIR"
+          cd "$WORK_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM"
+          git fetch upstream main --depth=1
+          git reset --hard upstream/main
+          git checkout -B "$BRANCH"
+
+          # Only rewrite url and the source sha256 right after it. The bottle
+          # block stays untouched: Homebrew's check-bottle-block CI hook fails
+          # PRs that modify it because BrewTestBot rebuilds bottles after the
+          # url change lands.
+          awk -v new_url="https://github.com/tw93/Mole/archive/refs/tags/${TAG}.tar.gz" \
+              -v new_sha="$SOURCE_SHA" '
+            BEGIN { url_done = 0; sha_done = 0 }
+            !url_done && /^  url "/ { print "  url \"" new_url "\""; url_done = 1; next }
+            url_done && !sha_done && /^  sha256 "/ { print "  sha256 \"" new_sha "\""; sha_done = 1; next }
+            { print }
+          ' Formula/m/mole.rb > Formula/m/mole.rb.new
+          mv Formula/m/mole.rb.new Formula/m/mole.rb
+
+          if git diff --quiet -- Formula/m/mole.rb; then
+            echo "Formula already on ${VERSION}, nothing to push"
+            exit 0
+          fi
+
+          git add Formula/m/mole.rb
+          git commit -m "mole ${VERSION}" -m "Automated release via GitHub Actions"
+          git push --force-with-lease origin "$BRANCH"
+
+          # Open or refresh the PR. If a PR is already open for this branch the
+          # push above is enough; gh pr create only runs when there isn't one.
+          if ! gh pr view "$BRANCH" --repo Homebrew/homebrew-core > /dev/null 2>&1; then
+            gh pr create --repo Homebrew/homebrew-core \
+              --base main --head "tw93:${BRANCH}" \
+              --title "mole ${VERSION}" \
+              --body "Release notes: https://github.com/tw93/Mole/releases/tag/${TAG}"
+          fi
 
       - name: Verify formula updates
         if: success()
