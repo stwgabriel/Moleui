@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+Desktop-first chapter: Moleui becomes primarily a macOS desktop application, with the Bash CLI and Go TUIs serving as its underlying engine.
+
+### Added
+- Convex backend powering the desktop app: Clerk authentication, Stripe subscription billing (checkout, billing portal, and signature-verified webhooks), and subscription entitlement checks.
+- Spec-driven development workspace under `specs/`: an engagement charter, a consolidated codebase audit, and a PRD/stories/tasks system with a status board.
+- Repository hardening configuration: gitleaks secret scanning and golangci-lint settings.
+
+### Changed
+- Repositioned the project around the Electron desktop application (authentication, account and settings, subscription paywall, and live system metrics), moving battery and metrics sampling into the Electron main process for stability.
+
 ## [1.45.0] - 2026-05-31
 
 ### Added
