@@ -1,6 +1,6 @@
 #!/bin/bash
 # Add the standard six reactions (+1, laugh, hooray, heart, rocket, eyes) to a
-# tw93/Mole release. Usage: post-reactions.sh V<version>
+# stwgabriel/moleui release. Usage: post-reactions.sh V<version>
 
 set -euo pipefail
 
@@ -20,14 +20,14 @@ if ! command -v gh > /dev/null 2>&1; then
     exit 1
 fi
 
-RELEASE_ID=$(gh api "repos/tw93/Mole/releases/tags/$TAG" --jq '.id')
+RELEASE_ID=$(gh api "repos/stwgabriel/moleui/releases/tags/$TAG" --jq '.id')
 if [[ -z "$RELEASE_ID" ]]; then
     echo "Release not found for tag: $TAG" >&2
     exit 1
 fi
 
 for r in +1 laugh hooray heart rocket eyes; do
-    gh api "repos/tw93/Mole/releases/$RELEASE_ID/reactions" \
+    gh api "repos/stwgabriel/moleui/releases/$RELEASE_ID/reactions" \
         -X POST -f content="$r" --silent
 done
 

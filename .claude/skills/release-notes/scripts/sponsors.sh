@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fetch the 30 most recent sponsors of tw93 via gh api graphql.
+# Fetch the 30 most recent sponsors of stwgabriel via gh api graphql.
 # Uses the minimal query that works on a token without `read:user` scope.
 # Adding createdAt or privacyLevel requires `read:user`.
 
@@ -11,7 +11,7 @@ if ! command -v gh > /dev/null 2>&1; then
 fi
 
 gh api graphql -f query='{
-  user(login:"tw93"){
+  user(login:"stwgabriel"){
     sponsorshipsAsMaintainer(first:30, orderBy:{field:CREATED_AT, direction:DESC}){
       nodes{
         sponsorEntity{

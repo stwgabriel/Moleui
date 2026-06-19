@@ -22,7 +22,7 @@ case "$FILE" in
         ;;
     *.go)
         if command -v goimports > /dev/null 2>&1; then
-            goimports -w -local github.com/tw93/Mole "$FILE" > /dev/null 2>&1 || true
+            goimports -w -local github.com/stwgabriel/moleui "$FILE" > /dev/null 2>&1 || true
         elif command -v gofmt > /dev/null 2>&1; then
             gofmt -w "$FILE" > /dev/null 2>&1 || true
         fi

@@ -73,19 +73,19 @@ replacement_counts="$(
         my $text = $_;
 
         my $source_replacements = (
-            $text =~ s{url "https://github.com/tw93/(?:Mole|mole)/archive/refs/tags/[^"]+\.tar\.gz"\n  sha256 "[^"]+"}{
+            $text =~ s{url "https://github.com/stwgabriel/moleui/archive/refs/tags/[^"]+\.tar\.gz"\n  sha256 "[^"]+"}{
               qq{url "https://github.com/stwgabriel/moleui/archive/refs/tags/$ENV{TAG}.tar.gz"\n  sha256 "$ENV{SOURCE_SHA}"}
             }se
         );
 
         my $arm_replacements = (
-            $text =~ s{(on_arm do\s+url ")https://github.com/tw93/(?:Mole|mole)/releases/download/[^/]+/binaries-darwin-arm64\.tar\.gz("\s+sha256 ")[^"]+(")}{
+            $text =~ s{(on_arm do\s+url ")https://github.com/stwgabriel/moleui/releases/download/[^/]+/binaries-darwin-arm64\.tar\.gz("\s+sha256 ")[^"]+(")}{
               qq{$1https://github.com/stwgabriel/moleui/releases/download/$ENV{TAG}/binaries-darwin-arm64.tar.gz$2$ENV{ARM_SHA}$3}
             }se
         );
 
         my $amd_replacements = (
-            $text =~ s{(on_intel do\s+url ")https://github.com/tw93/(?:Mole|mole)/releases/download/[^/]+/binaries-darwin-amd64\.tar\.gz("\s+sha256 ")[^"]+(")}{
+            $text =~ s{(on_intel do\s+url ")https://github.com/stwgabriel/moleui/releases/download/[^/]+/binaries-darwin-amd64\.tar\.gz("\s+sha256 ")[^"]+(")}{
               qq{$1https://github.com/stwgabriel/moleui/releases/download/$ENV{TAG}/binaries-darwin-amd64.tar.gz$2$ENV{AMD_SHA}$3}
             }se
         );
@@ -106,15 +106,15 @@ TAG="$tag" \
     ARM_SHA="$arm_sha" \
     AMD_SHA="$amd_sha" \
     perl -0pi -e '
-    s{url "https://github.com/tw93/(?:Mole|mole)/archive/refs/tags/[^"]+\.tar\.gz"\n  sha256 "[^"]+"}{
+    s{url "https://github.com/stwgabriel/moleui/archive/refs/tags/[^"]+\.tar\.gz"\n  sha256 "[^"]+"}{
       qq{url "https://github.com/stwgabriel/moleui/archive/refs/tags/$ENV{TAG}.tar.gz"\n  sha256 "$ENV{SOURCE_SHA}"}
     }se;
 
-    s{(on_arm do\s+url ")https://github.com/tw93/(?:Mole|mole)/releases/download/[^/]+/binaries-darwin-arm64\.tar\.gz("\s+sha256 ")[^"]+(")}{
+    s{(on_arm do\s+url ")https://github.com/stwgabriel/moleui/releases/download/[^/]+/binaries-darwin-arm64\.tar\.gz("\s+sha256 ")[^"]+(")}{
       qq{$1https://github.com/stwgabriel/moleui/releases/download/$ENV{TAG}/binaries-darwin-arm64.tar.gz$2$ENV{ARM_SHA}$3}
     }se;
 
-    s{(on_intel do\s+url ")https://github.com/tw93/(?:Mole|mole)/releases/download/[^/]+/binaries-darwin-amd64\.tar\.gz("\s+sha256 ")[^"]+(")}{
+    s{(on_intel do\s+url ")https://github.com/stwgabriel/moleui/releases/download/[^/]+/binaries-darwin-amd64\.tar\.gz("\s+sha256 ")[^"]+(")}{
       qq{$1https://github.com/stwgabriel/moleui/releases/download/$ENV{TAG}/binaries-darwin-amd64.tar.gz$2$ENV{AMD_SHA}$3}
     }se;
 ' "$formula_path"

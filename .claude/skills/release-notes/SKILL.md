@@ -17,8 +17,8 @@ Before drafting, confirm:
 3. **Release commit range**. `git log <previous-tag>..V<version> --oneline` gives the raw material.
 4. **User-visible behavior changes**. Scan the full commit message bodies (not just subjects) for any narrowed detection, removed feature, or "controlled regression" wording. Examples that have shipped before: the V1.40 VPN narrowing (37a446c9) silently stopped detecting split-tunnel third-party VPNs, the Bluetooth reset removal (357ee057) dropped a flow some users depended on. These belong in notes even when not bug-fix-shaped, because users will hit them in production and won't know what changed.
 5. **Sponsors**. Run `scripts/sponsors.sh` from this skill dir.
-6. **Contributors in this range**. `git log <previous-tag>..V<version> --pretty='%an' | sort -u`. Exclude `tw93` and bots.
-7. **Verify release exists**. `gh release view V<version> --repo tw93/Mole --json id,name` should return non-empty. If it doesn't, the workflow hasn't finished — wait, don't `gh release create`.
+6. **Contributors in this range**. `git log <previous-tag>..V<version> --pretty='%an' | sort -u`. Exclude `stwgabriel` and bots.
+7. **Verify release exists**. `gh release view V<version> --repo stwgabriel/moleui --json id,name` should return non-empty. If it doesn't, the workflow hasn't finished — wait, don't `gh release create`.
 
 ## Pre-flight (cross-check against CLAUDE.md)
 
@@ -35,7 +35,7 @@ If any fail, stop. The notes can wait; a bad release tag cannot.
 ## Format
 
 Strictly follow V1.37.0+ shape. Compare against a recent release if unsure:
-`gh release view V1.37.0 --repo tw93/Mole --json body --jq .body`.
+`gh release view V1.37.0 --repo stwgabriel/moleui --json body --jq .body`.
 
 Structure:
 
@@ -55,7 +55,7 @@ Structure:
 Sponsors: <@handle1> <@handle2> ...
 Contributors: <@handle1> <@handle2> ...
 
-> Mole · macOS cleanup · https://github.com/tw93/Mole
+> Mole · macOS cleanup · https://github.com/stwgabriel/moleui
 ```
 
 ### Format rules (all are documented bugs that have shipped before)
@@ -73,7 +73,7 @@ Contributors: <@handle1> <@handle2> ...
 Once the user approves the draft:
 
 ```bash
-gh release edit V<version> --repo tw93/Mole \
+gh release edit V<version> --repo stwgabriel/moleui \
   --title "V<version> <CodeName> <emoji>" \
   --notes-file <path-to-draft>
 ```
@@ -84,7 +84,7 @@ Then add the six reactions: `bash scripts/post-reactions.sh V<version>`.
 
 ## After publish
 
-- `gh release view V<version> --repo tw93/Mole --web` (open in browser) so the user can eyeball it.
+- `gh release view V<version> --repo stwgabriel/moleui --web` (open in browser) so the user can eyeball it.
 - Remind the user: Homebrew tap + Homebrew core PR are workflow-driven and should already be in flight; do not re-run them manually unless the workflow log shows a failure.
 
 ## When NOT to act

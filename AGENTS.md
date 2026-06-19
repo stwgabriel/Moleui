@@ -144,7 +144,7 @@ Wait for the workflow to finish (typically 2 minutes for V1.38.0). The workflow 
 ### Apply curated release notes
 
 ```bash
-gh release edit V<version> --repo tw93/Mole \
+gh release edit V<version> --repo stwgabriel/moleui \
   --title "V<version> <CodeName> <emoji>" \
   --notes-file <path>
 ```
@@ -154,7 +154,7 @@ Format follows V1.37.0 onward: bilingual numbered changelog (English first, ф╕нц
 Recent sponsors via `gh api graphql`:
 
 ```bash
-gh api graphql -f query='{user(login:"tw93"){sponsorshipsAsMaintainer(first:30, orderBy:{field:CREATED_AT, direction:DESC}){nodes{sponsorEntity{... on User{login} ... on Organization{login}}}}}}'
+gh api graphql -f query='{user(login:"stwgabriel"){sponsorshipsAsMaintainer(first:30, orderBy:{field:CREATED_AT, direction:DESC}){nodes{sponsorEntity{... on User{login} ... on Organization{login}}}}}}'
 ```
 
 The minimal query above works on a token without `read:user` scope. Adding `createdAt` or `privacyLevel` requires `read:user`.
@@ -162,9 +162,9 @@ The minimal query above works on a token without `read:user` scope. Adding `crea
 Add the standard reaction set (`+1`, `laugh`, `hooray`, `heart`, `rocket`, `eyes`):
 
 ```bash
-RELEASE_ID=$(gh api repos/tw93/Mole/releases/tags/V<version> --jq '.id')
+RELEASE_ID=$(gh api repos/stwgabriel/moleui/releases/tags/V<version> --jq '.id')
 for r in +1 laugh hooray heart rocket eyes; do
-  gh api "repos/tw93/Mole/releases/$RELEASE_ID/reactions" -X POST -f content="$r" --silent
+  gh api "repos/stwgabriel/moleui/releases/$RELEASE_ID/reactions" -X POST -f content="$r" --silent
 done
 ```
 

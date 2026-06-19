@@ -312,12 +312,12 @@ verify_release_attestation() {
         return 2
     fi
 
-    # --owner restricts the trusted signer identity to the upstream repo's
+    # --owner restricts the trusted signer identity to this project's release
     # GitHub Actions workflow. --deny-self-hosted-runners blocks attestations
     # produced by self-hosted runners, which a repo compromise could otherwise
     # introduce as a sidechannel.
     if gh attestation verify "$file" \
-        --owner tw93 \
+        --owner stwgabriel \
         --deny-self-hosted-runners \
         > /dev/null 2>&1; then
         return 0

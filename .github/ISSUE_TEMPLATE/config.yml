@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Private Security Report
-    url: mailto:hitw93@gmail.com?subject=Mole%20security%20report
+    url: mailto:security@stwgabriel.com?subject=Moleui%20security%20report
     about: Report a suspected vulnerability privately instead of opening a public issue
   - name: Telegram Community
     url: https://t.me/+GclQS9ZnxyI2ODQ1

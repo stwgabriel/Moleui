@@ -144,17 +144,17 @@ EOF
     cat > "$formula_file" <<'EOF'
 class Mole < Formula
   desc "Mole"
-  homepage "https://github.com/tw93/Mole"
-  url "https://github.com/tw93/Mole/archive/refs/tags/V1.32.0.tar.gz"
+  homepage "https://github.com/stwgabriel/moleui"
+  url "https://github.com/stwgabriel/moleui/archive/refs/tags/V1.32.0.tar.gz"
   sha256 "old-source-sha"
 
   on_arm do
-    url "https://github.com/tw93/Mole/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
+    url "https://github.com/stwgabriel/moleui/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
     sha256 "old-arm-sha"
   end
 
   on_intel do
-    url "https://github.com/tw93/Mole/releases/download/V1.32.0/binaries-darwin-amd64.tar.gz"
+    url "https://github.com/stwgabriel/moleui/releases/download/V1.32.0/binaries-darwin-amd64.tar.gz"
     sha256 "old-amd-sha"
   end
 end
@@ -168,15 +168,15 @@ EOF
         --amd-sha "new-amd-sha"
     [ "$status" -eq 0 ]
 
-    run grep -q 'url "https://github.com/tw93/Mole/archive/refs/tags/V1.33.0.tar.gz"' "$formula_file"
+    run grep -q 'url "https://github.com/stwgabriel/moleui/archive/refs/tags/V1.33.0.tar.gz"' "$formula_file"
     [ "$status" -eq 0 ]
     run grep -q 'sha256 "new-source-sha"' "$formula_file"
     [ "$status" -eq 0 ]
-    run grep -q 'url "https://github.com/tw93/Mole/releases/download/V1.33.0/binaries-darwin-arm64.tar.gz"' "$formula_file"
+    run grep -q 'url "https://github.com/stwgabriel/moleui/releases/download/V1.33.0/binaries-darwin-arm64.tar.gz"' "$formula_file"
     [ "$status" -eq 0 ]
     run grep -q 'sha256 "new-arm-sha"' "$formula_file"
     [ "$status" -eq 0 ]
-    run grep -q 'url "https://github.com/tw93/Mole/releases/download/V1.33.0/binaries-darwin-amd64.tar.gz"' "$formula_file"
+    run grep -q 'url "https://github.com/stwgabriel/moleui/releases/download/V1.33.0/binaries-darwin-amd64.tar.gz"' "$formula_file"
     [ "$status" -eq 0 ]
     run grep -q 'sha256 "new-amd-sha"' "$formula_file"
     [ "$status" -eq 0 ]
@@ -187,12 +187,12 @@ EOF
     cat > "$formula_file" <<'EOF'
 class Mole < Formula
   desc "Mole"
-  homepage "https://github.com/tw93/Mole"
-  url "https://github.com/tw93/Mole/archive/refs/tags/V1.32.0.tar.gz"
+  homepage "https://github.com/stwgabriel/moleui"
+  url "https://github.com/stwgabriel/moleui/archive/refs/tags/V1.32.0.tar.gz"
   sha256 "old-source-sha"
 
   on_arm do
-    url "https://github.com/tw93/Mole/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
+    url "https://github.com/stwgabriel/moleui/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
     sha256 "old-arm-sha"
   end
 end

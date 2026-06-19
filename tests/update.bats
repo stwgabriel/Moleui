@@ -141,7 +141,7 @@ INSTALLER
 	exit 0
 fi
 
-if [[ "\$url" == *"api.github.com/repos/tw93/mole/commits/main"* ]]; then
+if [[ "\$url" == *"api.github.com/repos/stwgabriel/moleui/commits/main"* ]]; then
 	printf '{"sha":"%s"}\n' "$latest_commit"
 	exit 0
 fi
@@ -184,8 +184,8 @@ SCRIPT
 	grep -q -- "--prefix" "$installer_args_log"
 	grep -q -- "$manual_bin" "$installer_args_log"
 	[ "$(cat "$installer_version_log")" = "V$current_version" ]
-	grep -q "raw.githubusercontent.com/tw93/mole/V${current_version#V}/install.sh" "$curl_url_log"
-	if grep -q "raw.githubusercontent.com/tw93/mole/main/install.sh" "$curl_url_log"; then
+	grep -q "raw.githubusercontent.com/stwgabriel/moleui/V${current_version#V}/install.sh" "$curl_url_log"
+	if grep -q "raw.githubusercontent.com/stwgabriel/moleui/main/install.sh" "$curl_url_log"; then
 		return 1
 	fi
 	if grep -q '^upgrade mole$' "$brew_log"; then
@@ -219,8 +219,8 @@ SCRIPT
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Already on latest nightly, e31d46f"* ]]
 	[ ! -e "$installer_args_log" ]
-	grep -q "api.github.com/repos/tw93/mole/commits/main" "$curl_url_log"
-	if grep -q "raw.githubusercontent.com/tw93/mole/main/install.sh" "$curl_url_log"; then
+	grep -q "api.github.com/repos/stwgabriel/moleui/commits/main" "$curl_url_log"
+	if grep -q "raw.githubusercontent.com/stwgabriel/moleui/main/install.sh" "$curl_url_log"; then
 		return 1
 	fi
 }
@@ -252,7 +252,7 @@ SCRIPT
 	[ -f "$installer_args_log" ]
 	grep -q -- "--prefix" "$installer_args_log"
 	[ "$(cat "$installer_version_log")" = "main" ]
-	grep -q "raw.githubusercontent.com/tw93/mole/main/install.sh" "$curl_url_log"
+	grep -q "raw.githubusercontent.com/stwgabriel/moleui/main/install.sh" "$curl_url_log"
 }
 
 @test "mo update keeps Homebrew installs on the Homebrew update path" {

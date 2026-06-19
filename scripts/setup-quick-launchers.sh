@@ -306,7 +306,7 @@ create_alfred_workflow() {
     log_step "Installing Alfred workflows..."
     for entry in "${LAUNCHER_COMMAND_SPECS[@]}"; do
         IFS="|" read -r subcommand title _ subtitle <<< "$entry"
-        bundle="fun.tw93.mole.${subcommand}"
+        bundle="com.stwgabriel.moleui.${subcommand}"
         keyword="${subcommand}"
         command="\"${mo_bin}\" ${subcommand}"
         local workflow_uid="user.workflow.$(uuid | LC_ALL=C tr '[:upper:]' '[:lower:]')"
