@@ -88,11 +88,12 @@ var foldDirs = map[string]bool{
 	".tox":          true,
 	"site-packages": true,
 	".eggs":         true,
-	"*.egg-info":    true,
-	".pyenv":        true,
-	".poetry":       true,
-	".pip":          true,
-	".pipx":         true,
+	// NOTE: "*.egg-info" dirs are package-specific (e.g. "mypkg.egg-info") and
+	// are folded by suffix in shouldFoldDirWithPath, not by exact-match here.
+	".pyenv":  true,
+	".poetry": true,
+	".pip":    true,
+	".pipx":   true,
 
 	// Ruby/Go/PHP (vendor), Java/Kotlin/Scala/Rust (target).
 	"vendor":        true,

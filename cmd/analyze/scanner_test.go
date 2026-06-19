@@ -20,6 +20,21 @@ func writeFileWithSize(t testing.TB, path string, size int) {
 	}
 }
 
+func TestShouldFoldDirWithPathFoldsEggInfo(t *testing.T) {
+	cases := map[string]bool{
+		"mypkg.egg-info":   true, // package-specific egg-info dir, matched by suffix
+		"another.egg-info": true,
+		"node_modules":     true, // exact-match fold entry
+		"src":              false,
+		"egg-info":         false, // no leading dot, not a real egg-info dir name
+	}
+	for name, want := range cases {
+		if got := shouldFoldDirWithPath(name, "/tmp/project/"+name); got != want {
+			t.Errorf("shouldFoldDirWithPath(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
 func TestGetDirectoryLogicalSizeWithExclude(t *testing.T) {
 	base := t.TempDir()
 	homeFile := filepath.Join(base, "fileA")

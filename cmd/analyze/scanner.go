@@ -467,10 +467,6 @@ func loadCachedSubdirResult(path string, largeFileChan chan<- fileEntry) (scanRe
 	return result, true
 }
 
-func scanSubdirWithCache(root string, largeFileChan chan<- fileEntry, largeFileMinSize *int64, limiter *scanLimiter, dirSem, duSem, duQueueSem chan struct{}, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) scanResult {
-	return scanSubdirWithCacheOption(root, largeFileChan, largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath, true)
-}
-
 func scanSubdirWithCacheOption(root string, largeFileChan chan<- fileEntry, largeFileMinSize *int64, limiter *scanLimiter, dirSem, duSem, duQueueSem chan struct{}, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, useCache bool) scanResult {
 	if useCache {
 		if cached, ok := loadCachedSubdirResult(root, largeFileChan); ok {
@@ -500,6 +496,12 @@ func scanSubdirWithCacheOption(root string, largeFileChan chan<- fileEntry, larg
 
 func shouldFoldDirWithPath(name, path string) bool {
 	if foldDirs[name] {
+		return true
+	}
+
+	// Python build metadata directories are package-specific (e.g.
+	// "mypkg.egg-info"), so match them by suffix rather than exact name.
+	if strings.HasSuffix(name, ".egg-info") {
 		return true
 	}
 

@@ -166,6 +166,12 @@ func insightIcon(entry dirEntry) string {
 
 // getDirSizeFast measures directory size using du.
 func getDirSizeFast(path string) (int64, error) {
+	// Defense-in-depth: validate before handing the path to du, matching the
+	// other du call sites in scanner.go.
+	if err := validatePath(path); err != nil {
+		return 0, err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

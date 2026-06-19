@@ -310,7 +310,13 @@ func (m model) View() string {
 			}
 		}
 	}
-	if m.deleteConfirm && m.deleteTarget != nil {
+	// Render the confirmation whenever delete mode is active and there is a
+	// pending target OR multi-selection. Guarding only on deleteTarget would let
+	// a multi-selection with an unresolved target enter delete mode with no
+	// on-screen prompt, so Enter could delete without a visible confirmation.
+	hasMultiDeleteSelection := (m.showLargeFiles && len(m.largeMultiSelected) > 0) ||
+		(!m.showLargeFiles && len(m.multiSelected) > 0)
+	if m.deleteConfirm && (m.deleteTarget != nil || hasMultiDeleteSelection) {
 		fmt.Fprintln(&b)
 		var deleteCount int
 		var totalDeleteSize int64
@@ -341,10 +347,18 @@ func (m model) View() string {
 				colorRed, colorReset,
 				deleteCount, humanizeBytes(totalDeleteSize),
 				colorGray, colorReset)
-		} else {
+		} else if m.deleteTarget != nil {
 			fmt.Fprintf(&b, "%sDelete:%s %s, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
 				colorRed, colorReset,
 				m.deleteTarget.Name, humanizeBytes(m.deleteTarget.Size),
+				colorGray, colorReset)
+		} else {
+			// Defensive: delete mode with a selection we could not resolve to a
+			// display target. Still show a prompt so deletion never proceeds
+			// without an on-screen confirmation.
+			fmt.Fprintf(&b, "%sDelete:%s %d selected item(s)  %sPress Enter to confirm  |  ESC cancel%s\n",
+				colorRed, colorReset,
+				deleteCount,
 				colorGray, colorReset)
 		}
 	}
