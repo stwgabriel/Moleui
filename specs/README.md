@@ -18,7 +18,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 |------------|------|--------|-------|
 | WS1 Detach & Rebrand        | `WS1-detach-rebrand/`   | Not started | remove upstream remote, keep history |
 | WS2 Repo Reorg              | `WS2-repo-reorg/`       | Not started | desktop-first; staged (clarity then restructure) |
-| WS3 Auth & Payment          | `WS3-auth-payment/`     | Not started | highest priority (revenue + security) |
+| WS3 Auth & Payment          | `WS3-auth-payment/`     | In progress | code done + verified (typecheck/build); live test pending 2FA code |
 | WS4 Desktop Quality         | `WS4-desktop-quality/`  | Not started | |
 | WS5 Go Optimize & Fix       | `WS5-go-optimize/`      | Not started | |
 | WS6 Consolidated Report     | `reports/`              | In progress | audit drafted |
