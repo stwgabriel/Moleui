@@ -123,7 +123,7 @@ func trashPathWithProgress(root string, counter *int64) (int64, error) {
 // This is the safest method as it uses the system's native trash mechanism.
 func moveToTrash(path string) error {
 	// Validate raw input before Abs resolves ".." components away.
-	if err := validatePath(path); err != nil {
+	if err := validateTrashTarget(path); err != nil {
 		return err
 	}
 
@@ -133,7 +133,7 @@ func moveToTrash(path string) error {
 	}
 
 	// Validate resolved path as well (defense-in-depth).
-	if err := validatePath(absPath); err != nil {
+	if err := validateTrashTarget(absPath); err != nil {
 		return err
 	}
 
@@ -156,6 +156,41 @@ func moveToTrash(path string) error {
 	}
 
 	return nil
+}
+
+func validateTrashTarget(path string) error {
+	if err := validatePath(path); err != nil {
+		return err
+	}
+	if isProtectedAnalyzeDeletePath(path) {
+		return fmt.Errorf("protected path cannot be deleted: %s", path)
+	}
+	return nil
+}
+
+func isProtectedAnalyzeDeletePath(path string) bool {
+	home := os.Getenv("HOME")
+	if home == "" || path == "" {
+		return false
+	}
+
+	cleanPath := filepath.Clean(path)
+	orbstackState := filepath.Join(home, ".orbstack")
+	if cleanPath == orbstackState || strings.HasPrefix(cleanPath, orbstackState+string(filepath.Separator)) {
+		return true
+	}
+
+	groupContainers := filepath.Join(home, "Library", "Group Containers")
+	rel, err := filepath.Rel(groupContainers, cleanPath)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+
+	containerName := rel
+	if idx := strings.Index(containerName, string(filepath.Separator)); idx >= 0 {
+		containerName = containerName[:idx]
+	}
+	return strings.HasSuffix(containerName, "dev.orbstack")
 }
 
 // validatePath checks path safety for external commands.

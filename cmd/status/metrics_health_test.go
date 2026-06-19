@@ -26,14 +26,14 @@ func TestCalculateHealthScorePerfect(t *testing.T) {
 func TestCalculateHealthScoreDetectsIssues(t *testing.T) {
 	score, msg := calculateHealthScore(
 		CPUStatus{Usage: 95},
-		MemoryStatus{UsedPercent: 90, Pressure: "critical"},
-		[]DiskStatus{{UsedPercent: 95}},
+		MemoryStatus{UsedPercent: 95, Pressure: "critical"},
+		[]DiskStatus{{UsedPercent: 98}},
 		DiskIOStatus{ReadRate: 120, WriteRate: 80},
 		ThermalStatus{CPUTemp: 90},
 		nil, 0,
 	)
 
-	if score >= 40 {
+	if score >= 60 {
 		t.Fatalf("expected heavy penalties bringing score down, got %d", score)
 	}
 	if msg == "Excellent" {
@@ -65,11 +65,11 @@ func TestColorizeTempThresholds(t *testing.T) {
 		expected string
 	}{
 		{temp: 30.0, expected: "30.0"}, // Normal - should use okStyle (green)
-		{temp: 55.9, expected: "55.9"}, // Just below warning threshold
-		{temp: 56.0, expected: "56.0"}, // Warning threshold - should use warnStyle (yellow)
-		{temp: 65.0, expected: "65.0"}, // Mid warning range
-		{temp: 75.9, expected: "75.9"}, // Just below danger threshold
-		{temp: 76.0, expected: "76.0"}, // Danger threshold - should use dangerStyle (red)
+		{temp: 64.9, expected: "64.9"}, // Just below warning threshold
+		{temp: 65.0, expected: "65.0"}, // Warning threshold - should use warnStyle (yellow)
+		{temp: 78.0, expected: "78.0"}, // Mid warning range
+		{temp: 84.9, expected: "84.9"}, // Just below danger threshold
+		{temp: 85.0, expected: "85.0"}, // Danger threshold - should use dangerStyle (red)
 		{temp: 90.0, expected: "90.0"}, // High temperature
 		{temp: 0.0, expected: "0.0"},   // Edge case: zero
 	}
@@ -89,8 +89,8 @@ func TestColorizeTempThresholds(t *testing.T) {
 
 func TestColorizeTempStyleRanges(t *testing.T) {
 	normalTemp := colorizeTemp(40.0)
-	warningTemp := colorizeTemp(65.0)
-	dangerTemp := colorizeTemp(85.0)
+	warningTemp := colorizeTemp(72.0)
+	dangerTemp := colorizeTemp(90.0)
 
 	if normalTemp == "" || warningTemp == "" || dangerTemp == "" {
 		t.Fatal("colorizeTemp should not return empty strings")
@@ -99,11 +99,11 @@ func TestColorizeTempStyleRanges(t *testing.T) {
 	if !strings.Contains(normalTemp, "40.0") {
 		t.Errorf("normal temp should contain '40.0', got: %s", normalTemp)
 	}
-	if !strings.Contains(warningTemp, "65.0") {
-		t.Errorf("warning temp should contain '65.0', got: %s", warningTemp)
+	if !strings.Contains(warningTemp, "72.0") {
+		t.Errorf("warning temp should contain '72.0', got: %s", warningTemp)
 	}
-	if !strings.Contains(dangerTemp, "85.0") {
-		t.Errorf("danger temp should contain '85.0', got: %s", dangerTemp)
+	if !strings.Contains(dangerTemp, "90.0") {
+		t.Errorf("danger temp should contain '90.0', got: %s", dangerTemp)
 	}
 }
 
@@ -120,11 +120,11 @@ func TestCalculateHealthScoreEdgeCases(t *testing.T) {
 	}{
 		{
 			name:    "all metrics at normal threshold",
-			cpu:     CPUStatus{Usage: 30.0},
-			mem:     MemoryStatus{UsedPercent: 50.0},
-			disks:   []DiskStatus{{UsedPercent: 70.0}},
+			cpu:     CPUStatus{Usage: 50.0},
+			mem:     MemoryStatus{UsedPercent: 70.0},
+			disks:   []DiskStatus{{UsedPercent: 80.0}},
 			diskIO:  DiskIOStatus{ReadRate: 25.0, WriteRate: 25.0},
-			thermal: ThermalStatus{CPUTemp: 60.0},
+			thermal: ThermalStatus{CPUTemp: 65.0},
 			wantMin: 95,
 			wantMax: 100,
 		},
@@ -179,10 +179,10 @@ func TestBatteryHealthLabel(t *testing.T) {
 		severity string
 	}{
 		{"new battery", 100, 98, "Healthy", "ok"},
-		{"moderate cycles", 600, 92, "Fair", "warn"},
+		{"moderate cycles", 600, 92, "Healthy", "ok"},
 		{"high cycles", 950, 85, "Service Soon", "danger"},
-		{"low capacity", 200, 75, "Service Soon", "danger"},
-		{"warn capacity", 200, 88, "Fair", "warn"},
+		{"low capacity", 200, 55, "Service Soon", "danger"},
+		{"warn capacity", 200, 75, "Fair", "warn"},
 		{"zero values", 0, 0, "Healthy", "ok"},
 	}
 	for _, tt := range tests {

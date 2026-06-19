@@ -72,7 +72,7 @@ func TestCollectIOCountersSafelyRecoversPanic(t *testing.T) {
 	}
 	t.Cleanup(func() { ioCountersFunc = original })
 
-	stats, err := collectIOCountersSafely(true)
+	stats, err := collectIOCountersSafely()
 	if err == nil {
 		t.Fatalf("expected error from panic recovery")
 	}
@@ -94,7 +94,7 @@ func TestCollectIOCountersSafelyReturnsData(t *testing.T) {
 	}
 	t.Cleanup(func() { ioCountersFunc = original })
 
-	got, err := collectIOCountersSafely(true)
+	got, err := collectIOCountersSafely()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,10 +113,7 @@ func TestCollectNetworkFirstSampleReturnsZeroRateInterfaces(t *testing.T) {
 	t.Cleanup(func() { ioCountersFunc = original })
 
 	c := &Collector{}
-	got, err := c.collectNetwork(time.Now())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	got := c.collectNetwork(time.Now())
 	if len(got) != 1 {
 		t.Fatalf("expected first sample to render one interface, got %+v", got)
 	}
@@ -146,10 +143,7 @@ func TestCollectNetworkUsesPrimedCountersForInitialRates(t *testing.T) {
 	t.Cleanup(func() { ioCountersFunc = original })
 
 	c := NewCollector(ProcessWatchOptions{})
-	got, err := c.collectNetwork(c.lastNetAt.Add(time.Second))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	got := c.collectNetwork(c.lastNetAt.Add(time.Second))
 	if len(got) != 1 {
 		t.Fatalf("expected one interface, got %+v", got)
 	}
@@ -180,10 +174,7 @@ func TestCollectNetworkClampsCounterReset(t *testing.T) {
 		txHistoryBuf: NewRingBuffer(NetworkHistorySize),
 	}
 
-	got, err := c.collectNetwork(base.Add(time.Second))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	got := c.collectNetwork(base.Add(time.Second))
 	if len(got) != 1 {
 		t.Fatalf("expected one interface, got %+v", got)
 	}

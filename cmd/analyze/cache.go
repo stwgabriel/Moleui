@@ -16,6 +16,11 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+// cacheSchemaVersion is bumped whenever directory-size semantics change so
+// stale on-disk cache entries are rejected instead of silently reused.
+// v2: analyze deduplicates hardlinked files to match `du`.
+const cacheSchemaVersion = 2
+
 type overviewSizeSnapshot struct {
 	Size    int64     `json:"size"`
 	Updated time.Time `json:"updated"`
@@ -207,6 +212,45 @@ func getCachePath(path string) (string, error) {
 	return filepath.Join(cacheDir, filename), nil
 }
 
+func pruneAnalyzerCache() {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return
+	}
+	// Pruning is best-effort; errors are intentionally ignored to avoid blocking startup.
+	_ = pruneAnalyzerCacheDir(cacheDir, time.Now())
+}
+
+func pruneAnalyzerCacheDir(cacheDir string, now time.Time) error {
+	if cacheDir == "" || analyzerCacheTTL <= 0 {
+		return nil
+	}
+
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	cutoff := now.Add(-analyzerCacheTTL)
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 || filepath.Ext(entry.Name()) != ".cache" {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() || info.ModTime().After(cutoff) {
+			continue
+		}
+
+		_ = os.Remove(filepath.Join(cacheDir, entry.Name()))
+	}
+
+	return nil
+}
+
 func loadRawCacheFromDisk(path string) (*cacheEntry, error) {
 	cachePath, err := getCachePath(path)
 	if err != nil {
@@ -225,6 +269,10 @@ func loadRawCacheFromDisk(path string) (*cacheEntry, error) {
 		return nil, err
 	}
 
+	if entry.SchemaVersion != cacheSchemaVersion {
+		return nil, fmt.Errorf("cache schema mismatch: got %d, want %d", entry.SchemaVersion, cacheSchemaVersion)
+	}
+
 	return &entry, nil
 }
 
@@ -240,7 +288,7 @@ func loadCacheFromDisk(path string) (*cacheEntry, error) {
 	}
 
 	scanAge := time.Since(entry.ScanTime)
-	if scanAge > 7*24*time.Hour {
+	if scanAge > analyzerCacheTTL {
 		return nil, fmt.Errorf("cache expired: too old")
 	}
 
@@ -293,13 +341,14 @@ func saveCacheToDiskWithOptions(path string, result scanResult, needsRefresh boo
 	}
 
 	entry := cacheEntry{
-		Entries:      result.Entries,
-		LargeFiles:   result.LargeFiles,
-		TotalSize:    result.TotalSize,
-		TotalFiles:   result.TotalFiles,
-		ModTime:      info.ModTime(),
-		ScanTime:     time.Now(),
-		NeedsRefresh: needsRefresh,
+		Entries:       result.Entries,
+		LargeFiles:    result.LargeFiles,
+		TotalSize:     result.TotalSize,
+		TotalFiles:    result.TotalFiles,
+		ModTime:       info.ModTime(),
+		ScanTime:      time.Now(),
+		NeedsRefresh:  needsRefresh,
+		SchemaVersion: cacheSchemaVersion,
 	}
 
 	file, err := os.Create(cachePath)
@@ -403,9 +452,7 @@ func prefetchOverviewCache(ctx context.Context) {
 		default:
 		}
 
-		wg.Add(1)
-		go func(path string) {
-			defer wg.Done()
+		wg.Go(func() {
 			select {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
@@ -417,7 +464,7 @@ func prefetchOverviewCache(ctx context.Context) {
 			if err == nil && size > 0 {
 				_ = storeOverviewSize(path, size)
 			}
-		}(path)
+		})
 	}
 	wg.Wait()
 }

@@ -120,6 +120,66 @@ func TestScanPathConcurrentBasic(t *testing.T) {
 	}
 }
 
+// TestScanPathConcurrentDedupsHardlinks guards #906: a file with multiple
+// hardlinks (e.g. Final Cut Pro managed media) must be counted once, the way
+// `du` does, instead of once per link.
+func TestScanPathConcurrentDedupsHardlinks(t *testing.T) {
+	root := t.TempDir()
+
+	nested := filepath.Join(root, "nested")
+	other := filepath.Join(root, "other")
+	for _, d := range []string{nested, other} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	original := filepath.Join(nested, "media.bin")
+	if err := os.WriteFile(original, []byte(strings.Repeat("x", 4096)), 0o644); err != nil {
+		t.Fatalf("write original: %v", err)
+	}
+	// Two more hardlinks to the same inode, one in this dir and one in a
+	// sibling dir, so the shared scan-wide dedup set is exercised.
+	for _, link := range []string{
+		filepath.Join(nested, "media-copy.bin"),
+		filepath.Join(other, "media-link.bin"),
+	} {
+		if err := os.Link(original, link); err != nil {
+			t.Fatalf("hardlink %s: %v", link, err)
+		}
+	}
+	// An unrelated plain file that must still be counted in full.
+	plain := filepath.Join(other, "plain.bin")
+	if err := os.WriteFile(plain, []byte("plaindata"), 0o644); err != nil {
+		t.Fatalf("write plain: %v", err)
+	}
+
+	var filesScanned, dirsScanned, bytesScanned int64
+	current := &atomic.Value{}
+	current.Store("")
+
+	result, err := scanPathConcurrent(root, &filesScanned, &dirsScanned, &bytesScanned, current)
+	if err != nil {
+		t.Fatalf("scanPathConcurrent returned error: %v", err)
+	}
+
+	mediaInfo, err := os.Lstat(original)
+	if err != nil {
+		t.Fatalf("stat original: %v", err)
+	}
+	plainInfo, err := os.Lstat(plain)
+	if err != nil {
+		t.Fatalf("stat plain: %v", err)
+	}
+	want := getActualFileSize(original, mediaInfo) + getActualFileSize(plain, plainInfo)
+	if result.TotalSize != want {
+		t.Fatalf("expected hardlinked media counted once (total %d), got %d", want, result.TotalSize)
+	}
+	if !result.dedupedHardlink {
+		t.Fatalf("expected dedupedHardlink flag to be set when a hardlink is deduped")
+	}
+}
+
 func TestPerformScanForJSONCountsTopLevelFiles(t *testing.T) {
 	root := t.TempDir()
 
@@ -335,6 +395,91 @@ func TestCacheSaveLoadRoundTrip(t *testing.T) {
 	}
 	if len(cache.LargeFiles) != len(result.LargeFiles) {
 		t.Fatalf("large file count mismatch: want %d, got %d", len(result.LargeFiles), len(cache.LargeFiles))
+	}
+}
+
+func TestPruneAnalyzerCacheDirRemovesOnlyExpiredCacheFiles(t *testing.T) {
+	cacheDir := t.TempDir()
+	now := time.Now()
+	oldTime := now.Add(-analyzerCacheTTL - time.Hour)
+	freshTime := now.Add(-time.Hour)
+
+	oldCache := filepath.Join(cacheDir, "old.cache")
+	freshCache := filepath.Join(cacheDir, "fresh.cache")
+	namedState := filepath.Join(cacheDir, overviewCacheFile)
+	cacheDirEntry := filepath.Join(cacheDir, "directory.cache")
+	symlinkTarget := filepath.Join(cacheDir, "target")
+	symlinkCache := filepath.Join(cacheDir, "link.cache")
+
+	for _, path := range []string{oldCache, freshCache, namedState, symlinkTarget} {
+		if err := os.WriteFile(path, []byte("cache"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	if err := os.Mkdir(cacheDirEntry, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir entry: %v", err)
+	}
+	if err := os.Symlink(symlinkTarget, symlinkCache); err != nil {
+		t.Fatalf("symlink cache entry: %v", err)
+	}
+
+	for _, path := range []string{oldCache, namedState, cacheDirEntry, symlinkCache} {
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatalf("chtimes %s: %v", path, err)
+		}
+	}
+	if err := os.Chtimes(freshCache, freshTime, freshTime); err != nil {
+		t.Fatalf("chtimes fresh cache: %v", err)
+	}
+
+	if err := pruneAnalyzerCacheDir(cacheDir, now); err != nil {
+		t.Fatalf("pruneAnalyzerCacheDir: %v", err)
+	}
+
+	if _, err := os.Stat(oldCache); !os.IsNotExist(err) {
+		t.Fatalf("expected expired cache file to be removed, stat err: %v", err)
+	}
+	for _, path := range []string{freshCache, namedState, cacheDirEntry, symlinkCache} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("expected %s to be preserved: %v", path, err)
+		}
+	}
+}
+
+func TestPruneAnalyzerCacheDirMissingDirectory(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	if err := pruneAnalyzerCacheDir(missing, time.Now()); err != nil {
+		t.Fatalf("expected missing cache dir to be ignored, got: %v", err)
+	}
+}
+
+func TestPruneAnalyzerCacheDirIgnoresRemoveFailures(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can remove files from read-only directories")
+	}
+
+	cacheDir := t.TempDir()
+	oldCache := filepath.Join(cacheDir, "old.cache")
+	if err := os.WriteFile(oldCache, []byte("cache"), 0o644); err != nil {
+		t.Fatalf("write old cache: %v", err)
+	}
+	oldTime := time.Now().Add(-analyzerCacheTTL - time.Hour)
+	if err := os.Chtimes(oldCache, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes old cache: %v", err)
+	}
+
+	if err := os.Chmod(cacheDir, 0o555); err != nil {
+		t.Fatalf("chmod cache dir read-only: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(cacheDir, 0o755)
+	}()
+
+	if err := pruneAnalyzerCacheDir(cacheDir, time.Now()); err != nil {
+		t.Fatalf("expected remove failure to be ignored, got: %v", err)
+	}
+	if _, err := os.Stat(oldCache); err != nil {
+		t.Fatalf("expected failed removal to leave cache file in place: %v", err)
 	}
 }
 

@@ -98,6 +98,61 @@ func TestExtractPlistUint(t *testing.T) {
 	})
 }
 
+func TestCollectDisksFastSkipsSlowCorrections(t *testing.T) {
+	origPartitions := diskPartitionsFunc
+	origUsage := diskUsageFunc
+	origRunCmd := runCmd
+	origCommandExists := commandExists
+	t.Cleanup(func() {
+		diskPartitionsFunc = origPartitions
+		diskUsageFunc = origUsage
+		runCmd = origRunCmd
+		commandExists = origCommandExists
+	})
+
+	const rawTotal = uint64(2 * 1024 * 1024 * 1024)
+	const rawUsed = uint64(1024 * 1024 * 1024)
+	diskPartitionsFunc = func(all bool) ([]disk.PartitionStat, error) {
+		if all {
+			t.Fatalf("collectDisksFast() should request physical partitions only")
+		}
+		return []disk.PartitionStat{
+			{Device: "/dev/disk3s1s1", Mountpoint: "/", Fstype: "apfs"},
+		}, nil
+	}
+	diskUsageFunc = func(path string) (*disk.UsageStat, error) {
+		if path != "/" {
+			t.Fatalf("unexpected disk usage path %q", path)
+		}
+		return &disk.UsageStat{
+			Path:        path,
+			Fstype:      "apfs",
+			Total:       rawTotal,
+			Used:        rawUsed,
+			UsedPercent: 50,
+		}, nil
+	}
+	commandExists = func(name string) bool {
+		t.Fatalf("collectDisksFast() should not check external command %q", name)
+		return false
+	}
+	runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
+		t.Fatalf("collectDisksFast() should not run external command %q", name)
+		return "", errors.New("unexpected command")
+	}
+
+	got, err := collectDisksFast()
+	if err != nil {
+		t.Fatalf("collectDisksFast() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("collectDisksFast() returned %d disks, want 1: %#v", len(got), got)
+	}
+	if got[0].Total != rawTotal || got[0].Used != rawUsed || got[0].UsedPercent != 50 {
+		t.Fatalf("collectDisksFast() should keep raw usage, got %#v", got[0])
+	}
+}
+
 func TestCorrectDiskTotalBytes(t *testing.T) {
 	origRunCmd := runCmd
 	origCommandExists := commandExists

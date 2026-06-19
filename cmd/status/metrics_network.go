@@ -23,17 +23,17 @@ const (
 
 var noiseInterfacePrefixes = [...]string{"lo", "awdl", "utun", "llw", "bridge", "gif", "stf", "xhc", "anpi", "ap"}
 
-func collectIOCountersSafely(pernic bool) (stats []net.IOCountersStat, err error) {
+func collectIOCountersSafely() (stats []net.IOCountersStat, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic collecting network counters: %v", r)
 		}
 	}()
-	return ioCountersFunc(pernic)
+	return ioCountersFunc(true)
 }
 
 func (c *Collector) primeNetworkCounters(now time.Time) {
-	stats, err := collectIOCountersSafely(true)
+	stats, err := collectIOCountersSafely()
 	if err != nil {
 		return
 	}
@@ -43,7 +43,7 @@ func (c *Collector) primeNetworkCounters(now time.Time) {
 	}
 }
 
-func (c *Collector) collectNetwork(now time.Time) ([]NetworkStatus, error) {
+func (c *Collector) collectNetwork(now time.Time) []NetworkStatus {
 	if c.prevNet == nil {
 		c.prevNet = make(map[string]net.IOCountersStat)
 	}
@@ -54,13 +54,13 @@ func (c *Collector) collectNetwork(now time.Time) ([]NetworkStatus, error) {
 		c.txHistoryBuf = NewRingBuffer(NetworkHistorySize)
 	}
 
-	stats, err := collectIOCountersSafely(true)
+	stats, err := collectIOCountersSafely()
 	if err != nil {
 		// Some restricted environments can break netstat-backed collectors.
 		// Degrade gracefully to keep status output available.
 		c.rxHistoryBuf.Add(0)
 		c.txHistoryBuf.Add(0)
-		return nil, nil
+		return nil
 	}
 
 	// Map interface IPs.
@@ -119,7 +119,7 @@ func (c *Collector) collectNetwork(now time.Time) ([]NetworkStatus, error) {
 	c.rxHistoryBuf.Add(totalRx)
 	c.txHistoryBuf.Add(totalTx)
 
-	return result, nil
+	return result
 }
 
 func (c *Collector) getInterfaceIPsCached(now time.Time) map[string]string {

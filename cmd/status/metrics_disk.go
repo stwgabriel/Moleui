@@ -44,8 +44,21 @@ var skipDiskFSTypes = map[string]bool{
 	"webdav":  true,
 }
 
+var (
+	diskPartitionsFunc = disk.Partitions
+	diskUsageFunc      = disk.Usage
+)
+
 func collectDisks() ([]DiskStatus, error) {
-	partitions, err := disk.Partitions(false)
+	return collectDisksWithCorrections(true)
+}
+
+func collectDisksFast() ([]DiskStatus, error) {
+	return collectDisksWithCorrections(false)
+}
+
+func collectDisksWithCorrections(useCorrections bool) ([]DiskStatus, error) {
+	partitions, err := diskPartitionsFunc(false)
 	if err != nil {
 		return nil, err
 	}
@@ -66,12 +79,12 @@ func collectDisks() ([]DiskStatus, error) {
 		if seenDevice[baseDevice] {
 			continue
 		}
-		usage, err := disk.Usage(part.Mountpoint)
+		usage, err := diskUsageFunc(part.Mountpoint)
 		if err != nil || usage.Total == 0 {
 			continue
 		}
 		total := usage.Total
-		if runtime.GOOS == "darwin" {
+		if useCorrections && runtime.GOOS == "darwin" {
 			total = correctDiskTotalBytes(part.Mountpoint, total)
 		}
 		// Skip <1GB volumes.
@@ -85,7 +98,7 @@ func collectDisks() ([]DiskStatus, error) {
 		}
 		used := usage.Used
 		usedPercent := usage.UsedPercent
-		if runtime.GOOS == "darwin" && strings.ToLower(part.Fstype) == "apfs" {
+		if useCorrections && runtime.GOOS == "darwin" && strings.ToLower(part.Fstype) == "apfs" {
 			used, usedPercent = correctAPFSDiskUsage(part.Mountpoint, total, usage.Used)
 		}
 
@@ -96,12 +109,15 @@ func collectDisks() ([]DiskStatus, error) {
 			Total:       total,
 			UsedPercent: usedPercent,
 			Fstype:      part.Fstype,
+			External:    !useCorrections && strings.HasPrefix(part.Mountpoint, "/Volumes/"),
 		})
 		seenDevice[baseDevice] = true
 		seenVolume[volKey] = true
 	}
 
-	annotateDiskTypes(disks)
+	if useCorrections {
+		annotateDiskTypes(disks)
+	}
 
 	sort.Slice(disks, func(i, j int) bool {
 		// First, prefer internal disks over external

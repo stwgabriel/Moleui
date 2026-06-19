@@ -94,6 +94,46 @@ func TestMoveToTrashRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestValidateTrashTargetRejectsOrbStackLiveData(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	tests := []string{
+		filepath.Join(home, "Library", "Group Containers", "HUAQ24HBR6.dev.orbstack"),
+		filepath.Join(home, "Library", "Group Containers", "HUAQ24HBR6.dev.orbstack", "data"),
+		filepath.Join(home, "Library", "Group Containers", "HUAQ24HBR6.dev.orbstack", "data", "data.img.raw"),
+		filepath.Join(home, ".orbstack"),
+		filepath.Join(home, ".orbstack", "state.db"),
+	}
+
+	for _, path := range tests {
+		t.Run(path, func(t *testing.T) {
+			if err := validateTrashTarget(path); err == nil || !strings.Contains(err.Error(), "protected path") {
+				t.Fatalf("validateTrashTarget(%q) error = %v, want protected path error", path, err)
+			}
+		})
+	}
+}
+
+func TestValidateTrashTargetAllowsRegularUserPaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	tests := []string{
+		filepath.Join(home, "Downloads", "old.zip"),
+		filepath.Join(home, "Library", "Caches", "example.cache"),
+		filepath.Join(home, "Library", "Group Containers", "group.com.example.tool", "Library", "Caches", "item"),
+	}
+
+	for _, path := range tests {
+		t.Run(path, func(t *testing.T) {
+			if err := validateTrashTarget(path); err != nil {
+				t.Fatalf("validateTrashTarget(%q) error = %v, want nil", path, err)
+			}
+		})
+	}
+}
+
 func TestValidatePath(t *testing.T) {
 	tests := []struct {
 		name    string

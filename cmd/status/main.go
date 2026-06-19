@@ -14,12 +14,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const refreshInterval = time.Second
+const (
+	refreshInterval      = time.Second
+	processWatchInterval = refreshInterval
+	slowRefreshInterval  = 30 * time.Second
+)
 
 var (
-	Version   = "dev"
-	BuildTime = ""
-
 	// Command-line flags
 	jsonOutput       = flag.Bool("json", false, "output metrics as JSON instead of TUI")
 	processLimit     = flag.Int("process-limit", 5, "number of processes to include in top_processes; 0 includes all")
@@ -45,22 +46,33 @@ func shouldUseJSONOutput(forceJSON bool, stdout *os.File) bool {
 type tickMsg struct{}
 type animTickMsg struct{}
 
+type collectionMode int
+
+const (
+	collectionFast collectionMode = iota
+	collectionProcess
+	collectionFull
+)
+
 type metricsMsg struct {
 	data MetricsSnapshot
 	err  error
+	mode collectionMode
 }
 
 type model struct {
-	collector   *Collector
-	width       int
-	height      int
-	metrics     MetricsSnapshot
-	errMessage  string
-	ready       bool
-	lastUpdated time.Time
-	collecting  bool
-	animFrame   int
-	catHidden   bool // true = hidden, false = visible
+	collector     *Collector
+	width         int
+	height        int
+	metrics       MetricsSnapshot
+	errMessage    string
+	ready         bool
+	lastUpdated   time.Time
+	lastFullAt    time.Time
+	lastProcessAt time.Time
+	collecting    bool
+	animFrame     int
+	catHidden     bool // true = hidden, false = visible
 }
 
 // padViewToHeight ensures the rendered frame always overwrites the full
@@ -171,8 +183,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.collecting = true
-		return m, m.collectCmd()
+		return m, m.collectCmd(m.nextCollectionMode(time.Now()))
 	case metricsMsg:
+		wasReady := m.ready
 		if msg.err != nil {
 			m.errMessage = msg.err.Error()
 		} else {
@@ -180,12 +193,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.metrics = msg.data
 		m.lastUpdated = msg.data.CollectedAt
+		if msg.mode == collectionFull && msg.err == nil {
+			m.lastFullAt = msg.data.CollectedAt
+		}
+		if (msg.mode == collectionProcess || msg.mode == collectionFull) && msg.err == nil {
+			m.lastProcessAt = msg.data.CollectedAt
+		}
 		m.collecting = false
 		// Mark ready after first successful data collection.
 		if !m.ready {
 			m.ready = true
 		}
-		return m, tickAfter(refreshInterval)
+		delay := refreshInterval
+		if !wasReady {
+			delay = 0
+		}
+		return m, tickAfter(delay)
 	case animTickMsg:
 		m.animFrame++
 		return m, animTickWithSpeed(m.metrics.CPU.Usage)
@@ -241,10 +264,34 @@ func (m model) View() string {
 	return padViewToHeight(output, m.height)
 }
 
-func (m model) collectCmd() tea.Cmd {
+func (m model) nextCollectionMode(now time.Time) collectionMode {
+	if !m.ready {
+		return collectionFast
+	}
+	if m.lastFullAt.IsZero() || now.Sub(m.lastFullAt) >= slowRefreshInterval {
+		return collectionFull
+	}
+	if m.lastProcessAt.IsZero() || now.Sub(m.lastProcessAt) >= processWatchInterval {
+		return collectionProcess
+	}
+	return collectionFast
+}
+
+func (m model) collectCmd(mode collectionMode) tea.Cmd {
 	return func() tea.Msg {
-		data, err := m.collector.Collect()
-		return metricsMsg{data: data, err: err}
+		var (
+			data MetricsSnapshot
+			err  error
+		)
+		switch mode {
+		case collectionFull:
+			data, err = m.collector.Collect()
+		case collectionProcess:
+			data, err = m.collector.CollectProcesses()
+		default:
+			data, err = m.collector.CollectFast()
+		}
+		return metricsMsg{data: data, err: err, mode: mode}
 	}
 }
 

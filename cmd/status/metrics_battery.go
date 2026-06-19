@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -16,10 +17,12 @@ import (
 
 var (
 	// Cache for heavy system_profiler output.
-	powerCacheMu  sync.Mutex
-	lastPowerAt   time.Time
-	cachedPower   string
-	powerCacheTTL = 30 * time.Second
+	powerCacheMu    sync.Mutex
+	lastPowerAt     time.Time
+	lastPowerJSONAt time.Time
+	cachedPower     string
+	cachedPowerJSON string
+	powerCacheTTL   = 30 * time.Second
 )
 
 func collectBatteries() (batts []BatteryStatus, err error) {
@@ -33,7 +36,7 @@ func collectBatteries() (batts []BatteryStatus, err error) {
 	// macOS: pmset for real-time percentage/status.
 	if runtime.GOOS == "darwin" && commandExists("pmset") {
 		if out, err := runCmd(context.Background(), "pmset", "-g", "batt"); err == nil {
-			// Health/cycles/capacity from cached system_profiler.
+			// Health/cycles/capacity from AppleSmartBattery and cached system_profiler.
 			health, cycles, capacity := getCachedPowerData()
 			if batts := parsePMSet(out, health, cycles, capacity); len(batts) > 0 {
 				return batts, nil
@@ -121,13 +124,38 @@ func parsePMSet(raw string, health string, cycles int, capacity int) []BatterySt
 	return out
 }
 
-// getCachedPowerData returns condition, cycles, and capacity from cached system_profiler.
+// getCachedPowerData returns condition, cycles, and capacity from macOS power sources.
 func getCachedPowerData() (health string, cycles int, capacity int) {
+	health, cycles, capacity = getCachedSystemPowerData()
+	ioregCycles, ioregCapacity := getAppleSmartBatteryHealthData()
+	return mergeBatteryHealthData(health, cycles, capacity, ioregCycles, ioregCapacity)
+}
+
+func getCachedSystemPowerData() (health string, cycles int, capacity int) {
+	if out := getSystemPowerJSONOutput(); out != "" {
+		if health, cycles, capacity, ok := parseSystemPowerJSON(out); ok {
+			return health, cycles, capacity
+		}
+	}
+
 	out := getSystemPowerOutput()
 	if out == "" {
 		return "", 0, 0
 	}
+	return parseSystemPowerText(out)
+}
 
+func mergeBatteryHealthData(health string, cycles int, capacity int, ioregCycles int, ioregCapacity int) (string, int, int) {
+	if ioregCycles > 0 {
+		cycles = ioregCycles
+	}
+	if ioregCapacity > 0 {
+		capacity = ioregCapacity
+	}
+	return health, cycles, capacity
+}
+
+func parseSystemPowerText(out string) (health string, cycles int, capacity int) {
 	for line := range strings.Lines(out) {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "cycle count") {
@@ -142,13 +170,148 @@ func getCachedPowerData() (health string, cycles int, capacity int) {
 		}
 		if strings.Contains(lower, "maximum capacity") {
 			if _, after, found := strings.Cut(line, ":"); found {
-				capacityStr := strings.TrimSpace(after)
-				capacityStr = strings.TrimSuffix(capacityStr, "%")
-				capacity, _ = strconv.Atoi(strings.TrimSpace(capacityStr))
+				capacity = parsePercentInt(after)
 			}
 		}
 	}
 	return health, cycles, capacity
+}
+
+type systemPowerJSON struct {
+	SPPowerDataType []struct {
+		BatteryHealthInfo struct {
+			CycleCount      int    `json:"sppower_battery_cycle_count"`
+			Health          string `json:"sppower_battery_health"`
+			MaximumCapacity string `json:"sppower_battery_health_maximum_capacity"`
+		} `json:"sppower_battery_health_info"`
+	} `json:"SPPowerDataType"`
+}
+
+func parseSystemPowerJSON(raw string) (health string, cycles int, capacity int, ok bool) {
+	var payload systemPowerJSON
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return "", 0, 0, false
+	}
+
+	for _, item := range payload.SPPowerDataType {
+		info := item.BatteryHealthInfo
+		parsedCapacity := parsePercentInt(info.MaximumCapacity)
+		if info.Health != "" || info.CycleCount > 0 || parsedCapacity > 0 {
+			return info.Health, info.CycleCount, parsedCapacity, true
+		}
+	}
+	return "", 0, 0, false
+}
+
+func parsePercentInt(raw string) int {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimSuffix(raw, "%")
+	raw = strings.TrimSpace(raw)
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func getAppleSmartBatteryHealthData() (cycles int, capacity int) {
+	if runtime.GOOS != "darwin" || !commandExists("ioreg") {
+		return 0, 0
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	out, err := runCmd(ctx, "ioreg", "-rn", "AppleSmartBattery")
+	if err != nil {
+		return 0, 0
+	}
+	return parseAppleSmartBatteryHealth(out)
+}
+
+func parseAppleSmartBatteryHealth(out string) (cycles int, capacity int) {
+	var design, nominal, rawMax int
+	for line := range strings.Lines(out) {
+		line = strings.TrimSpace(line)
+		if cycles == 0 {
+			if raw, found := ioRegValueForKey(line, "CycleCount"); found {
+				if value, err := strconv.Atoi(raw); err == nil && value > 0 && value < 100000 {
+					cycles = value
+				}
+			}
+		}
+		if design == 0 {
+			if raw, found := ioRegValueForKey(line, "DesignCapacity"); found {
+				if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+					design = value
+				}
+			}
+		}
+		if nominal == 0 {
+			if raw, found := ioRegValueForKey(line, "NominalChargeCapacity"); found {
+				if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+					nominal = value
+				}
+			}
+		}
+		if rawMax == 0 {
+			if raw, found := ioRegValueForKey(line, "AppleRawMaxCapacity"); found {
+				if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+					rawMax = value
+				}
+			}
+		}
+	}
+	return cycles, batteryHealthPercent(design, nominal, rawMax)
+}
+
+// batteryHealthPercent mirrors the algorithm used by the Mole Mac app
+// (SystemMetricsCollector.batteryHealthPercent): NominalChargeCapacity is
+// preferred over AppleRawMaxCapacity, the ratio is rounded half-away-from-zero,
+// and the result is clamped to [0, 100].
+func batteryHealthPercent(design, nominal, rawMax int) int {
+	if design <= 0 {
+		return 0
+	}
+	capacity := nominal
+	if capacity == 0 {
+		capacity = rawMax
+	}
+	if capacity <= 0 {
+		return 0
+	}
+	pct := math.Round(float64(capacity) * 100.0 / float64(design))
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	return int(pct)
+}
+
+func getSystemPowerJSONOutput() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+
+	powerCacheMu.Lock()
+	defer powerCacheMu.Unlock()
+
+	now := time.Now()
+	if cachedPowerJSON != "" && now.Sub(lastPowerJSONAt) < powerCacheTTL {
+		return cachedPowerJSON
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	out, err := runCmd(ctx, "system_profiler", "SPPowerDataType", "-json")
+	if err == nil {
+		cachedPowerJSON = out
+		lastPowerJSONAt = now
+	}
+	return cachedPowerJSON
 }
 
 func getSystemPowerOutput() string {

@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+var collectProcessesFunc = collectProcesses
+
 func collectProcesses() ([]ProcessInfo, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, nil

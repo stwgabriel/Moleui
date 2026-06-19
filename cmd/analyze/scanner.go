@@ -26,12 +26,43 @@ import (
 
 var scanGroup singleflight.Group
 
+// scanLimiter bundles the concurrency budgets used by a single scan pass.
+//
+// There are five separate semaphores on purpose: each protects a different
+// scarce resource. Collapsing two of them changes scaling behavior in ways
+// that are easy to get wrong; see the per-field notes before adjusting.
 type scanLimiter struct {
-	entrySem   chan struct{}
-	dirSem     chan struct{}
-	duSem      chan struct{}
+	// entrySem caps the number of in-flight top-level entry workers (one per
+	// child of the root being scanned). Acquired with tryAcquireEntry so the
+	// caller can fall back to inline scanning when the budget is saturated.
+	entrySem chan struct{}
+
+	// dirSem caps the number of concurrent recursive directory walkers
+	// inside calculateDirSizeConcurrent. Independent of entrySem because a
+	// single entry can fan out into many directory walkers.
+	dirSem chan struct{}
+
+	// duSem caps how many `du` subprocesses execute concurrently. Tuned
+	// low (NumCPU capped at 4) because each du process is itself heavily
+	// I/O parallel and saturating the disk hurts wall-clock latency.
+	duSem chan struct{}
+
+	// duQueueSem caps how many goroutines are *queued* to run du.
+	// Distinct from duSem so we don't spawn one goroutine per pending
+	// directory and grow memory linearly with the input set; without
+	// this bound, large home dirs allocate thousands of stacks waiting
+	// on duSem. Sized at 2x duSem to keep the worker side warm without
+	// unbounded queueing.
 	duQueueSem chan struct{}
-	fastSem    chan struct{}
+
+	// fastSem caps the workers used by the fallback fast-sizing path
+	// when du is unavailable or rejected. Same scale as entrySem because
+	// the fast path replaces a single du subprocess with one walker.
+	fastSem chan struct{}
+
+	// seen tracks (dev, ino) of hardlinked files counted so far in this
+	// scan so a file with multiple links is counted once, matching `du`.
+	seen sync.Map
 }
 
 func newScanLimiter(childCount int) *scanLimiter {
@@ -135,6 +166,7 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 	var localFilesScanned int64
 	var localBytesScanned int64
 	var subtreeFilesScanned atomic.Int64
+	var dedupedHardlink atomic.Bool
 
 	collectAllEntries := entryLimit <= 0
 	var collectedEntries []dirEntry
@@ -161,9 +193,7 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 	largeFileChan := make(chan fileEntry, maxLargeFiles*2)
 
 	var collectorWg sync.WaitGroup
-	collectorWg.Add(2)
-	go func() {
-		defer collectorWg.Done()
+	collectorWg.Go(func() {
 		for entry := range entryChan {
 			if collectAllEntries {
 				collectedEntries = append(collectedEntries, entry)
@@ -177,9 +207,8 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 				heap.Push(entriesHeap, entry)
 			}
 		}
-	}()
-	go func() {
-		defer collectorWg.Done()
+	})
+	collectorWg.Go(func() {
 		for file := range largeFileChan {
 			if largeFilesHeap.Len() < maxLargeFiles {
 				heap.Push(largeFilesHeap, file)
@@ -192,7 +221,7 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 				atomic.StoreInt64(&largeFileMinSize, (*largeFilesHeap)[0].Size)
 			}
 		}
-	}()
+	})
 
 	isRootDir := root == "/"
 	home := os.Getenv("HOME")
@@ -255,6 +284,9 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 					if result.TotalFiles > 0 {
 						subtreeFilesScanned.Add(result.TotalFiles)
 					}
+					if result.dedupedHardlink {
+						dedupedHardlink.Store(true)
+					}
 					atomic.AddInt64(dirsScanned, 1)
 
 					trySend(entryChan, dirEntry{
@@ -266,12 +298,10 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 					}, scanSendTimeout)
 				}
 				if limiter.tryAcquireEntry() {
-					wg.Add(1)
-					go func(name, path string) {
-						defer wg.Done()
+					wg.Go(func() {
 						defer limiter.releaseEntry()
-						processDir(name, path)
-					}(child.Name(), fullPath)
+						processDir(child.Name(), fullPath)
+					})
 				} else {
 					processDir(child.Name(), fullPath)
 				}
@@ -281,30 +311,28 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 			// Folded dirs: fast size without expanding.
 			if shouldFoldDirWithPath(child.Name(), fullPath) {
 				duQueueSem <- struct{}{}
-				wg.Add(1)
-				go func(name, path string) {
-					defer wg.Done()
+				wg.Go(func() {
 					defer func() { <-duQueueSem }()
 
 					size, err := func() (int64, error) {
 						duSem <- struct{}{}
 						defer func() { <-duSem }()
-						return getDirectorySizeFromDu(path)
+						return getDirectorySizeFromDu(fullPath)
 					}()
 					if err != nil || size <= 0 {
-						size = calculateDirSizeFastWithLimiter(path, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
+						size = calculateDirSizeFastWithLimiter(fullPath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 					}
 					atomic.AddInt64(&total, size)
 					atomic.AddInt64(dirsScanned, 1)
 
 					trySend(entryChan, dirEntry{
-						Name:       name,
-						Path:       path,
+						Name:       child.Name(),
+						Path:       fullPath,
 						Size:       size,
 						IsDir:      true,
 						LastAccess: time.Time{},
 					}, scanSendTimeout)
-				}(child.Name(), fullPath)
+				})
 				continue
 			}
 
@@ -313,6 +341,9 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 				atomic.AddInt64(&total, result.TotalSize)
 				if result.TotalFiles > 0 {
 					subtreeFilesScanned.Add(result.TotalFiles)
+				}
+				if result.dedupedHardlink {
+					dedupedHardlink.Store(true)
 				}
 				atomic.AddInt64(dirsScanned, 1)
 
@@ -325,12 +356,10 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 				}, scanSendTimeout)
 			}
 			if limiter.tryAcquireEntry() {
-				wg.Add(1)
-				go func(name, path string) {
-					defer wg.Done()
+				wg.Go(func() {
 					defer limiter.releaseEntry()
-					processDir(name, path)
-				}(child.Name(), fullPath)
+					processDir(child.Name(), fullPath)
+				})
 			} else {
 				processDir(child.Name(), fullPath)
 			}
@@ -341,8 +370,11 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 		if err != nil {
 			continue
 		}
-		// Actual disk usage for sparse/cloud files.
-		size := getActualFileSize(fullPath, info)
+		// Actual disk usage for sparse/cloud files, deduping hardlinks.
+		size, deduped := countableFileSize(info, &limiter.seen)
+		if deduped {
+			dedupedHardlink.Store(true)
+		}
 		atomic.AddInt64(&total, size)
 		localFilesScanned++
 		localBytesScanned += size
@@ -405,10 +437,11 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 	}
 
 	return scanResult{
-		Entries:    entries,
-		LargeFiles: largeFiles,
-		TotalSize:  total,
-		TotalFiles: localFilesScanned + subtreeFilesScanned.Load(),
+		Entries:         entries,
+		LargeFiles:      largeFiles,
+		TotalSize:       total,
+		TotalFiles:      localFilesScanned + subtreeFilesScanned.Load(),
+		dedupedHardlink: dedupedHardlink.Load(),
 	}, nil
 }
 
@@ -454,7 +487,11 @@ func scanSubdirWithCacheOption(root string, largeFileChan chan<- fileEntry, larg
 	result, err := scanPathConcurrentWithLimiterAndCache(root, filesScanned, dirsScanned, bytesScanned, currentPath, false, maxEntries, limiter, useCache)
 	if err == nil {
 		publishLargeFiles(result.LargeFiles, largeFileChan)
-		_ = saveCacheToDiskWithOptions(root, result, true)
+		// A subtree whose size depended on hardlink dedup is scan-order
+		// dependent; caching it would poison standalone re-scans.
+		if !result.dedupedHardlink {
+			_ = saveCacheToDiskWithOptions(root, result, true)
+		}
 		return result
 	}
 
@@ -529,12 +566,10 @@ func calculateDirSizeFastWithLimiter(root string, limiter *scanLimiter, filesSca
 
 				select {
 				case sem <- struct{}{}:
-					wg.Add(1)
-					go func(p string) {
-						defer wg.Done()
+					wg.Go(func() {
 						defer func() { <-sem }()
-						walk(p)
-					}(subDir)
+						walk(subDir)
+					})
 				default:
 					// Fallback to synchronous traversal to avoid semaphore deadlock under high fan-out.
 					walk(subDir)
@@ -682,36 +717,32 @@ func calculateDirSizeConcurrent(root string, largeFileChan chan<- fileEntry, lar
 
 			if shouldFoldDirWithPath(child.Name(), fullPath) {
 				duQueueSem <- struct{}{}
-				wg.Add(1)
-				go func(path string) {
-					defer wg.Done()
+				wg.Go(func() {
 					defer func() { <-duQueueSem }()
 
 					size, err := func() (int64, error) {
 						duSem <- struct{}{}
 						defer func() { <-duSem }()
-						return getDirectorySizeFromDu(path)
+						return getDirectorySizeFromDu(fullPath)
 					}()
 					if err != nil || size <= 0 {
-						size = calculateDirSizeFastWithLimiter(path, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
+						size = calculateDirSizeFastWithLimiter(fullPath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 					} else {
 						atomic.AddInt64(bytesScanned, size)
 					}
 					total.Add(size)
-				}(fullPath)
+				})
 				continue
 			}
 
 			select {
 			case dirSem <- struct{}{}:
-				wg.Add(1)
-				go func(path string) {
-					defer wg.Done()
+				wg.Go(func() {
 					defer func() { <-dirSem }()
 
-					size := calculateDirSizeConcurrent(path, largeFileChan, largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath)
+					size := calculateDirSizeConcurrent(fullPath, largeFileChan, largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath)
 					total.Add(size)
-				}(fullPath)
+				})
 			default:
 				size := calculateDirSizeConcurrent(fullPath, largeFileChan, largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath)
 				localTotal += size
@@ -989,18 +1020,16 @@ func getDirectorySizeFromDuSkippingImmediateChild(path string, excludePath strin
 		}
 
 		sem <- struct{}{}
-		wg.Add(1)
-		go func(childPath string) {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 
-			size, err := runDuSize(childPath)
+			size, err := runDuSize(fullPath)
 			if err != nil {
 				recordErr(err)
 				return
 			}
 			atomic.AddInt64(&total, size)
-		}(fullPath)
+		})
 	}
 
 	wg.Wait()
@@ -1038,6 +1067,27 @@ func getDirectoryLogicalSizeWithExclude(path string, excludePath string) (int64,
 		return 0, err
 	}
 	return total, nil
+}
+
+// countableFileSize returns the on-disk size to attribute to a regular file.
+// Hardlinked files are deduplicated the way `du` does: the first link counts
+// its full size and subsequent links seen in the same scan count zero. The
+// bool reports whether this call was a deduplicated (zero-counted) hardlink.
+// A nil seen map disables deduplication.
+func countableFileSize(info fs.FileInfo, seen *sync.Map) (int64, bool) {
+	size := getActualFileSize("", info)
+	if seen == nil {
+		return size, false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Nlink <= 1 {
+		return size, false
+	}
+	key := [2]uint64{uint64(uint32(stat.Dev)), stat.Ino}
+	if _, loaded := seen.LoadOrStore(key, struct{}{}); loaded {
+		return 0, true
+	}
+	return size, false
 }
 
 func getActualFileSize(_ string, info fs.FileInfo) int64 {

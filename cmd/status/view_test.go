@@ -596,12 +596,12 @@ func TestColorizeTemp(t *testing.T) {
 	}{
 		{"very low", 20.0},
 		{"low", 40.0},
-		{"normal threshold", 55.9},
-		{"at warn threshold", 56.0},
-		{"warn range", 65.0},
-		{"just below danger", 75.9},
-		{"at danger threshold", 76.0},
-		{"high", 85.0},
+		{"normal range", 55.0},
+		{"at warn threshold", 65.0},
+		{"warn range", 75.0},
+		{"just below danger", 84.9},
+		{"at danger threshold", 85.0},
+		{"high", 92.0},
 		{"very high", 95.0},
 	}
 
@@ -966,6 +966,99 @@ func TestRenderHeaderErrorReturnsMoleOnce(t *testing.T) {
 	}
 }
 
+func TestStatusDiagnosisLineUsesTopCPUProcess(t *testing.T) {
+	m := MetricsSnapshot{
+		CPU: CPUStatus{Usage: 95},
+		TopProcesses: []ProcessInfo{
+			{Name: "Safari", CPU: 12},
+			{Name: "Xcode", CPU: 82},
+		},
+	}
+
+	got := statusDiagnosisLine(m)
+	if got != "Xcode high CPU" {
+		t.Fatalf("statusDiagnosisLine() = %q, want top CPU process", got)
+	}
+}
+
+func TestStatusDiagnosisLineUsesMemoryContributorWhenCPUIsCalm(t *testing.T) {
+	m := MetricsSnapshot{
+		CPU: CPUStatus{Usage: 20},
+		Memory: MemoryStatus{
+			UsedPercent: 86,
+			Pressure:    "warn",
+		},
+		TopProcesses: []ProcessInfo{
+			{Name: "Chrome", Memory: 31},
+			{Name: "Finder", Memory: 2},
+		},
+	}
+
+	got := statusDiagnosisLine(m)
+	if got != "Chrome memory pressure" {
+		t.Fatalf("statusDiagnosisLine() = %q, want memory contributor", got)
+	}
+}
+
+func TestStatusDiagnosisLineFallsBackToAllClear(t *testing.T) {
+	m := MetricsSnapshot{
+		CPU:            CPUStatus{Usage: 10},
+		Memory:         MemoryStatus{UsedPercent: 20, Pressure: "normal"},
+		HealthScoreMsg: "Excellent",
+	}
+
+	got := statusDiagnosisLine(m)
+	if got != "All clear" {
+		t.Fatalf("statusDiagnosisLine() = %q, want All clear", got)
+	}
+}
+
+func TestRenderProcessCardAddsInlineHintWithoutExtraRows(t *testing.T) {
+	card := renderProcessCard([]ProcessInfo{
+		{Name: "Chrome", CPU: 12, Memory: 22, MemoryBytes: 2 * 1024 * 1024 * 1024},
+		{Name: "Xcode", CPU: 95, Memory: 8, MemoryBytes: 512 * 1024 * 1024},
+	})
+
+	if len(card.lines) != 2 {
+		t.Fatalf("renderProcessCard() lines = %d, want 2", len(card.lines))
+	}
+	plain := stripANSI(strings.Join(card.lines, "\n"))
+	if !strings.Contains(plain, "2.0G") {
+		t.Fatalf("renderProcessCard() missing resident memory hint, got %q", plain)
+	}
+	if !strings.Contains(plain, "hot") {
+		t.Fatalf("renderProcessCard() missing cpu hint, got %q", plain)
+	}
+}
+
+func TestRenderProcessCardFallsBackToMemoryPercent(t *testing.T) {
+	card := renderProcessCard([]ProcessInfo{
+		{Name: "Chrome", CPU: 12, Memory: 22},
+	})
+
+	plain := stripANSI(strings.Join(card.lines, "\n"))
+	if !strings.Contains(plain, "M22%") {
+		t.Fatalf("renderProcessCard() missing memory percent fallback, got %q", plain)
+	}
+}
+
+func TestRenderHeaderUsesFastMetricSpecFallbacks(t *testing.T) {
+	const ram = uint64(16 * 1024 * 1024 * 1024)
+	const diskSize = uint64(512 * 1024 * 1024 * 1024)
+	m := MetricsSnapshot{
+		HealthScore: 90,
+		Memory:      MemoryStatus{Total: ram},
+		Disks:       []DiskStatus{{Mount: "/", Total: diskSize}},
+	}
+
+	header, _ := renderHeader(m, "", 0, 120, true)
+	plain := stripANSI(header)
+	want := humanBytes(ram) + "/" + humanBytes(diskSize)
+	if !strings.Contains(plain, want) {
+		t.Fatalf("renderHeader() should use fast metric specs %q, got %q", want, plain)
+	}
+}
+
 func TestRenderHeaderWrapsOnNarrowWidth(t *testing.T) {
 	m := MetricsSnapshot{
 		HealthScore: 91,
@@ -1061,7 +1154,7 @@ func TestRenderCardWrapsOnNarrowWidth(t *testing.T) {
 func TestRenderProcessCardShowsResidentMemory(t *testing.T) {
 	card := renderProcessCard([]ProcessInfo{
 		{Name: "Chrome", CPU: 12, Memory: 22, MemoryBytes: 2 * 1024 * 1024 * 1024},
-		{Name: "Xcode", CPU: 82, Memory: 8, MemoryBytes: 512 * 1024 * 1024},
+		{Name: "Xcode", CPU: 95, Memory: 8, MemoryBytes: 512 * 1024 * 1024},
 	})
 
 	if len(card.lines) != 2 {
@@ -1076,21 +1169,11 @@ func TestRenderProcessCardShowsResidentMemory(t *testing.T) {
 	}
 }
 
-func TestRenderProcessCardFallsBackToMemoryPercent(t *testing.T) {
-	card := renderProcessCard([]ProcessInfo{
-		{Name: "Chrome", CPU: 12, Memory: 22},
-	})
-
-	plain := stripANSI(strings.Join(card.lines, "\n"))
-	if !strings.Contains(plain, "M22%") {
-		t.Fatalf("renderProcessCard() missing memory percent fallback, got %q", plain)
-	}
-}
-
 func TestRenderMemoryCardHidesSwapSizeOnNarrowWidth(t *testing.T) {
 	card := renderMemoryCard(MemoryStatus{
 		Used:        8 << 30,
 		Total:       16 << 30,
+		Available:   8 << 30,
 		UsedPercent: 50.0,
 		SwapUsed:    482,
 		SwapTotal:   1000,
@@ -1110,6 +1193,7 @@ func TestRenderMemoryCardShowsSwapSizeOnWideWidth(t *testing.T) {
 	card := renderMemoryCard(MemoryStatus{
 		Used:        8 << 30,
 		Total:       16 << 30,
+		Available:   8 << 30,
 		UsedPercent: 50.0,
 		SwapUsed:    482,
 		SwapTotal:   1000,
@@ -1122,6 +1206,23 @@ func TestRenderMemoryCardShowsSwapSizeOnWideWidth(t *testing.T) {
 	swapLine := stripANSI(card.lines[2])
 	if !strings.Contains(swapLine, "/") {
 		t.Fatalf("renderMemoryCard() wide width should include swap size, got %q", swapLine)
+	}
+}
+
+func TestRenderMemoryCardUsesCollectedAvailableMemory(t *testing.T) {
+	card := renderMemoryCard(MemoryStatus{
+		Used:        12 << 30,
+		Total:       16 << 30,
+		Available:   9 << 30,
+		UsedPercent: 75.0,
+	}, 60)
+
+	plain := stripANSI(strings.Join(card.lines, "\n"))
+	if !strings.Contains(plain, "Free") || !strings.Contains(plain, "56.2%") {
+		t.Fatalf("renderMemoryCard() should derive free percent from Available, got %q", plain)
+	}
+	if !strings.Contains(plain, "Avail  9.0 GB") {
+		t.Fatalf("renderMemoryCard() should render collected Available memory, got %q", plain)
 	}
 }
 

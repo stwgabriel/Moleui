@@ -15,21 +15,21 @@ const (
 	healthIOWeight      = 10.0
 
 	// CPU.
-	cpuNormalThreshold = 30.0
-	cpuHighThreshold   = 70.0
+	cpuNormalThreshold = 50.0
+	cpuHighThreshold   = 85.0
 
 	// Memory.
-	memNormalThreshold     = 50.0
-	memHighThreshold       = 80.0
+	memNormalThreshold     = 70.0
+	memHighThreshold       = 88.0
 	memPressureWarnPenalty = 5.0
 	memPressureCritPenalty = 15.0
 
 	// Disk.
-	diskWarnThreshold = 70.0
-	diskCritThreshold = 90.0
+	diskWarnThreshold = 80.0
+	diskCritThreshold = 93.0
 
 	// Thermal.
-	thermalNormalThreshold = 60.0
+	thermalNormalThreshold = 65.0
 	thermalHighThreshold   = 85.0
 
 	// Disk IO (MB/s).
@@ -37,16 +37,21 @@ const (
 	ioHighThreshold   = 150.0
 
 	// Battery.
-	batteryCycleWarn   = 500
+	batteryCycleWarn   = 800
 	batteryCycleDanger = 900
-	batteryCapWarn     = 90
-	batteryCapDanger   = 80
+	batteryCapWarn     = 80
+	batteryCapDanger   = 60
 
 	// Uptime (seconds).
 	uptimeWarnDays   = 7
 	uptimeDangerDays = 14
 	uptimeWarnSecs   = uptimeWarnDays * 86400
 	uptimeDangerSecs = uptimeDangerDays * 86400
+
+	// Score display bands (shared with view.go score styling).
+	scoreExcellentThreshold = 85
+	scoreGoodThreshold      = 65
+	scoreFairThreshold      = 45
 )
 
 func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, diskIO DiskIOStatus, thermal ThermalStatus, batteries []BatteryStatus, uptimeSecs uint64) (int, string) {
@@ -167,16 +172,14 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	// Build message.
 	var msg string
 	switch {
-	case score >= 90:
+	case score >= scoreExcellentThreshold:
 		msg = "Excellent"
-	case score >= 75:
+	case score >= scoreGoodThreshold:
 		msg = "Good"
-	case score >= 60:
+	case score >= scoreFairThreshold:
 		msg = "Fair"
-	case score >= 40:
-		msg = "Poor"
 	default:
-		msg = "Critical"
+		msg = "Needs Attention"
 	}
 
 	if len(issues) > 0 {
