@@ -16,11 +16,20 @@ setup_file() {
 }
 
 teardown_file() {
-    rm -rf "$HOME"
-    export HOME="$ORIGINAL_HOME"
+    if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$HOME"
+    fi
+    if [[ -n "${ORIGINAL_HOME:-}" ]]; then
+        export HOME="$ORIGINAL_HOME"
+    fi
 }
 
 setup() {
+    # Safety: refuse to operate on a real home directory.
+    if [[ "$HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        printf 'FATAL: HOME is not a test temp dir: %s\n' "$HOME" >&2
+        return 1
+    fi
     mkdir -p "$HOME/Applications"
     mkdir -p "$HOME/Library/Caches"
     # Create fake Caskroom
@@ -76,6 +85,37 @@ EOF
     )
 
     [[ "$result" == "not_found" ]]
+}
+
+@test "brew list fallback requires brew info to mention the app" {
+    mkdir -p "$HOME/Applications/Owned.app" "$HOME/Applications/Other.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/brew.sh"
+
+brew() {
+    case "$*" in
+        "list --cask")
+            printf '%s\n' "owned"
+            ;;
+        "info --cask owned")
+            printf '%s\n' "app \"/Applications/Owned.app\""
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+export -f brew
+
+owned=$(_detect_cask_via_brew_list "$HOME/Applications/Owned.app" "Owned.app")
+[[ "$owned" == "owned" ]]
+! _detect_cask_via_brew_list "$HOME/Applications/Other.app" "Other.app"
+EOF
+
+    [ "$status" -eq 0 ]
 }
 
 @test "batch_uninstall_applications uses brew uninstall for casks (mocked)" {

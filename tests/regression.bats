@@ -256,6 +256,10 @@ printf '%s\n' "${normalized[@]}"
 (( elapsed_ms < LIMIT_MS ))
 EOF
 
+    if [ "$status" -ne 0 ]; then
+        printf 'normalize_paths_for_cleanup status=%s\n' "$status" >&3
+        printf '%s\n' "$output" >&3
+    fi
     [ "$status" -eq 0 ]
     [[ "$output" == *"COUNT=2"* ]]
 }

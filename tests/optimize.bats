@@ -14,7 +14,9 @@ setup_file() {
 }
 
 teardown_file() {
-	rm -rf "$HOME"
+	if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+		rm -rf "$HOME"
+	fi
 	if [[ -n "${ORIGINAL_HOME:-}" ]]; then
 		export HOME="$ORIGINAL_HOME"
 	fi
@@ -33,28 +35,6 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"needs"* ]]
-}
-
-@test "has_bluetooth_hid_connected detects HID" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-system_profiler() {
-    cat << 'OUT'
-Bluetooth:
-  Apple Magic Mouse:
-    Connected: Yes
-    Type: Mouse
-OUT
-}
-export -f system_profiler
-if has_bluetooth_hid_connected; then
-    echo "hid"
-fi
-EOF
-
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"hid"* ]]
 }
 
 @test "is_ac_power detects AC power" {
@@ -152,6 +132,50 @@ EOF
 	[[ "$output" == *"remove:$HOME/Library/Preferences/ByHost/loginwindow.plist"* ]]
 	[[ "$output" != *"lint:$HOME/Library/Preferences/com.apple.broken.plist"* ]]
 	[[ "$output" != *"lint:$HOME/Library/Preferences/loginwindow.plist"* ]]
+}
+
+@test "fix_broken_preferences does not count safe_remove failures" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/maintenance.sh"
+
+prefs="$HOME/Library/Preferences"
+mkdir -p "$prefs"
+touch "$prefs/com.example.broken.plist"
+
+plutil() { return 1; }
+safe_remove() { return 1; }
+
+count=$(fix_broken_preferences)
+echo "count=$count"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"count=0"* ]]
+}
+
+@test "fix_broken_preferences does not count protected Adobe plists" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/maintenance.sh"
+
+prefs="$HOME/Library/Preferences"
+plist="$prefs/com.adobe.Photoshop.uxp_com.adobe.ccx.start.plist"
+mkdir -p "$prefs"
+touch "$plist"
+
+plutil() { return 1; }
+
+count=$(fix_broken_preferences)
+echo "count=$count"
+[[ -f "$plist" ]] && echo "still-present"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"count=0"* ]]
+	[[ "$output" == *"still-present"* ]]
 }
 
 @test "opt_cache_refresh reuses measured cache sizes for deletion" {
@@ -379,6 +403,124 @@ EOF
 	[[ "$output" == *"Unknown action"* ]]
 }
 
+@test "opt_prune_spotlight_orphan_rules removes orphan but keeps system, apple and installed rules" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+mkdir -p "$(dirname "$PLIST")"
+rm -f "$PLIST"
+/usr/libexec/PlistBuddy \
+    -c "Add :EnabledPreferenceRules array" \
+    -c "Add :EnabledPreferenceRules:0 string System.iphoneApps" \
+    -c "Add :EnabledPreferenceRules:1 string com.apple.Safari" \
+    -c "Add :EnabledPreferenceRules:2 string com.installed.App" \
+    -c "Add :EnabledPreferenceRules:3 string com.lm.william.TwinklingCard" \
+    "$PLIST" >/dev/null 2>&1
+defaults() {
+    case "$1" in
+        read) return 0 ;;
+        write | delete) echo "DEFAULTS: $*" ;;
+    esac
+}
+bundle_has_installed_app() { [[ "$1" == "com.installed.App" ]]; }
+opt_prune_spotlight_orphan_rules
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Removed 1 orphan"* ]]
+	[[ "$output" == *"DEFAULTS: write"* ]]
+	[[ "$output" == *"System.iphoneApps"* ]]
+	[[ "$output" == *"com.apple.Safari"* ]]
+	[[ "$output" == *"com.installed.App"* ]]
+	[[ "$output" != *"com.lm.william.TwinklingCard"* ]]
+}
+
+@test "opt_prune_spotlight_orphan_rules dry-run reports but does not write" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+mkdir -p "$(dirname "$PLIST")"
+rm -f "$PLIST"
+/usr/libexec/PlistBuddy \
+    -c "Add :EnabledPreferenceRules array" \
+    -c "Add :EnabledPreferenceRules:0 string System.iphoneApps" \
+    -c "Add :EnabledPreferenceRules:1 string com.lm.william.TwinklingCard" \
+    "$PLIST" >/dev/null 2>&1
+defaults() {
+    case "$1" in
+        read) return 0 ;;
+        write | delete) echo "DEFAULTS: $*" ;;
+    esac
+}
+bundle_has_installed_app() { return 1; }
+opt_prune_spotlight_orphan_rules
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Would remove 1 orphan"* ]]
+	[[ "$output" != *"DEFAULTS: write"* ]]
+	[[ "$output" != *"DEFAULTS: delete"* ]]
+}
+
+@test "opt_prune_spotlight_orphan_rules reports clean when every rule still has its app" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+mkdir -p "$(dirname "$PLIST")"
+rm -f "$PLIST"
+/usr/libexec/PlistBuddy \
+    -c "Add :EnabledPreferenceRules array" \
+    -c "Add :EnabledPreferenceRules:0 string System.iphoneApps" \
+    -c "Add :EnabledPreferenceRules:1 string com.apple.Safari" \
+    -c "Add :EnabledPreferenceRules:2 string com.installed.App" \
+    "$PLIST" >/dev/null 2>&1
+defaults() {
+    case "$1" in
+        read) return 0 ;;
+        write | delete) echo "DEFAULTS: $*" ;;
+    esac
+}
+bundle_has_installed_app() { return 0; }
+opt_prune_spotlight_orphan_rules
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"already clean"* ]]
+	[[ "$output" != *"DEFAULTS: write"* ]]
+}
+
+@test "opt_prune_spotlight_orphan_rules reports clean when rules key is absent" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+defaults() { return 1; }
+opt_prune_spotlight_orphan_rules
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"already clean"* ]]
+}
+
+@test "execute_optimization dispatches spotlight_orphan_rules_cleanup" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+opt_prune_spotlight_orphan_rules() { echo "pruned"; }
+execute_optimization spotlight_orphan_rules_cleanup
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"pruned"* ]]
+}
+
 @test "opt_launch_services_rebuild handles missing lsregister without exiting" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -468,6 +610,37 @@ EOF
 	[[ "$output" == *"Launch Agents all healthy"* ]]
 }
 
+@test "opt_launch_agents_cleanup spares agents on unmounted volumes" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# Clean up any leftover plists from previous tests.
+rm -f "$HOME/Library/LaunchAgents"/*.plist 2>/dev/null || true
+# A program on an unplugged /Volumes/<disk> is missing but not broken;
+# the volume is simply unmounted, so the agent must be left alone.
+mkdir -p "$HOME/Library/LaunchAgents"
+cat > "$HOME/Library/LaunchAgents/com.test.external.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.test.external</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Volumes/MoleNonexistentDisk/tool</string>
+    </array>
+</dict>
+</plist>
+PLIST
+opt_launch_agents_cleanup
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Launch Agents all healthy"* ]]
+}
+
 @test "execute_optimization dispatches launch_agents_cleanup" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -496,6 +669,31 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"already current"* ]]
+}
+
+@test "opt_periodic_maintenance ignores non-BSD stat earlier in PATH" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+periodic() { true; }
+export -f periodic
+tmpdir="$(mktemp -d /tmp/mole-test-stat-path.XXXXXX)"
+mkdir -p "$tmpdir/bin"
+cat > "$tmpdir/bin/stat" <<'STAT'
+#!/usr/bin/env bash
+echo "  File: /var/log/daily.out"
+STAT
+chmod +x "$tmpdir/bin/stat"
+tmplog="$tmpdir/daily.out"
+touch "$tmplog"
+PATH="$tmpdir/bin:$PATH" MOLE_PERIODIC_LOG="$tmplog" opt_periodic_maintenance
+rm -rf "$tmpdir"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"already current"* ]]
+	[[ "$output" != *"unbound variable"* ]]
 }
 
 @test "opt_periodic_maintenance triggers in dry-run when log is stale" {
@@ -619,6 +817,32 @@ EOF
 	[[ "$output" != *"Mounted image detach candidates:"* ]]
 }
 
+@test "run_optimize_diagnostics honors optimize whitelist paths for mounted images (#977)" {
+	mkdir -p "$HOME/.config/mole"
+	cat > "$HOME/.config/mole/whitelist_optimize" <<'EOF'
+system_maintenance
+/Volumes/EXT3/Mail/TB.dmg
+/Volumes/mail
+EOF
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 \
+		MOLE_OPTIMIZE_PS_SAMPLE_1=$'1 /usr/sbin/distnoted' \
+		MOLE_OPTIMIZE_PS_SAMPLE_2=$'1 /usr/sbin/distnoted' \
+		MOLE_OPTIMIZE_HDIUTIL_INFO=$'================================================\nimage-path      : /Volumes/EXT3/Mail/TB.dmg\n/dev/disk6s2               Apple_HFS                       /Volumes/mail\n' \
+		bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+source "$PROJECT_ROOT/lib/optimize/diagnostics.sh"
+load_whitelist optimize
+run_optimize_diagnostics
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"No obvious sustained high-CPU bottleneck detected"* ]]
+	[[ "$output" != *"Mounted image detach candidates:"* ]]
+	[[ "$output" != *"Would offer detach"* ]]
+}
+
 @test "run_optimize_diagnostics stays quiet when nothing matches" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'4 /usr/sbin/distnoted\n3 /usr/libexec/coreaudiod' \
@@ -705,7 +929,6 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Permission Repair|disk_permissions_repair|optimize_task"* ]]
-	[[ "$output" == *"Bluetooth Refresh|bluetooth_reset|optimize_task"* ]]
 	[[ "$output" == *"Login Items Audit|login_items_audit|optimize_task"* ]]
 }
 
@@ -916,4 +1139,219 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"ok"* ]]
+}
+
+@test "opt_diag_parse_image_mount_pairs ignores image-alias/icon-path lines (#960)" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/diagnostics.sh"
+
+# Sample hdiutil info block reproducing the issue from #960. The image-alias
+# line carries an absolute path identical to image-path, which the previous
+# extract_mount regex incorrectly accepted as a mount point. Only the
+# /dev/disk* line is a real mount.
+sample=$(cat <<'HDIUTIL'
+================================================
+image-path                 : /Volumes/EXT3/Mail/TB.dmg
+image-alias                : /Volumes/EXT3/Mail/TB.dmg
+shadow-path                : <none>
+icon-path                  : /System/Library/PrivateFrameworks/DiskImages.framework/Resources/CDiskImage.icns
+image-type                 : read-only
+/dev/disk6                 Apple_partition_scheme
+/dev/disk6s1               Apple_partition_map
+/dev/disk6s2               Apple_HFS                       /Volumes/mail
+HDIUTIL
+)
+
+opt_diag_parse_image_mount_pairs "$sample"
+EOF
+
+	[ "$status" -eq 0 ]
+	# Expect exactly one pair: image=/Volumes/EXT3/Mail/TB.dmg mount=/Volumes/mail
+	line_count=$(printf '%s\n' "$output" | awk 'NF' | wc -l | tr -d ' ')
+	[ "$line_count" = "1" ]
+	[[ "$output" == *"/Volumes/EXT3/Mail/TB.dmg"$'\t'"/Volumes/mail"* ]]
+	# Critical regression guard: image-alias line must not surface as a mount.
+	[[ "$output" != *"/Volumes/EXT3/Mail/TB.dmg"$'\t'"/Volumes/EXT3/Mail/TB.dmg"* ]]
+}
+
+@test "has_active_vpn_interface respects MOLE_ASSUME_VPN_ACTIVE override" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ASSUME_VPN_ACTIVE=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# Force scutil/route to fail loudly so the env override is the only path.
+scutil() { echo "should not be called" >&2; return 1; }
+route() { echo "should not be called" >&2; return 1; }
+export -f scutil route
+if has_active_vpn_interface; then echo "vpn"; else echo "no_vpn"; fi
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"vpn"* ]]
+	[[ "$output" != *"no_vpn"* ]]
+	[[ "$output" != *"should not be called"* ]]
+}
+
+@test "has_active_vpn_interface returns false when MOLE_ASSUME_VPN_ACTIVE=0" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ASSUME_VPN_ACTIVE=0 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# scutil/route should not run when env says no.
+scutil() { echo "should not be called" >&2; return 1; }
+route() { echo "should not be called" >&2; return 1; }
+export -f scutil route
+if has_active_vpn_interface; then echo "vpn"; else echo "no_vpn"; fi
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"no_vpn"* ]]
+	[[ "$output" != *"should not be called"* ]]
+}
+
+@test "has_active_vpn_interface detects scutil Connected entry" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+scutil() {
+    cat <<'NC'
+* (Disconnected)   AA1B2C3D-1111-2222-3333-444455556666   PPP     (L2TP)         "Office VPN"   [L2TP]
+* (Connected)      87654321-aaaa-bbbb-cccc-dddddddddddd   IPSec   (IKEv2)        "Remote Office"[IKEv2]
+NC
+}
+export -f scutil
+# Default route should NOT be consulted once scutil already proved a VPN active.
+route() { echo "should not be called" >&2; return 1; }
+export -f route
+if has_active_vpn_interface; then echo "vpn"; else echo "no_vpn"; fi
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"vpn"* ]]
+	[[ "$output" != *"should not be called"* ]]
+}
+
+@test "has_active_vpn_interface ignores scutil entries that are all Disconnected" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+scutil() {
+    cat <<'NC'
+* (Disconnected)   AA1B2C3D-1111-2222-3333-444455556666   PPP     (L2TP)         "Office VPN"   [L2TP]
+* (Disconnected)   87654321-aaaa-bbbb-cccc-dddddddddddd   IPSec   (IKEv2)        "Remote Office"[IKEv2]
+NC
+}
+# Default route via en0 (no VPN). This is the user's case in #959.
+route() {
+    cat <<'ROUTE'
+   route to: default
+destination: default
+       mask: default
+    gateway: 192.168.1.1
+  interface: en0
+ROUTE
+}
+export -f scutil route
+if has_active_vpn_interface; then echo "vpn"; else echo "no_vpn"; fi
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"no_vpn"* ]]
+}
+
+@test "has_active_vpn_interface detects full-tunnel via utun default route" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# No system-managed VPN configured in scutil.
+scutil() { echo ""; }
+# Default route owned by utun3 -> full-tunnel VPN (WireGuard / OpenVPN style).
+route() {
+    cat <<'ROUTE'
+   route to: default
+destination: default
+       mask: default
+    gateway: 10.8.0.1
+  interface: utun3
+ROUTE
+}
+export -f scutil route
+if has_active_vpn_interface; then echo "vpn"; else echo "no_vpn"; fi
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"vpn"* ]]
+}
+
+@test "has_active_vpn_interface returns false for iCloud Private Relay style utun (#959)" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# Private Relay / Continuity create utun* but the default route stays on en0.
+# The old netstat/ifconfig probe would have false-positived this; the new
+# probe must not.
+scutil() { echo ""; }
+route() {
+    cat <<'ROUTE'
+   route to: default
+destination: default
+       mask: default
+    gateway: 192.168.1.1
+  interface: en0
+ROUTE
+}
+export -f scutil route
+if has_active_vpn_interface; then echo "vpn"; else echo "no_vpn"; fi
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"no_vpn"* ]]
+}
+
+@test "opt_dock_refresh preserves desktoppicture.db and other db files (#995)" {
+	local dock_support="$HOME/Library/Application Support/Dock"
+	mkdir -p "$dock_support"
+	: > "$dock_support/desktoppicture.db"
+	: > "$dock_support/another.db"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+killall() { return 0; }
+export -f killall
+opt_dock_refresh
+EOF
+
+	[ "$status" -eq 0 ]
+	[ -f "$HOME/Library/Application Support/Dock/desktoppicture.db" ]
+	[ -f "$HOME/Library/Application Support/Dock/another.db" ]
+}
+
+@test "opt_diag_parse_image_mount_pairs handles multiple blocks" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/diagnostics.sh"
+
+sample=$(cat <<'HDIUTIL'
+================================================
+image-path                 : /Users/test/Sample.dmg
+image-alias                : /Users/test/Sample.dmg
+/dev/disk5s2               Apple_HFS                       /Volumes/Sample
+================================================
+image-path                 : /Library/Developer/CoreSimulator/Volumes/iOS_17.dmg
+image-alias                : /Library/Developer/CoreSimulator/Volumes/iOS_17.dmg
+/dev/disk7s1               Apple_APFS                      /Library/Developer/CoreSimulator/Volumes/iOS_17.0
+HDIUTIL
+)
+
+opt_diag_parse_image_mount_pairs "$sample" | awk 'NF' | sort
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"/Users/test/Sample.dmg"$'\t'"/Volumes/Sample"* ]]
+	[[ "$output" == *"/Library/Developer/CoreSimulator/Volumes/iOS_17.dmg"$'\t'"/Library/Developer/CoreSimulator/Volumes/iOS_17.0"* ]]
+	line_count=$(printf '%s\n' "$output" | awk 'NF' | wc -l | tr -d ' ')
+	[ "$line_count" = "2" ]
 }

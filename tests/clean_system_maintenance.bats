@@ -18,7 +18,9 @@ setup_file() {
 }
 
 teardown_file() {
-    rm -rf "$HOME"
+    if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$HOME"
+    fi
     if [[ -n "${ORIGINAL_HOME:-}" ]]; then
         export HOME="$ORIGINAL_HOME"
     fi
@@ -60,7 +62,6 @@ safe_sudo_remove() {
 log_success() { :; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 get_file_mtime() { echo 0; }
 get_path_size_kb() { echo 0; }
 find() { return 0; }
@@ -141,7 +142,6 @@ safe_sudo_remove() {
 log_success() { :; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 get_file_mtime() { echo 0; }
 get_path_size_kb() { echo 0; }
 find() { return 0; }
@@ -189,7 +189,6 @@ safe_sudo_remove() {
 log_success() { echo "SUCCESS:$1" >> "$CALL_LOG"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 get_file_mtime() { echo 0; }
 get_path_size_kb() { echo 0; }
 find() { return 0; }
@@ -250,7 +249,6 @@ safe_sudo_remove() {
 log_success() { echo "SUCCESS:$1" >> "$CALL_LOG"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 get_file_mtime() { echo 0; }
 get_path_size_kb() { echo 0; }
 find() { return 0; }
@@ -596,7 +594,6 @@ safe_sudo_find_delete() {
 }
 safe_sudo_remove() { return 0; }
 log_success() { :; }
-is_sip_enabled() { return 1; }
 find() { return 0; }
 run_with_timeout() { shift; "$@"; }
 
@@ -642,7 +639,6 @@ safe_sudo_find_delete() {
 safe_sudo_remove() { return 0; }
 log_success() { :; }
 log_info() { echo "$*"; }
-is_sip_enabled() { return 1; }
 find() { return 0; }
 run_with_timeout() { shift; "$@"; }
 
@@ -683,7 +679,6 @@ safe_sudo_find_delete() {
 }
 safe_sudo_remove() { return 0; }
 log_success() { echo "SUCCESS:$1" >> "$CALL_LOG"; }
-is_sip_enabled() { return 1; }
 find() { return 0; }
 run_with_timeout() { shift; "$@"; }
 
@@ -729,7 +724,6 @@ safe_sudo_remove() {
 log_success() { :; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 find() { return 0; }
 run_with_timeout() { shift; "$@"; }
 
@@ -768,7 +762,6 @@ safe_sudo_remove() {
 log_success() { echo "SUCCESS:$1" >> "$CALL_LOG"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 find() { return 0; }
 run_with_timeout() {
     local _timeout="$1"
@@ -814,7 +807,6 @@ safe_sudo_remove() {
 log_success() { echo "SUCCESS:$1" >> "$CALL_LOG"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 find() { return 0; }
 run_with_timeout() {
     local _timeout="$1"
@@ -865,7 +857,6 @@ safe_sudo_remove() {
 log_success() { echo "SUCCESS:$1" >> "$CALL_LOG"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 find() { return 0; }
 run_with_timeout() { shift; "$@"; }
 
@@ -939,7 +930,6 @@ safe_sudo_remove() {
 log_success() { echo "SUCCESS:$1" >> "$CALL_LOG"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-is_sip_enabled() { return 1; }
 find() { return 0; }
 gpu_cache_dir_is_stale() { return 0; }
 run_with_timeout() {
@@ -1195,158 +1185,6 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"User directory permissions repaired"* ]]
-}
-
-@test "opt_bluetooth_reset skips when HID device is connected" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-
-system_profiler() {
-    cat << 'PROFILER_OUT'
-Bluetooth:
-  Apple Magic Keyboard:
-    Connected: Yes
-    Type: Keyboard
-PROFILER_OUT
-    return 0
-}
-export -f system_profiler
-
-opt_bluetooth_reset
-EOF
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Bluetooth already optimal"* ]]
-}
-
-@test "opt_bluetooth_reset skips when media apps are running" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-
-system_profiler() {
-    cat << 'PROFILER_OUT'
-Bluetooth:
-  AirPods Pro:
-    Connected: Yes
-    Type: Headphones
-PROFILER_OUT
-    return 0
-}
-export -f system_profiler
-
-pgrep() {
-    if [[ "$2" == "Spotify" ]]; then
-        echo "12345"
-        return 0
-    fi
-    return 1
-}
-export -f pgrep
-
-opt_bluetooth_reset
-EOF
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Bluetooth already optimal"* ]]
-}
-
-@test "opt_bluetooth_reset skips when Bluetooth audio output is active" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-
-system_profiler() {
-    if [[ "$1" == "SPAudioDataType" ]]; then
-        cat << 'AUDIO_OUT'
-Audio:
-    Devices:
-        AirPods Pro:
-          Default Output Device: Yes
-          Manufacturer: Apple Inc.
-          Output Channels: 2
-          Transport: Bluetooth
-          Output Source: AirPods Pro
-AUDIO_OUT
-        return 0
-    elif [[ "$1" == "SPBluetoothDataType" ]]; then
-        echo "Bluetooth:"
-        return 0
-    fi
-    return 1
-}
-export -f system_profiler
-
-awk() {
-    if [[ "${*}" == *"Default Output Device"* ]]; then
-        cat << 'AWK_OUT'
-          Default Output Device: Yes
-          Manufacturer: Apple Inc.
-          Output Channels: 2
-          Transport: Bluetooth
-          Output Source: AirPods Pro
-AWK_OUT
-        return 0
-    fi
-    command awk "$@"
-}
-export -f awk
-
-opt_bluetooth_reset
-EOF
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Bluetooth already optimal"* ]]
-}
-
-@test "opt_bluetooth_reset restarts when safe" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-
-system_profiler() {
-    cat << 'PROFILER_OUT'
-Bluetooth:
-  AirPods:
-    Connected: Yes
-    Type: Audio
-PROFILER_OUT
-    return 0
-}
-export -f system_profiler
-
-pgrep() {
-    if [[ "$2" == "bluetoothd" ]]; then
-        return 1  # bluetoothd not running after TERM
-    fi
-    return 1
-}
-export -f pgrep
-
-sudo() {
-    if [[ "$1" == "pkill" ]]; then
-        echo "pkill:bluetoothd:$2"
-        return 0
-    fi
-    return 1
-}
-export -f sudo
-
-sleep() { :; }
-export -f sleep
-
-unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
-opt_bluetooth_reset
-EOF
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Bluetooth devices may disconnect briefly during refresh"* ]]
-    [[ "$output" == *"Bluetooth module restarted"* ]]
 }
 
 @test "opt_spotlight_index_optimize skips when search is fast" {

@@ -18,7 +18,9 @@ setup_file() {
 }
 
 teardown_file() {
-    rm -rf "$HOME"
+    if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$HOME"
+    fi
     if [[ -n "${ORIGINAL_HOME:-}" ]]; then
         export HOME="$ORIGINAL_HOME"
     fi
@@ -130,26 +132,6 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Todoist cache"* ]]
     [[ "$output" == *"Any.do cache"* ]]
-}
-
-@test "scan_external_volumes skips when no volumes" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
-set -euo pipefail
-export DRY_RUN="false"
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/user.sh"
-run_with_timeout() { return 1; }
-# Mock missing dependencies and UI to ensure test passes regardless of volumes
-clean_ds_store_tree() { :; }
-start_section_spinner() { :; }
-stop_section_spinner() { :; }
-is_path_whitelisted() { return 1; }
-WHITELIST_PATTERNS=()
-PROTECT_FINDER_METADATA="false"
-scan_external_volumes
-EOF
-
-    [ "$status" -eq 0 ]
 }
 
 @test "clean_video_tools calls expected caches" {

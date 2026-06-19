@@ -12,7 +12,9 @@ setup_file() {
 }
 
 teardown_file() {
-	rm -rf "$HOME"
+	if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+		rm -rf "$HOME"
+	fi
 	if [[ -n "${ORIGINAL_HOME:-}" ]]; then
 		export HOME="$ORIGINAL_HOME"
 	fi

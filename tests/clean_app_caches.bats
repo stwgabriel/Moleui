@@ -18,7 +18,9 @@ setup_file() {
 }
 
 teardown_file() {
-    rm -rf "$HOME"
+    if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$HOME"
+    fi
     if [[ -n "${ORIGINAL_HOME:-}" ]]; then
         export HOME="$ORIGINAL_HOME"
     fi
@@ -192,14 +194,36 @@ EOF
 @test "clean_ai_apps calls expected caches" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
 set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
 safe_clean() { echo "$2"; }
+note_activity() { :; }
 clean_ai_apps
 EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"ChatGPT cache"* ]]
     [[ "$output" == *"Claude desktop cache"* ]]
+    [[ "$output" != *"Codex"* ]]
+}
+
+@test "clean_ai_apps skips Codex Desktop state by default" {
+    mkdir -p "$HOME/Library/Application Support/Codex/Cache" "$HOME/Library/Logs/com.openai.codex"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+note_activity() { echo "NOTE_ACTIVITY"; }
+clean_ai_apps
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Codex Desktop state · skipped by default"* ]]
+    [[ "$output" == *"NOTE_ACTIVITY"* ]]
+    [[ "$output" != *"Codex cache"* ]]
+    [[ "$output" != *"Codex CLI logs"* ]]
 }
 
 @test "clean_design_tools calls expected caches" {
@@ -441,6 +465,247 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Stremio cache"* ]]
     [[ "$output" == *"Stremio server cache"* ]]
+}
+
+@test "clean_editor_obsolete_extensions removes only dirs listed in .obsolete (#910)" {
+    local ext_root="$HOME/.vscode/extensions"
+    mkdir -p "$ext_root/pub.ext-old-1.0.0" "$ext_root/pub.ext-new-1.1.0"
+    cat > "$ext_root/.obsolete" << 'JSON'
+{
+  "pub.ext-old-1.0.0": true
+}
+JSON
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "CLEAN:$1"; }
+clean_editor_obsolete_extensions
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"CLEAN:$HOME/.vscode/extensions/pub.ext-old-1.0.0"* ]]
+    [[ "$output" != *"pub.ext-new-1.1.0"* ]]
+}
+
+@test "clean_editor_obsolete_extensions rejects path-traversal keys in .obsolete (#910)" {
+    rm -rf "$HOME/.vscode" "$HOME/.vscode-insiders" "$HOME/.cursor"
+    local ext_root="$HOME/.cursor/extensions"
+    mkdir -p "$ext_root"
+    mkdir -p "$HOME/obsolete-victim"
+    cat > "$ext_root/.obsolete" << 'JSON'
+{
+  "../../obsolete-victim": true,
+  "..": true
+}
+JSON
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "CLEAN:$1"; }
+clean_editor_obsolete_extensions
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"CLEAN:"* ]]
+}
+
+@test "clean_code_editors includes CodeBuddy Extension caches when directory exists" {
+    mkdir -p "$HOME/Library/Application Support/CodeBuddyExtension"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_code_editors
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"CodeBuddy Extension cache"* ]]
+    [[ "$output" == *"CodeBuddy Extension logs"* ]]
+}
+
+@test "clean_code_editors includes CodeBuddy CN caches when directory exists" {
+    mkdir -p "$HOME/Library/Application Support/CodeBuddy CN"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_code_editors
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"CodeBuddy CN cache"* ]]
+    [[ "$output" == *"CodeBuddy CN logs"* ]]
+    [[ "$output" == *"CodeBuddy CN GPU cache"* ]]
+}
+
+@test "clean_code_editors skips CodeBuddy when directories are absent" {
+    rm -rf "$HOME/Library/Application Support/CodeBuddyExtension" "$HOME/Library/Application Support/CodeBuddy CN"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_code_editors
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"CodeBuddy"* ]]
+}
+
+@test "clean_media_players includes QQ Music Mac container caches" {
+    mkdir -p "$HOME/Library/Containers/com.tencent.QQMusicMac/Data/Library/Application Support/QQMusicMac"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_media_players
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"QQ Music Mac cache"* ]]
+    [[ "$output" == *"QQ Music streaming cache"* ]]
+    [[ "$output" == *"QQ Music logs"* ]]
+    [[ "$output" == *"QQ Music container cache"* ]]
+}
+
+@test "clean_media_players does not reference iDownloadProxy" {
+    mkdir -p "$HOME/Library/Containers/com.tencent.QQMusicMac/Data/Library/Application Support/QQMusicMac"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$1 $2"; }
+clean_media_players
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"iDownloadProxy"* ]]
+}
+
+@test "clean_video_players includes Tencent Video container caches" {
+    mkdir -p "$HOME/Library/Containers/com.tencent.tenvideo/Data/Library/Application Support"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_video_players
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Tencent Video old installer"* ]]
+    [[ "$output" == *"Tencent Video native cache"* ]]
+    [[ "$output" == *"Tencent Video document cache"* ]]
+}
+
+@test "clean_productivity_apps includes Spacedrive thumbnail cache" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_productivity_apps
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Spacedrive thumbnail cache"* ]]
+}
+
+@test "clean_neatdm_stale_segments removes segments older than threshold" {
+    local neatdm_dir="$HOME/Library/Application Support/com.NeatDownloadManager"
+    rm -rf "$neatdm_dir"
+    mkdir -p "$neatdm_dir/12345"
+    touch "$neatdm_dir/12345/seg.x0"
+    # Set mtime to 31 days ago
+    touch -t "$(date -v-31d '+%Y%m%d%H%M.%S')" "$neatdm_dir/12345/seg.x0"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+note_activity() { :; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_neatdm_stale_segments
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"NeatDM stale downloads"* ]]
+    [[ "$output" == *"1 items"* ]]
+}
+
+@test "clean_neatdm_stale_segments skips recent segments" {
+    local neatdm_dir="$HOME/Library/Application Support/com.NeatDownloadManager"
+    rm -rf "$neatdm_dir"
+    mkdir -p "$neatdm_dir/67890"
+    touch "$neatdm_dir/67890/seg.x0"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+note_activity() { :; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_neatdm_stale_segments
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"NeatDM stale downloads"* ]]
+}
+
+@test "clean_neatdm_stale_segments skips non-numeric segment-like directories" {
+    local neatdm_dir="$HOME/Library/Application Support/com.NeatDownloadManager"
+    rm -rf "$neatdm_dir"
+    mkdir -p "$neatdm_dir/history-backup"
+    touch "$neatdm_dir/history-backup/seg.x0"
+    touch -t "$(date -v-31d '+%Y%m%d%H%M.%S')" "$neatdm_dir/history-backup/seg.x0"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+note_activity() { :; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_neatdm_stale_segments
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"NeatDM stale downloads"* ]]
+}
+
+@test "clean_neatdm_stale_segments skips when directory absent" {
+    rm -rf "$HOME/Library/Application Support/com.NeatDownloadManager"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_neatdm_stale_segments
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ -z "$output" ]]
 }
 
 @test "clean_launcher_apps does not touch Raycast cache" {

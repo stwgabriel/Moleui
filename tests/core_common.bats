@@ -14,13 +14,20 @@ setup_file() {
 }
 
 teardown_file() {
-    rm -rf "$HOME"
+    if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$HOME"
+    fi
     if [[ -n "${ORIGINAL_HOME:-}" ]]; then
         export HOME="$ORIGINAL_HOME"
     fi
 }
 
 setup() {
+    # Safety: refuse to operate on a real home directory.
+    if [[ "$HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        printf 'FATAL: HOME is not a test temp dir: %s\n' "$HOME" >&2
+        return 1
+    fi
     rm -rf "$HOME/.config"
     mkdir -p "$HOME"
 }
@@ -44,6 +51,41 @@ setup() {
     [[ -n "$result" ]]
 }
 
+@test "get_free_space uses decimal formatting from df kilobytes" {
+    local mock_bin="$HOME/bin"
+    mkdir -p "$mock_bin"
+    cat > "$mock_bin/df" <<'MOCK'
+#!/bin/bash
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+printf '/dev/disk1 200000000 126599680 73400320 64%% /\n'
+MOCK
+    chmod +x "$mock_bin/df"
+
+    output="$(
+        HOME="$HOME" PATH="$mock_bin:$PATH" bash --noprofile --norc <<'EOF'
+source "$PROJECT_ROOT/lib/core/common.sh"
+get_free_space_kb
+get_free_space
+format_free_space_kb 73400320
+format_free_space_kb invalid
+format_free_space_delta_kb 1024
+format_free_space_delta_kb -1024
+EOF
+    )"
+
+    lines=()
+    while IFS= read -r line; do
+        lines+=("$line")
+    done <<< "$output"
+
+    [ "${lines[0]}" = "73400320" ]
+    [ "${lines[1]}" = "75.16GB" ]
+    [ "${lines[2]}" = "75.16GB" ]
+    [ "${lines[3]}" = "Unknown" ]
+    [ "${lines[4]}" = "+1.0MB" ]
+    [ "${lines[5]}" = "-1.0MB" ]
+}
+
 @test "cleanup_result_color_kb always returns green" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -60,6 +102,84 @@ EOF
 
     [ "$status" -eq 0 ]
     [ "$output" = "ok" ]
+}
+
+@test "mole_is_reverse_dns_bundle_id rejects defaults domains and glob-like ids" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+for valid in "com.example.App" "andriiliakh.Artpaper" "dev.zed.Zed-Nightly" "org.keepassxc.KeePassXC"; do
+    mole_is_reverse_dns_bundle_id "$valid" || {
+        echo "valid rejected: $valid"
+        exit 1
+    }
+done
+
+for invalid in "-g" "NSGlobalDomain" "com-example" "com.foo.*" "com.foo.[abc]" "unknown" ""; do
+    if mole_is_reverse_dns_bundle_id "$invalid"; then
+        echo "invalid accepted: $invalid"
+        exit 1
+    fi
+done
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "mole_name_has_bundle_id_boundary rejects sibling bundle prefixes" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+bundle_id="com.example.TestApp"
+
+for valid in \
+    "com.example.TestApp.plist" \
+    "com.example.TestApp.helper.plist" \
+    "/tmp/com.example.TestApp.pkg.bom"; do
+    mole_name_starts_with_bundle_id_boundary "$valid" "$bundle_id" || {
+        echo "valid start boundary rejected: $valid"
+        exit 1
+    }
+done
+
+for invalid in \
+    "group.com.example.TestApp" \
+    "TEAM.com.example.TestApp.FileProvider" \
+    "com.example.TestApplication.plist"; do
+    if mole_name_starts_with_bundle_id_boundary "$invalid" "$bundle_id"; then
+        echo "sibling start boundary accepted: $invalid"
+        exit 1
+    fi
+done
+
+for valid in \
+    "com.example.TestApp.plist" \
+    "com.example.TestApp.helper.plist" \
+    "group.com.example.TestApp" \
+    "TEAM.com.example.TestApp.FileProvider" \
+    "/tmp/com.example.TestApp.pkg.bom"; do
+    mole_name_has_bundle_id_boundary "$valid" "$bundle_id" || {
+        echo "valid boundary rejected: $valid"
+        exit 1
+    }
+done
+
+for invalid in \
+    "com.example.TestApplication.plist" \
+    "group.com.example.TestApplication" \
+    "xcom.example.TestApp" \
+    "com.example.TestAppHelper.plist" \
+    "com-example-TestApp.plist"; do
+    if mole_name_has_bundle_id_boundary "$invalid" "$bundle_id"; then
+        echo "sibling boundary accepted: $invalid"
+        exit 1
+    fi
+done
+EOF
+
+    [ "$status" -eq 0 ]
 }
 
 @test "log_info prints message and appends to log file" {
@@ -165,7 +285,7 @@ EOF
 
 @test "colorize_human_size colors dry-run size units by suffix" {
     output="$(
-        HOME="$HOME" bash --noprofile --norc << 'EOF'
+        env -u NO_COLOR HOME="$HOME" bash --noprofile --norc << 'EOF'
 source "$PROJECT_ROOT/lib/core/common.sh"
 colorize_human_size "1.00GB"
 printf '\n'
@@ -249,6 +369,28 @@ EOF
     local codex_runtimes_path="$HOME/.cache/codex-runtimes"
     result=$(HOME="$HOME" TARGET_PATH="$codex_runtimes_path" bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
     [ "$result" = "protected" ]
+
+    for codex_state_path in \
+        "$HOME/Library/Application Support/Codex/Cache/index" \
+        "$HOME/Library/Logs/com.openai.codex/codex.log" \
+        "$HOME/.codex/sessions/2026/06/session.jsonl" \
+        "$HOME/.codex/cache/session_index.jsonl" \
+        "$HOME/.codex/cache/codex_app_directory/index.json" \
+        "$HOME/.codex/state_5.sqlite" \
+        "$HOME/.codex/logs_2.sqlite"; do
+        result=$(HOME="$HOME" TARGET_PATH="$codex_state_path" bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
+        [ "$result" = "protected" ]
+    done
+}
+
+@test "should_protect_data covers Raycast wildcard variants" {
+    for id in com.raycast.macos com.raycast.shared com.raycast.macos.BrowserExtension; do
+        result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data '$id' && echo 'protected' || echo 'not-protected'")
+        [ "$result" = "protected" ]
+    done
+
+    result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data 'com.raycastfoo.bar' && echo 'protected' || echo 'not-protected'")
+    [ "$result" = "not-protected" ]
 }
 
 @test "should_protect_path protects NetworkExtension VPN preferences" {
@@ -368,6 +510,11 @@ EOF
 @test "read_key respects MOLE_READ_KEY_FORCE_CHAR" {
     run bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
     [ "$output" = "CHAR:j" ]
+}
+
+@test "read_key keeps Ctrl-C as quit when forcing printable characters" {
+    run bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; printf '\\003' | read_key"
+    [ "$output" = "QUIT" ]
 }
 
 @test "ensure_sudo_session returns 1 and sets MOLE_SUDO_ESTABLISHED=false in test mode" {

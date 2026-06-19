@@ -14,13 +14,20 @@ setup_file() {
 }
 
 teardown_file() {
-    rm -rf "$HOME"
+    if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$HOME"
+    fi
     if [[ -n "${ORIGINAL_HOME:-}" ]]; then
         export HOME="$ORIGINAL_HOME"
     fi
 }
 
 setup() {
+    # Safety: refuse to operate on a real home directory.
+    if [[ "$HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        printf 'FATAL: HOME is not a test temp dir: %s\n' "$HOME" >&2
+        return 1
+    fi
     source "$PROJECT_ROOT/lib/core/common.sh"
     TEST_DIR="$HOME/test_safe_functions"
     mkdir -p "$TEST_DIR"
@@ -77,10 +84,30 @@ teardown() {
 
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/etc'"
     [ "$status" -eq 1 ]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/Library/Apple'"
+    [ "$status" -eq 1 ]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/Applications/Finder.app'"
+    [ "$status" -eq 1 ]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/Users'"
+    [ "$status" -eq 1 ]
+}
+
+@test "validate_path_for_deletion rejects aliased critical paths" {
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '//etc/passwd'"
+    [ "$status" -eq 1 ]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '///System'"
+    [ "$status" -eq 1 ]
 }
 
 @test "validate_path_for_deletion accepts valid path" {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '$TEST_DIR/valid'"
+    [ "$status" -eq 0 ]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '$HOME/Library/Caches/com.example.app/cache.db'"
     [ "$status" -eq 0 ]
 }
 
@@ -90,7 +117,7 @@ teardown() {
 
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/Library/Extensions/com.example.driver/com.apple.metal' 2>&1"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"critical system directory"* ]]
+    [[ "$output" == *"critical system path"* ]]
 }
 
 @test "should_protect_path applies high-risk cleanup denylist" {
@@ -108,6 +135,22 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "should_protect_path protects OrbStack live container data" {
+    local orb_group_data="$HOME/Library/Group Containers/HUAQ24HBR6.dev.orbstack/data/data.img.raw"
+    local orb_state="$HOME/.orbstack/state.db"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ORB_GROUP_DATA="$orb_group_data" ORB_STATE="$orb_state" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+should_protect_data "dev.orbstack.OrbStack"
+should_protect_data "dev.kdrag0n.MacVirt"
+should_protect_path "$ORB_GROUP_DATA"
+should_protect_path "$ORB_STATE"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "safe_remove validates path before deletion" {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_remove '/System/test' 2>&1"
     [ "$status" -eq 1 ]
@@ -120,6 +163,16 @@ teardown() {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '$link_path' 2>&1"
     [ "$status" -eq 1 ]
     [[ "$output" == *"protected system path"* ]]
+}
+
+@test "safe_remove silent mode hides protected symlink validation warning" {
+    local link_path="$TEST_DIR/silent-system-link"
+    ln -s "/System" "$link_path"
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_remove '$link_path' true 2>&1"
+    [ "$status" -eq 1 ]
+    [[ -L "$link_path" ]]
+    [[ "$output" != *"Symlink points to protected system path"* ]]
 }
 
 @test "safe_remove successfully removes file" {
@@ -216,6 +269,21 @@ teardown() {
 
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_find_delete '$TEST_DIR' '*.tmp' 7 'f'"
     [ "$status" -eq 0 ]
+}
+
+@test "safe_find_delete works when app protection is not loaded" {
+    local old_file="$TEST_DIR/file-ops-only.tmp"
+    touch "$old_file"
+    touch -t "$(date -v-8d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '8 days ago' '+%Y%m%d%H%M.%S')" "$old_file" 2>/dev/null || true
+
+    run bash --noprofile --norc <<EOF
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/file_ops.sh"
+safe_find_delete "$TEST_DIR" "*.tmp" 7 "f"
+EOF
+
+    [ "$status" -eq 0 ]
+    [ ! -e "$old_file" ]
 }
 
 @test "MOLE_* constants are defined" {

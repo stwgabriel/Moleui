@@ -146,14 +146,14 @@ export MOLE_TEST_TRACE="$trace"
 mole_delete "$victim" true
 EOF
 
-    [ "$status" -eq 0 ]
-    [[ ! -e "$victim" ]]
+    [ "$status" -ne 0 ]
+    [[ -e "$victim" ]]
     [[ -z "$(ls -A "$redirected" 2> /dev/null || true)" ]]
     [[ "$(grep -c '^sudo mv ' "$trace" 2> /dev/null || true)" -eq 0 ]]
 
     local status_col
     status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
-    [ "$status_col" = "trash-fallback-rm" ]
+    [ "$status_col" = "trash-failed" ]
 }
 
 @test "mole_delete uses unique Trash name for sudo-required path conflicts" {
@@ -218,6 +218,23 @@ EOF
     [ "$status_col" = "ok" ]
 }
 
+@test "mole_delete rejects symlinks to protected system paths" {
+    local victim="$SANDBOX/system-link"
+    ln -s "/System" "$victim"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+mole_delete "$victim"
+EOF
+
+    [ "$status" -eq 1 ]
+    [[ -L "$victim" ]]
+
+    local status_col
+    status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
+    [ "$status_col" = "rejected" ]
+}
+
 @test "mole_delete dry-run does not touch the filesystem but still logs" {
     local victim="$SANDBOX/dry"
     : > "$victim"
@@ -263,7 +280,52 @@ EOF
     [[ ! -s "$MOLE_DELETE_LOG" ]]
 }
 
-@test "mole_delete trash failure falls back to permanent rm" {
+@test "mole_delete rejects unknown delete mode without touching target" {
+    local victim="$SANDBOX/invalid_mode_target"
+    : > "$victim"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+export MOLE_DELETE_MODE=surprise
+mole_delete "$victim"
+EOF
+
+    [ "$status" -ne 0 ]
+    [[ -e "$victim" ]]
+
+    local mode_col status_col
+    mode_col=$(awk -F'\t' 'END { print $2 }' "$MOLE_DELETE_LOG")
+    status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
+    [ "$mode_col" = "surprise" ]
+    [ "$status_col" = "invalid-mode" ]
+    [[ "$output" == *'expected "permanent" or "trash"'* ]]
+}
+
+@test "mole_delete warns once for repeated invalid delete mode" {
+    local first="$SANDBOX/invalid_mode_first"
+    local second="$SANDBOX/invalid_mode_second"
+    : > "$first"
+    : > "$second"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+export MOLE_DELETE_MODE=surprise
+set +e
+mole_delete "$first"
+first_rc=\$?
+mole_delete "$second"
+second_rc=\$?
+set -e
+[[ \$first_rc -ne 0 && \$second_rc -ne 0 ]]
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ -e "$first" ]]
+    [[ -e "$second" ]]
+    [[ "$(grep -c 'invalid MOLE_DELETE_MODE' <<< "$output")" -eq 1 ]]
+}
+
+@test "mole_delete trash failure leaves target in place" {
     local victim="$SANDBOX/fallback_target"
     : > "$victim"
 
@@ -282,14 +344,44 @@ EOF
 
     chmod 0755 "$(dirname "$blocked")"
 
-    [ "$status" -eq 0 ]
-    [[ ! -e "$victim" ]]
+    [ "$status" -ne 0 ]
+    [[ -e "$victim" ]]
 
     local status_col
     status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
-    [ "$status_col" = "trash-fallback-rm" ]
-    # User explicitly asked NOT to permanent-delete; fallback must surface.
-    [[ "$output" == *"Trash unavailable"* ]]
+    [ "$status_col" = "trash-failed" ]
+    [[ "$output" == *"refusing permanent delete"* ]]
+}
+
+@test "mole_delete warns once for repeated Trash failures" {
+    local first="$SANDBOX/trash_fail_first"
+    local second="$SANDBOX/trash_fail_second"
+    : > "$first"
+    : > "$second"
+
+    local blocked="$SANDBOX/blocked/Trash"
+    mkdir -p "$(dirname "$blocked")"
+    chmod 0555 "$(dirname "$blocked")"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+export MOLE_DELETE_MODE=trash
+export MOLE_TEST_TRASH_DIR="$blocked"
+set +e
+mole_delete "$first"
+first_rc=\$?
+mole_delete "$second"
+second_rc=\$?
+set -e
+[[ \$first_rc -ne 0 && \$second_rc -ne 0 ]]
+EOF
+
+    chmod 0755 "$(dirname "$blocked")"
+
+    [ "$status" -eq 0 ]
+    [[ -e "$first" ]]
+    [[ -e "$second" ]]
+    [[ "$(grep -c "Trash unavailable" <<< "$output")" -eq 1 ]]
 }
 
 @test "mole_delete records 'unknown' (not 0) when size measurement fails" {

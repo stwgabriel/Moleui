@@ -15,13 +15,20 @@ setup_file() {
 }
 
 teardown_file() {
-	rm -rf "$HOME"
+	if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+		rm -rf "$HOME"
+	fi
 	if [[ -n "${ORIGINAL_HOME:-}" ]]; then
 		export HOME="$ORIGINAL_HOME"
 	fi
 }
 
 setup() {
+	# Safety: refuse to operate on a real home directory.
+	if [[ "$HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+		printf 'FATAL: HOME is not a test temp dir: %s\n' "$HOME" >&2
+		return 1
+	fi
 	export TERM="dumb"
 	rm -rf "${HOME:?}"/*
 	mkdir -p "$HOME"
@@ -218,7 +225,134 @@ EOF
 	[ "$status" -eq 0 ]
 }
 
-@test "force_kill_app sends AppleScript Quit before SIGTERM" {
+@test "batch_uninstall_applications blocks official-uninstaller apps" {
+	mkdir -p "$HOME/Applications/Falcon.app"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+mole_delete() { echo "MOLE_DELETE:$1"; return 0; }
+
+selected_apps=("0|$HOME/Applications/Falcon.app|Falcon|com.crowdstrike.falcon.UserAgent|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+if batch_uninstall_applications; then
+	exit 1
+fi
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"requires the official CrowdStrike uninstaller"* ]]
+	[[ "$output" != *"MOLE_DELETE"* ]]
+}
+
+@test "batch_uninstall_applications keeps system remnants review-only" {
+	mkdir -p "$HOME/Applications/ReviewOnly.app" "$HOME/system"
+	touch "$HOME/system/com.example.review.helper"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+request_sudo_access() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+pgrep() { return 1; }
+pkill() { return 0; }
+get_file_owner() { whoami; }
+get_path_size_kb() { echo "1"; }
+calculate_total_size() { echo "1"; }
+find_app_files() { :; }
+find_app_system_files() { printf '%s\n' "$HOME/system/com.example.review.helper"; }
+get_diagnostic_report_paths_for_app() { :; }
+remove_file_list() {
+	printf 'REMOVE_LIST:%s:%s\n' "${2:-false}" "$1" >> "$HOME/remove.log"
+	return 0
+}
+mole_delete() {
+	printf 'MOLE_DELETE:%s:%s\n' "$2" "$1" >> "$HOME/remove.log"
+	rm -rf "$1"
+	return 0
+}
+
+selected_apps=("0|$HOME/Applications/ReviewOnly.app|ReviewOnly|com.example.review|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+printf '\n' | batch_uninstall_applications > "$HOME/output.log" 2>&1
+
+grep -q "Review only: $HOME/system/com.example.review.helper" "$HOME/output.log"
+! grep -q "$HOME/system/com.example.review.helper" "$HOME/remove.log"
+[[ -e "$HOME/system/com.example.review.helper" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "batch_uninstall_applications dry-run does not report expected leftovers as failures" {
+	create_app_artifacts
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+request_sudo_access() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+pgrep() { return 1; }
+pkill() { return 0; }
+sudo() { return 0; }
+
+export MOLE_DRY_RUN=1
+export MOLE_DELETE_MODE=trash
+
+app_bundle="$HOME/Applications/TestApp.app"
+mkdir -p "$app_bundle"
+
+selected_apps=()
+selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+output_file="$HOME/dry_run_uninstall.log"
+printf '\n' | batch_uninstall_applications > "$output_file" 2>&1
+output=$(cat "$output_file")
+
+[[ -d "$app_bundle" ]] || { echo "WRONG: dry-run removed app bundle"; cat "$output_file"; exit 1; }
+[[ -d "$HOME/Library/Application Support/TestApp" ]] || { echo "WRONG: dry-run removed app support"; cat "$output_file"; exit 1; }
+[[ -d "$HOME/Library/Caches/TestApp" ]] || { echo "WRONG: dry-run removed cache"; cat "$output_file"; exit 1; }
+[[ -f "$HOME/Library/Preferences/com.example.TestApp.plist" ]] || { echo "WRONG: dry-run removed prefs"; cat "$output_file"; exit 1; }
+
+[[ "$output" == *"Uninstall dry run complete"* ]] || { echo "WRONG: missing dry-run summary"; cat "$output_file"; exit 1; }
+[[ "$output" == *"Would remove 1 app"* ]] || { echo "WRONG: missing would-remove summary"; cat "$output_file"; exit 1; }
+[[ "$output" != *"Could not remove"* ]] || { echo "WRONG: dry-run reported expected leftovers"; cat "$output_file"; exit 1; }
+[[ "$output" != *"Uninstall incomplete"* ]] || { echo "WRONG: dry-run marked incomplete"; cat "$output_file"; exit 1; }
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "force_kill_app skips the kill ladder when Quit succeeds" {
 	# run_with_timeout invokes its argv via gtimeout/timeout, which exec the
 	# real binary and bypass bash functions, so we shadow osascript via a
 	# real script on PATH and read the trace it writes.
@@ -288,6 +422,78 @@ EOF
 	fi
 }
 
+@test "force_kill_app escalates to pkill when Quit does not land" {
+	# Process keeps showing up in pgrep until pkill -9 fires, exercising the
+	# SIGTERM and SIGKILL rungs of the escalation ladder.
+	stubdir="$HOME/stubs"
+	mkdir -p "$stubdir"
+	trace="$HOME/kill_escalate_trace.log"
+	: > "$trace"
+
+	cat > "$stubdir/osascript" <<STUB
+#!/bin/bash
+printf 'osascript %s\n' "\$*" >> "$trace"
+exit 0
+STUB
+	chmod +x "$stubdir/osascript"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$stubdir:$PATH" \
+		TRACE_PATH="$trace" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+app_path="$HOME/Applications/StubbornApp.app"
+mkdir -p "$app_path/Contents"
+cat > "$app_path/Contents/Info.plist" << 'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>StubbornApp</string>
+  <key>CFBundleIdentifier</key><string>com.example.StubbornApp</string>
+</dict></plist>
+PLIST
+
+# Stays alive until SIGKILL lands, then disappears.
+sigkill_seen=0
+pgrep() {
+	if [[ $sigkill_seen -eq 1 ]]; then
+		return 1
+	fi
+	echo 12345
+	return 0
+}
+export -f pgrep
+
+pkill() {
+	printf 'pkill %s\n' "$*" >> "$TRACE_PATH"
+	for arg in "$@"; do
+		if [[ "$arg" == "-9" ]]; then
+			sigkill_seen=1
+		fi
+	done
+	return 0
+}
+export -f pkill
+export sigkill_seen
+
+sudo() { return 1; }
+export -f sudo
+
+sleep() { :; }
+export -f sleep
+
+unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+
+force_kill_app "StubbornApp" "$app_path"
+EOF
+
+	[ "$status" -eq 0 ]
+	grep -q '^pkill -x StubbornApp' "$trace" \
+		|| { echo "WRONG: SIGTERM rung did not fire"; cat "$trace"; return 1; }
+	grep -q '^pkill -9 -x StubbornApp' "$trace" \
+		|| { echo "WRONG: SIGKILL rung did not fire"; cat "$trace"; return 1; }
+}
+
 @test "force_kill_app rejects unsafe bundle id in AppleScript Quit target" {
 	stubdir="$HOME/stubs"
 	mkdir -p "$stubdir"
@@ -348,6 +554,71 @@ EOF
 	fi
 	grep -q 'osascript .*tell application "TestApp" to quit' "$trace" \
 		|| { echo "WRONG: unsafe id did not fall back to app name"; cat "$trace"; return 1; }
+}
+
+@test "force_kill_app refuses to operate on system process names" {
+	# Defensive guard: a third-party .app could set CFBundleExecutable to a
+	# system process name (Finder, Dock, loginwindow, etc.). Even though the
+	# uninstall selection layer filters out protected bundle IDs, force_kill_app
+	# is a public function and must hold its own boundary. Verify it returns 1
+	# without invoking pkill or osascript for these names.
+	stubdir="$HOME/stubs"
+	mkdir -p "$stubdir"
+	trace="$HOME/system_proc_trace.log"
+	: > "$trace"
+
+	cat > "$stubdir/osascript" <<STUB
+#!/bin/bash
+printf 'osascript %s\n' "\$*" >> "$trace"
+exit 0
+STUB
+	chmod +x "$stubdir/osascript"
+
+	for spoofed in Finder Dock loginwindow WindowServer SystemUIServer; do
+		: > "$trace"
+		run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$stubdir:$PATH" \
+			TRACE_PATH="$trace" SPOOFED="$spoofed" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+app_path="$HOME/Applications/Evil-$SPOOFED.app"
+mkdir -p "$app_path/Contents"
+cat > "$app_path/Contents/Info.plist" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>$SPOOFED</string>
+  <key>CFBundleIdentifier</key><string>com.example.evil</string>
+</dict></plist>
+PLIST
+
+pkill() {
+	printf 'pkill %s\n' "$*" >> "$TRACE_PATH"
+	return 0
+}
+export -f pkill
+
+# pgrep must NOT be called - the guard runs before any process probing.
+pgrep() {
+	printf 'pgrep %s\n' "$*" >> "$TRACE_PATH"
+	return 0
+}
+export -f pgrep
+
+sleep() { :; }
+export -f sleep
+
+unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+
+force_kill_app "Evil-$SPOOFED" "$app_path"
+EOF
+
+		[ "$status" -eq 1 ] \
+			|| { echo "WRONG: spoofed $spoofed did not return 1 (got $status)"; cat "$trace"; return 1; }
+		if [[ -s "$trace" ]]; then
+			echo "WRONG: spoofed $spoofed reached pkill/pgrep/osascript"; cat "$trace"; return 1
+		fi
+	done
 }
 
 @test "batch_uninstall_applications proceeds with deletion when force_kill_app fails" {
@@ -413,6 +684,8 @@ EOF
 @test "stop_launch_services unloads launch agents without deleting plists" {
 	mkdir -p "$HOME/Library/LaunchAgents"
 	touch "$HOME/Library/LaunchAgents/com.example.TestApp.plist"
+	touch "$HOME/Library/LaunchAgents/com.example.TestApp.helper.plist"
+	touch "$HOME/Library/LaunchAgents/com.example.TestApplication.plist"
 
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -422,6 +695,10 @@ source "$PROJECT_ROOT/lib/uninstall/batch.sh"
 trace="$HOME/trace.log"
 launchctl() {
 	printf 'launchctl %s\n' "$*" >> "$trace"
+}
+run_with_timeout() {
+	shift
+	"$@"
 }
 safe_remove() {
 	printf 'safe_remove %s\n' "$*" >> "$trace"
@@ -434,9 +711,13 @@ safe_sudo_remove() {
 
 stop_launch_services "com.example.TestApp" "false" ""
 
-grep -q "launchctl unload" "$trace"
-! grep -q "safe_remove" "$trace"
-[[ -f "$HOME/Library/LaunchAgents/com.example.TestApp.plist" ]]
+	grep -Fq "launchctl unload $HOME/Library/LaunchAgents/com.example.TestApp.plist" "$trace"
+	grep -Fq "launchctl unload $HOME/Library/LaunchAgents/com.example.TestApp.helper.plist" "$trace"
+	! grep -Fq "com.example.TestApplication.plist" "$trace"
+	! grep -q "safe_remove" "$trace"
+	[[ -f "$HOME/Library/LaunchAgents/com.example.TestApp.plist" ]]
+	[[ -f "$HOME/Library/LaunchAgents/com.example.TestApp.helper.plist" ]]
+	[[ -f "$HOME/Library/LaunchAgents/com.example.TestApplication.plist" ]]
 EOF
 
 	[ "$status" -eq 0 ]
@@ -705,7 +986,7 @@ EOF
 }
 
 @test "cached uninstall metadata is rejected when the app is background-only" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 eval "$(sed -n '/^uninstall_resolve_bundle_id()/,/^uninstall_app_inventory_fingerprint()/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
@@ -729,6 +1010,37 @@ if uninstall_resolve_eligible_bundle_id "$app_path" "com.example.Helper" > /dev/
     echo "background-only app should not be eligible" >&2
     exit 1
 fi
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "OneDrive Mac App Store bundle is eligible even when marked background-only" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+eval "$(sed -n '/^uninstall_resolve_bundle_id()/,/^uninstall_app_inventory_fingerprint()/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
+
+app_path="$HOME/Applications/OneDrive.app"
+mkdir -p "$app_path/Contents"
+cat > "$app_path/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.microsoft.OneDrive-mac</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+
+result=$(uninstall_resolve_eligible_bundle_id "$app_path" "")
+[[ "$result" == "com.microsoft.OneDrive-mac" ]] || {
+    echo "unexpected bundle id: $result" >&2
+    exit 1
+}
 EOF
 
 	[ "$status" -eq 0 ]
@@ -1203,6 +1515,134 @@ INNER
 	[ "$status" -eq 0 ]
 }
 
+@test "scan_applications starts feedback before discovery and cleans no-app state" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_FORCE_SCAN_SPINNER=1 bash --noprofile --norc <<'INNER'
+set -euo pipefail
+
+trace_file="$HOME/scan-feedback-trace.log"
+scan_temp="$HOME/scan-feedback-temp"
+
+MOLE_UNINSTALL_META_CACHE_DIR="$HOME/.cache/mole"
+MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v1"
+MOLE_UNINSTALL_META_CACHE_LOCK="${MOLE_UNINSTALL_META_CACHE_FILE}.lock"
+
+create_temp_file() { printf '%s\n' "$scan_temp"; }
+ensure_user_dir() { mkdir -p "$1"; }
+ensure_user_file() {
+    mkdir -p "$(dirname "$1")"
+    : > "$1"
+}
+
+_scan_discover_apps() {
+    if [[ -n "${spinner_pid:-}" ]]; then
+        printf 'spinner-before-discover\n' >> "$trace_file"
+    else
+        printf 'missing-spinner\n' >> "$trace_file"
+    fi
+    : > "$discovered_file"
+}
+_scan_partition_cache() { printf 'partition\n' >> "$trace_file"; }
+_scan_resolve_uncached() { printf 'resolve\n' >> "$trace_file"; }
+_scan_dedupe_bundle_ids() { printf 'dedupe\n' >> "$trace_file"; }
+_scan_finalize_index() { printf 'finalize\n' >> "$trace_file"; }
+
+eval "$(sed -n '/^scan_applications()/,/^load_applications()/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
+
+set +e
+scan_applications > "$HOME/scan-feedback.out" 2> "$HOME/scan-feedback.err"
+rc=$?
+set -e
+
+[[ $rc -eq 1 ]] || exit 1
+
+expected=$(printf 'spinner-before-discover\npartition\n')
+actual=$(cat "$trace_file")
+[[ "$actual" == "$expected" ]] || {
+    printf 'unexpected trace:\n%s\n' "$actual" >&2
+    exit 1
+}
+
+[[ ! -e "${scan_temp}.spinner_shown" ]]
+[[ ! -e "${scan_temp}.scan_status" ]]
+INNER
+
+	[ "$status" -eq 0 ]
+}
+
+@test "select_apps_for_uninstall drains pending input before opening paginated menu" {
+	mkdir -p "$HOME/Applications/TraceApp.app"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" bash --noprofile --norc <<'INNER'
+set -euo pipefail
+
+trace_file="$HOME/selector-drain-trace.log"
+
+source "$PROJECT_ROOT/lib/ui/app_selector.sh"
+
+apps_data=("1700000000|$HOME/Applications/TraceApp.app|TraceApp|com.example.TraceApp|1MB|Today|1024")
+selected_apps=()
+
+get_display_width() { printf '%s\n' "${#1}"; }
+format_app_display() {
+    printf 'format\n' >> "$trace_file"
+    printf '%s' "$1"
+}
+drain_pending_input() { printf 'drain\n' >> "$trace_file"; }
+paginated_multi_select() {
+    printf 'guard:%s\n' "${MOLE_MENU_IGNORE_INITIAL_ENTER:-unset}" >> "$trace_file"
+    printf 'paginated\n' >> "$trace_file"
+    MOLE_SELECTION_RESULT="0"
+    return 0
+}
+
+select_apps_for_uninstall
+[[ ${#selected_apps[@]} -eq 1 ]]
+[[ -z "${MOLE_MENU_IGNORE_INITIAL_ENTER:-}" ]]
+
+expected=$(printf 'format\ndrain\nguard:1\npaginated\n')
+actual=$(cat "$trace_file")
+[[ "$actual" == "$expected" ]] || {
+    printf 'unexpected trace:\n%s\n' "$actual" >&2
+    exit 1
+}
+INNER
+
+	[ "$status" -eq 0 ]
+}
+
+@test "paginated menu can ignore one initial Enter for uninstall launch guard" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" bash --noprofile --norc <<'INNER'
+set -euo pipefail
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/menu_paginated.sh"
+
+key_state="$HOME/menu-initial-enter-state"
+read_key() {
+    if [[ ! -f "$key_state" ]]; then
+        : > "$key_state"
+        echo "ENTER"
+    else
+        echo "QUIT"
+    fi
+}
+
+MOLE_SELECTION_RESULT=""
+set +e
+MOLE_MENU_IGNORE_INITIAL_ENTER=1 paginated_multi_select "Test Menu" "First App" > "$HOME/menu.out" 2> "$HOME/menu.err"
+rc=$?
+set -e
+
+echo "rc=$rc"
+echo "result=${MOLE_SELECTION_RESULT:-}"
+INNER
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"rc=1"* ]]
+	[[ "$output" == *"result="* ]]
+	[[ "$output" != *"result=0"* ]]
+}
+
 @test "main rescans cleanly after returning from a completed uninstall (#866)" {
 	local first_cache second_cache
 	first_cache="$(mktemp "${BATS_TEST_TMPDIR:-$BATS_RUN_TMPDIR:-$HOME}/tmp-866-first.XXXXXX")"
@@ -1533,261 +1973,58 @@ INNER
 	[[ "$output" == *'"source": "Homebrew"'* ]]
 }
 
-# ---------------------------------------------------------------------------
-# File selector regression: defaults delete / ByHost cleanup respect selection
-# ---------------------------------------------------------------------------
-
-@test "file selector deselecting app bundle does not request sudo for leftover-only cleanup" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+# Regression tests for #940: detect Background Items left behind after uninstall.
+_btm_helper_runner() {
+	HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		BTM_DUMP="$1" DETAIL="$2" SUCCESS_PATH="$3" \
+		bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/uninstall/batch.sh"
-
-start_inline_spinner() { :; }
-stop_inline_spinner() { :; }
-enter_alt_screen() { :; }
-leave_alt_screen() { :; }
-hide_cursor() { :; }
-show_cursor() { :; }
-remove_apps_from_dock() {
-	printf 'dock %s\n' "$*" >> "$trace"
-}
-pgrep() { return 1; }
-pkill() { return 0; }
-sudo() { return 0; }
-has_sensitive_data() { return 1; }
-find_app_system_files() { return 0; }
-get_brew_cask_name() { echo "testapp"; }
-ensure_sudo_session() {
-	printf 'ensure_sudo %s\n' "$*" >> "$trace"
-	return 0
-}
-
-trace="$HOME/leftover_only_trace.log"
-mole_delete() {
-	printf 'mole_delete %s %s\n' "$1" "$2" >> "$trace"
-	return 0
-}
-defaults() { return 1; }
-
-app_bundle="$HOME/Applications/TestApp.app"
-leftover="$HOME/Library/Caches/TestApp"
-mkdir -p "$app_bundle" "$leftover"
-
-find_app_files() {
-	printf '%s\n' "$leftover"
-}
-
-select_files_for_removal() {
-	MOLE_SFR_USER_FILES="$leftover"
-	MOLE_SFR_SYSTEM_FILES=""
-	return 0
-}
-
-selected_apps=()
-selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
-files_cleaned=0
-total_items=0
-total_size_cleaned=0
-
-printf '\n' | batch_uninstall_applications
-
-if grep -q 'ensure_sudo' "$trace"; then
-	echo "FAIL: sudo requested for leftover-only cleanup"
-	cat "$trace"
-	exit 1
-fi
-if grep -q "mole_delete $app_bundle" "$trace"; then
-	echo "FAIL: app bundle removed despite deselection"
-	cat "$trace"
-	exit 1
-fi
-grep -q "mole_delete $leftover false" "$trace"
-if grep -q '^dock ' "$trace"; then
-	echo "FAIL: Dock cleanup ran without a removed app bundle"
-	cat "$trace"
-	exit 1
-fi
+_uninstall_match_btm_leftovers "$BTM_DUMP" "$DETAIL" -- "$SUCCESS_PATH"
 EOF
-
-	[ "$status" -eq 0 ]
 }
 
-@test "defaults delete is skipped when preferences plist is deselected in file selector" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+@test "_uninstall_match_btm_leftovers reports bundle id still in BTM dump" {
+	local detail="Paste|/Applications/Paste.app|com.wiheads.paste|0|||false|false|false||||"
+	local dump=$'Record #1\n  name: Paste\n  bundleID: com.wiheads.paste\n  url: file:///Applications/Paste.app/'
 
-request_sudo_access() { return 0; }
-start_inline_spinner() { :; }
-stop_inline_spinner() { :; }
-enter_alt_screen() { :; }
-leave_alt_screen() { :; }
-hide_cursor() { :; }
-show_cursor() { :; }
-remove_apps_from_dock() { :; }
-pgrep() { return 1; }
-pkill() { return 0; }
-sudo() { return 0; }
-has_sensitive_data() { return 1; }
-find_app_system_files() { return 0; }
+	result="$(_btm_helper_runner "$dump" "$detail" "/Applications/Paste.app")"
 
-trace="$HOME/defaults_trace.log"
-defaults() {
-	printf 'defaults %s\n' "$*" >> "$trace"
-	return 0
+	[ "$result" = "Paste" ]
 }
 
-app_bundle="$HOME/Applications/TestApp.app"
-mkdir -p "$app_bundle"
-mkdir -p "$HOME/Library/Preferences"
-touch "$HOME/Library/Preferences/com.example.TestApp.plist"
+@test "_uninstall_match_btm_leftovers stays silent when bundle id is absent" {
+	local detail="Paste|/Applications/Paste.app|com.wiheads.paste|0|||false|false|false||||"
+	local dump=$'Record #1\n  name: SomethingElse\n  bundleID: com.example.other'
 
-# find_app_files returns the plist — but we'll simulate deselection
-# by matching what the selector would do (the file won't be in related_files)
-find_app_files() {
-	printf '%s\n' "$HOME/Library/Application Support/TestApp"
-	printf '%s\n' "$HOME/Library/Caches/TestApp"
-	# Preferences plist is NOT included — simulating deselection
+	result="$(_btm_helper_runner "$dump" "$detail" "/Applications/Paste.app")"
+
+	[ -z "$result" ]
 }
 
-selected_apps=()
-selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
-files_cleaned=0
-total_items=0
-total_size_cleaned=0
+@test "_uninstall_match_btm_leftovers skips apps that were not successfully removed" {
+	local detail="Paste|/Applications/Paste.app|com.wiheads.paste|0|||false|false|false||||"
+	local dump=$'Record #1\n  bundleID: com.wiheads.paste'
 
-printf '\n' | batch_uninstall_applications
+	result="$(_btm_helper_runner "$dump" "$detail" "/Applications/OtherApp.app")"
 
-# defaults delete must NOT have been called
-if grep -q 'defaults delete com.example.TestApp' "$trace"; then
-	echo "FAIL: defaults delete ran despite deselection"
-	exit 1
-fi
-EOF
-
-	[ "$status" -eq 0 ]
+	[ -z "$result" ]
 }
 
-@test "ByHost cleanup is skipped when ByHost plists are deselected in file selector" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+@test "_uninstall_match_btm_leftovers ignores unknown bundle id" {
+	local detail="Paste|/Applications/Paste.app|unknown|0|||false|false|false||||"
+	local dump=$'Record #1\n  bundleID: unknown'
 
-request_sudo_access() { return 0; }
-start_inline_spinner() { :; }
-stop_inline_spinner() { :; }
-enter_alt_screen() { :; }
-leave_alt_screen() { :; }
-hide_cursor() { :; }
-show_cursor() { :; }
-remove_apps_from_dock() { :; }
-pgrep() { return 1; }
-pkill() { return 0; }
-sudo() { return 0; }
-has_sensitive_data() { return 1; }
-find_app_system_files() { return 0; }
+	result="$(_btm_helper_runner "$dump" "$detail" "/Applications/Paste.app")"
 
-trace="$HOME/byhost_trace.log"
-mole_delete() {
-	printf 'mole_delete %s %s\n' "$1" "$2" >> "$trace"
-	return 0
-}
-defaults() { return 0; }
-
-app_bundle="$HOME/Applications/TestApp.app"
-mkdir -p "$app_bundle"
-mkdir -p "$HOME/Library/Preferences/ByHost"
-touch "$HOME/Library/Preferences/ByHost/com.example.TestApp.ABC123.plist"
-
-# find_app_files returns files but NOT ByHost — simulating deselection
-find_app_files() {
-	printf '%s\n' "$HOME/Library/Application Support/TestApp"
-	printf '%s\n' "$HOME/Library/Caches/TestApp"
-	# ByHost plist deliberately omitted
+	[ -z "$result" ]
 }
 
-selected_apps=()
-selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
-files_cleaned=0
-total_items=0
-total_size_cleaned=0
+@test "_uninstall_match_btm_leftovers returns empty for empty dump" {
+	local detail="Paste|/Applications/Paste.app|com.wiheads.paste|0|||false|false|false||||"
 
-printf '\n' | batch_uninstall_applications
+	result="$(_btm_helper_runner "" "$detail" "/Applications/Paste.app")"
 
-# ByHost mole_delete must NOT have been called
-if grep -q 'ByHost.*com.example.TestApp' "$trace"; then
-	echo "FAIL: ByHost cleanup ran despite deselection"
-	cat "$trace"
-	exit 1
-fi
-EOF
-
-	[ "$status" -eq 0 ]
-}
-
-@test "defaults delete and ByHost cleanup run when preferences are selected" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/uninstall/batch.sh"
-
-request_sudo_access() { return 0; }
-start_inline_spinner() { :; }
-stop_inline_spinner() { :; }
-enter_alt_screen() { :; }
-leave_alt_screen() { :; }
-hide_cursor() { :; }
-show_cursor() { :; }
-remove_apps_from_dock() { :; }
-pgrep() { return 1; }
-pkill() { return 0; }
-sudo() { return 0; }
-has_sensitive_data() { return 1; }
-find_app_system_files() { return 0; }
-
-trace="$HOME/selected_trace.log"
-mole_delete() {
-	printf 'mole_delete %s %s\n' "$1" "$2" >> "$trace"
-	return 0
-}
-defaults() {
-	printf 'defaults %s\n' "$*" >> "$trace"
-	return 0
-}
-
-app_bundle="$HOME/Applications/TestApp.app"
-mkdir -p "$app_bundle"
-mkdir -p "$HOME/Library/Preferences"
-touch "$HOME/Library/Preferences/com.example.TestApp.plist"
-mkdir -p "$HOME/Library/Preferences/ByHost"
-touch "$HOME/Library/Preferences/ByHost/com.example.TestApp.ABC123.plist"
-
-# find_app_files includes the plist and ByHost — simulating user selected them
-find_app_files() {
-	printf '%s\n' "$HOME/Library/Application Support/TestApp"
-	printf '%s\n' "$HOME/Library/Caches/TestApp"
-	printf '%s\n' "$HOME/Library/Preferences/com.example.TestApp.plist"
-	printf '%s\n' "$HOME/Library/Preferences/ByHost/com.example.TestApp.ABC123.plist"
-}
-
-selected_apps=()
-selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
-files_cleaned=0
-total_items=0
-total_size_cleaned=0
-
-printf '\n' | batch_uninstall_applications
-
-# defaults delete must have been called
-grep -q 'defaults delete com.example.TestApp' "$trace" \
-	|| { echo "FAIL: defaults delete not called"; cat "$trace"; exit 1; }
-# ByHost mole_delete must have been called
-grep -q 'ByHost.*com.example.TestApp.*plist' "$trace" \
-	|| { echo "FAIL: ByHost cleanup not called"; cat "$trace"; exit 1; }
-EOF
-
-	[ "$status" -eq 0 ]
+	[ -z "$result" ]
 }

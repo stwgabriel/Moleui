@@ -2,9 +2,8 @@
 
 # Tests for get_path_size_kb in lib/core/file_ops.sh.
 # Exercises the stat fast-path for regular files / symlinks and the du
-# fallback for directories, plus error and edge cases. Numbers chosen to
-# reveal rounding bugs (KB ceiling) and to confirm symlinks are NOT
-# followed.
+# fallback for directories, plus error and edge cases. File sizes track disk
+# blocks, not logical length, so cleanup does not overstate sparse files.
 
 setup_file() {
     PROJECT_ROOT="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
@@ -27,6 +26,19 @@ set -euo pipefail
 export MOLE_TEST_NO_AUTH=1
 source "$PROJECT_ROOT/lib/core/common.sh"
 EOF
+}
+
+create_sparse_file() {
+    local size="$1"
+    local path="$2"
+
+    if command -v truncate > /dev/null 2>&1; then
+        truncate -s "$size" "$path"
+    elif command -v mkfile > /dev/null 2>&1; then
+        mkfile -n "$size" "$path"
+    else
+        skip "truncate or mkfile required to create sparse files"
+    fi
 }
 
 @test "get_path_size_kb returns 0 for empty path" {
@@ -57,36 +69,52 @@ EOF
     [ "$output" = "0" ]
 }
 
-@test "get_path_size_kb rounds up sub-KB files to 1 KB" {
-    # 500 bytes is < 1 KB; ceiling rounding should report 1.
+@test "get_path_size_kb reports allocated blocks for sub-KB files" {
+    # 500 logical bytes usually occupy one filesystem block. Match du's
+    # disk-usage view rather than the logical byte count.
     dd if=/dev/zero of="$SANDBOX/small" bs=500 count=1 2> /dev/null
+    expected=$(du -skP "$SANDBOX/small" | awk '{print $1}')
     run bash --noprofile --norc << EOF
 $(prelude)
 get_path_size_kb "$SANDBOX/small"
 EOF
     [ "$status" -eq 0 ]
-    [ "$output" = "1" ]
+    [ "$output" = "$expected" ]
 }
 
-@test "get_path_size_kb reports exact 1 KB for 1024-byte file" {
+@test "get_path_size_kb reports allocated blocks for 1024-byte file" {
     dd if=/dev/zero of="$SANDBOX/onek" bs=1024 count=1 2> /dev/null
+    expected=$(du -skP "$SANDBOX/onek" | awk '{print $1}')
     run bash --noprofile --norc << EOF
 $(prelude)
 get_path_size_kb "$SANDBOX/onek"
 EOF
     [ "$status" -eq 0 ]
-    [ "$output" = "1" ]
+    [ "$output" = "$expected" ]
 }
 
-@test "get_path_size_kb rounds up odd byte counts" {
-    # 50000 bytes / 1024 = 48.83..., ceiling is 49.
+@test "get_path_size_kb matches du for odd byte counts" {
     dd if=/dev/zero of="$SANDBOX/odd" bs=50000 count=1 2> /dev/null
+    expected=$(du -skP "$SANDBOX/odd" | awk '{print $1}')
     run bash --noprofile --norc << EOF
 $(prelude)
 get_path_size_kb "$SANDBOX/odd"
 EOF
     [ "$status" -eq 0 ]
-    [ "$output" = "49" ]
+    [ "$output" = "$expected" ]
+}
+
+@test "get_path_size_kb does not report sparse logical size" {
+    create_sparse_file 100g "$SANDBOX/sparse"
+    expected=$(du -skP "$SANDBOX/sparse" | awk '{print $1}')
+
+    run bash --noprofile --norc << EOF
+$(prelude)
+get_path_size_kb "$SANDBOX/sparse"
+EOF
+    [ "$status" -eq 0 ]
+    [ "$output" = "$expected" ]
+    [ "$output" -lt 1048576 ]
 }
 
 @test "get_path_size_kb does not follow symlinks" {

@@ -43,8 +43,10 @@ setup_file() {
 }
 
 teardown_file() {
-	rm -rf "$HOME/.config/mole"
-	rm -rf "$HOME"
+	if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+		rm -rf "$HOME/.config/mole"
+		rm -rf "$HOME"
+	fi
 	if [[ -n "${ORIGINAL_HOME:-}" ]]; then
 		export HOME="$ORIGINAL_HOME"
 	fi
@@ -75,9 +77,32 @@ fi
 exit 0
 SCRIPT
 	chmod +x "$dir/bioutil"
+
+	cat >"$dir/chown" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+	chmod +x "$dir/chown"
+
+	cat >"$dir/install" <<'SCRIPT'
+#!/usr/bin/env bash
+args=()
+skip_next=""
+for arg in "$@"; do
+    if [[ -n "$skip_next" ]]; then skip_next=""; continue; fi
+    case "$arg" in -o|-g) skip_next=1 ;; *) args+=("$arg") ;; esac
+done
+exec /usr/bin/install "${args[@]}"
+SCRIPT
+	chmod +x "$dir/install"
 }
 
 setup() {
+	# Safety: refuse to operate on a real home directory.
+	if [[ "$HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+		printf 'FATAL: HOME is not a test temp dir: %s\n' "$HOME" >&2
+		return 1
+	fi
 	rm -rf "$HOME/.config/mole"
 	mkdir -p "$HOME/.config/mole"
 }
@@ -139,6 +164,12 @@ EOF
 	[[ "$output" != *"mo check"* ]]
 }
 
+@test "mole --help documents history command" {
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"mo history"* ]]
+}
+
 @test "mole check is not a public command" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" check --help
 	[ "$status" -ne 0 ]
@@ -179,6 +210,26 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"U Update"* ]]
+}
+
+@test "show_main_menu keeps history out of the primary menu" {
+	run bash --noprofile --norc <<'EOF'
+set -euo pipefail
+HOME="$(mktemp -d)"
+export HOME MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1
+source "$PROJECT_ROOT/mole"
+show_brand_banner() { printf 'banner\n'; }
+show_menu_option() { printf '%s\n' "$2"; }
+MAIN_MENU_BANNER=""
+MAIN_MENU_UPDATE_MESSAGE=""
+MAIN_MENU_SHOW_UPDATE=false
+show_main_menu 1 true
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Clean        Free up disk space"* ]]
+	[[ "$output" != *"History"* ]]
+	[[ "$output" != *"history"* ]]
 }
 
 @test "interactive_main_menu ignores U shortcut when update notice is hidden" {
@@ -229,6 +280,43 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"UPDATE_CALLED"* ]]
+}
+
+@test "interactive_main_menu drains numeric shortcut Enter before launching uninstall" {
+	run bash --noprofile --norc <<'EOF'
+set -euo pipefail
+HOME="$(mktemp -d)"
+export HOME MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1
+source "$PROJECT_ROOT/mole"
+
+fake_root="$HOME/fake-mole"
+mkdir -p "$fake_root/bin"
+cat > "$fake_root/bin/uninstall.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+if IFS= read -r -s -n1 -t 0.1 key; then
+    if [[ -z "$key" ]]; then
+        echo "LEAK:ENTER"
+    else
+        printf 'LEAK:%s\n' "$key"
+    fi
+else
+    echo "NO_LEAK"
+fi
+SCRIPT
+chmod +x "$fake_root/bin/uninstall.sh"
+
+SCRIPT_DIR="$fake_root"
+show_brand_banner() { :; }
+show_main_menu() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+
+interactive_main_menu < <(printf '2\n')
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"NO_LEAK"* ]]
+	[[ "$output" != *"LEAK:"* ]]
 }
 
 @test "touchid status reports current configuration" {
@@ -299,7 +387,7 @@ EOF
 @test "mo uninstall --help directs leftover-only cleanup to clean" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" uninstall --help
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"For leftovers from apps that are already gone, use mo clean."* ]]
+	[[ "$output" == *"already gone, use mo clean"* ]]
 }
 
 @test "mo clean --external accepts canonicalized custom root" {
@@ -386,6 +474,66 @@ EOF
 
 	run grep "pam_tid.so" "$pam_file"
 	[ "$status" -ne 0 ]
+}
+
+@test "enable_touchid sets correct file permissions on pam file" {
+	pam_file="$HOME/pam_perms_enable"
+	cat >"$pam_file" <<'EOF'
+auth       sufficient     pam_opendirectory.so
+EOF
+
+	fake_bin="$HOME/fake-bin-perms-enable"
+	create_fake_utils "$fake_bin"
+
+	run env PATH="$fake_bin:$PATH" MOLE_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" enable
+	[ "$status" -eq 0 ]
+	grep -q "pam_tid.so" "$pam_file"
+
+	local perms
+	perms=$(stat -f "%Lp" "$pam_file" 2>/dev/null || stat -c "%a" "$pam_file" 2>/dev/null)
+	[ "$perms" = "444" ]
+}
+
+@test "disable_touchid sets correct file permissions on pam file" {
+	pam_file="$HOME/pam_perms_disable"
+	cat >"$pam_file" <<'EOF'
+auth       sufficient     pam_tid.so
+auth       sufficient     pam_opendirectory.so
+EOF
+
+	fake_bin="$HOME/fake-bin-perms-disable"
+	create_fake_utils "$fake_bin"
+
+	run env PATH="$fake_bin:$PATH" MOLE_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" disable
+	[ "$status" -eq 0 ]
+
+	local perms
+	perms=$(stat -f "%Lp" "$pam_file" 2>/dev/null || stat -c "%a" "$pam_file" 2>/dev/null)
+	[ "$perms" = "444" ]
+}
+
+@test "enable_touchid sets correct permissions on sudo_local file" {
+	pam_file="$HOME/pam_perms_sudolocal"
+	pam_local="$(dirname "$pam_file")/sudo_local_perms"
+	cat >"$pam_file" <<'EOF'
+# sudo: auth account password session
+auth       include        sudo_local
+auth       sufficient     pam_opendirectory.so
+EOF
+
+	fake_bin="$HOME/fake-bin-perms-sudolocal"
+	create_fake_utils "$fake_bin"
+
+	run env PATH="$fake_bin:$PATH" \
+		MOLE_PAM_SUDO_FILE="$pam_file" \
+		MOLE_PAM_SUDO_LOCAL_FILE="$pam_local" \
+		"$PROJECT_ROOT/bin/touchid.sh" enable
+	[ "$status" -eq 0 ]
+	grep -q "pam_tid.so" "$pam_local"
+
+	local perms
+	perms=$(stat -f "%Lp" "$pam_local" 2>/dev/null || stat -c "%a" "$pam_local" 2>/dev/null)
+	[ "$perms" = "444" ]
 }
 
 # --- JSON output mode tests ---

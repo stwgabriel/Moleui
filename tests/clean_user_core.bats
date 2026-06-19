@@ -18,7 +18,9 @@ setup_file() {
 }
 
 teardown_file() {
-    rm -rf "$HOME"
+    if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$HOME"
+    fi
     if [[ -n "${ORIGINAL_HOME:-}" ]]; then
         export HOME="$ORIGINAL_HOME"
     fi
@@ -42,7 +44,7 @@ EOF
     [[ "$output" != *"Trash"* ]]
 }
 
-@test "clean_user_essentials falls back when Finder trash operations time out" {
+@test "clean_user_essentials empties trash directly without Finder prompt" {
     mkdir -p "$HOME/.Trash"
     touch "$HOME/.Trash/one.tmp" "$HOME/.Trash/two.tmp"
 
@@ -53,18 +55,17 @@ source "$PROJECT_ROOT/lib/clean/user.sh"
 DRY_RUN=false
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
 safe_clean() { :; }
 note_activity() { :; }
 is_path_whitelisted() { return 1; }
 debug_log() { :; }
-run_with_timeout() {
-    local _duration="$1"
-    shift
-    if [[ "$1" == "osascript" ]]; then
-        return 124
-    fi
-    "$@"
+osascript() {
+    echo "FAIL: osascript called, should be direct delete" >&2
+    return 1
 }
+export -f osascript
 safe_remove() {
     local target="$1"
     /bin/rm -rf "$target"
@@ -78,6 +79,7 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Trash · emptied, 2 items"* ]]
+    [[ "$output" != *"osascript called"* ]]
 }
 
 @test "clean_user_essentials keeps Mole runtime logs while cleaning other user logs" {
@@ -770,7 +772,7 @@ EOF
     [[ "$output" == *"Puppeteer browser cache"* ]]
 }
 
-@test "clean_browsers cleans Brave Service Worker caches" {
+@test "clean_browsers preserves Brave Service Worker ScriptCache" {
     mkdir -p "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/Default/Service Worker/ScriptCache"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
@@ -788,13 +790,43 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Brave SW Brave"* ]]
-    [[ "$output" == *"Brave Service Worker ScriptCache"* ]]
+    [[ "$output" != *"Brave Service Worker ScriptCache"* ]]
 
     rm -rf "$HOME/Library"
 }
 
-@test "clean_browsers skips Chrome ScriptCache when Chrome is running (#785)" {
+@test "clean_browsers covers Arc User Data layout" {
+    mkdir -p "$HOME/Library/Application Support/Arc/User Data/Default/Service Worker/ScriptCache"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "$2|$1"; }
+clean_service_worker_cache() { echo "Arc SW $2"; }
+note_activity() { :; }
+pgrep() { return 1; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_browsers
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Arc code cache|$HOME/Library/Application Support/Arc/User Data/"* ]]
+    [[ "$output" == *"Arc component CRX cache|$HOME/Library/Application Support/Arc/User Data/component_crx_cache/"* ]]
+    [[ "$output" == *"Arc extensions CRX cache|$HOME/Library/Application Support/Arc/User Data/extensions_crx_cache/"* ]]
+    [[ "$output" == *"Arc SW $HOME/Library/Application Support/Arc/User Data/Default/Service Worker/CacheStorage"* ]]
+    [[ "$output" != *"Arc Service Worker ScriptCache|$HOME/Library/Application Support/Arc/User Data/Default/Service Worker/ScriptCache/"* ]]
+
+    rm -rf "$HOME/Library"
+}
+
+@test "clean_browsers always preserves Chromium Service Worker ScriptCache (#785 #964 #968)" {
     mkdir -p "$HOME/Library/Application Support/Google/Chrome/Default/Service Worker/ScriptCache"
+    mkdir -p "$HOME/Library/Application Support/Arc/User Data/Default/Service Worker/ScriptCache"
+    mkdir -p "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/Default/Service Worker/ScriptCache"
+    mkdir -p "$HOME/Library/Application Support/Vivaldi/Default/Service Worker/ScriptCache"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -803,8 +835,7 @@ source "$PROJECT_ROOT/lib/clean/user.sh"
 safe_clean() { echo "$2"; }
 clean_service_worker_cache() { echo "SW-CALL $1"; }
 note_activity() { :; }
-# Stub pgrep so every browser/editor appears to be running.
-pgrep() { return 0; }
+pgrep() { return 1; }
 files_cleaned=0
 total_size_cleaned=0
 total_items=0
@@ -814,12 +845,90 @@ EOF
     [ "$status" -eq 0 ]
     # CacheStorage cleanup still runs (it has its own protection logic).
     [[ "$output" == *"SW-CALL Chrome"* ]]
-    # ScriptCache cleanup must NOT run while Chrome is live: wiping V8
-    # bytecode under a running Chromium breaks MV3 extension service workers.
+    # ScriptCache cleanup must NOT run at all: wiping V8 bytecode can break
+    # Chromium MV3 extension service workers even after the browser exits.
     [[ "$output" != *"Chrome Service Worker ScriptCache"* ]]
     [[ "$output" != *"Arc Service Worker ScriptCache"* ]]
     [[ "$output" != *"Brave Service Worker ScriptCache"* ]]
     [[ "$output" != *"Vivaldi Service Worker ScriptCache"* ]]
+
+    rm -rf "$HOME/Library"
+}
+
+@test "clean_browsers preserves Arc User Data ScriptCache regardless of running state" {
+    mkdir -p "$HOME/Library/Application Support/Arc/User Data/Default/Service Worker/ScriptCache"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "$2|$1"; }
+clean_service_worker_cache() { echo "Arc SW $2"; }
+note_activity() { :; }
+pgrep() {
+    [[ "${2:-}" == "Arc" ]]
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_browsers
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Arc SW $HOME/Library/Application Support/Arc/User Data/Default/Service Worker/CacheStorage"* ]]
+    [[ "$output" != *"Arc Service Worker ScriptCache|$HOME/Library/Application Support/Arc/User Data/Default/Service Worker/ScriptCache/"* ]]
+
+    rm -rf "$HOME/Library"
+}
+
+@test "clean_browsers covers QQ Browser 3 caches when not running" {
+    mkdir -p "$HOME/Library/Application Support/QQBrowser3/Default/Code Cache"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "$2|$1"; }
+clean_service_worker_cache() { :; }
+note_activity() { :; }
+pgrep() { return 1; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_browsers
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"QQ Browser cache|$HOME/Library/Caches/com.tencent.QQBrowser3/"* ]]
+    [[ "$output" == *"QQ Browser code cache|$HOME/Library/Application Support/QQBrowser3/"* ]]
+    [[ "$output" == *"QQ Browser component cache|$HOME/Library/Application Support/QQBrowser3/component_crx_cache/"* ]]
+
+    rm -rf "$HOME/Library"
+}
+
+@test "clean_browsers skips QQ Browser 3 profile caches while running" {
+    mkdir -p "$HOME/Library/Application Support/QQBrowser3/Default/Code Cache"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "$2|$1"; }
+clean_service_worker_cache() { :; }
+note_activity() { :; }
+pgrep() {
+    [[ "${2:-}" == "QQBrowser3" ]]
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_browsers
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"QQ Browser cache|$HOME/Library/Caches/com.tencent.QQBrowser3/"* ]]
+    [[ "$output" != *"QQ Browser code cache"* ]]
+    [[ "$output" != *"QQ Browser GPU cache"* ]]
 
     rm -rf "$HOME/Library"
 }

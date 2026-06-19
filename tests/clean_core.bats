@@ -18,13 +18,20 @@ setup_file() {
 }
 
 teardown_file() {
-    rm -rf "$HOME"
+    if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$HOME"
+    fi
     if [[ -n "${ORIGINAL_HOME:-}" ]]; then
         export HOME="$ORIGINAL_HOME"
     fi
 }
 
 setup() {
+    # Safety: refuse to operate on a real home directory.
+    if [[ "$HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        printf 'FATAL: HOME is not a test temp dir: %s\n' "$HOME" >&2
+        return 1
+    fi
     export TERM="xterm-256color"
     rm -rf "${HOME:?}"/*
     rm -rf "$HOME/Library" "$HOME/.config"
@@ -109,12 +116,195 @@ MOCK
     [[ "$output" == *"full preview"* ]]
 }
 
+@test "mo clean sudo prompt proceeds to auth when a password character is typed first (#1059)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+
+ensure_sudo_session() {
+    echo "ENSURE_SUDO"
+    return 0
+}
+drain_pending_input() { :; }
+# A user who reads "Enter ... password" literally starts typing; the first
+# printable key must go to authentication, never an auto-skip.
+read_key() {
+    echo "CHAR:p"
+}
+
+prompt_for_system_clean
+printf '\nSYSTEM_CLEAN=%s\n' "$SYSTEM_CLEAN"
+SCRIPT
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"continue"* ]]
+    [[ "$output" != *"Enter"*"password"* ]]
+    [[ "$output" == *"ENSURE_SUDO"* ]]
+    [[ "$output" == *"SYSTEM_CLEAN=true"* ]]
+    [[ "$output" != *"Skipped"* ]]
+}
+
+@test "mo clean sudo prompt still skips on explicit Space (#1059)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+
+ensure_sudo_session() {
+    echo "ENSURE_SUDO"
+    return 0
+}
+drain_pending_input() { :; }
+read_key() {
+    echo "SPACE"
+}
+
+prompt_for_system_clean
+printf '\nSYSTEM_CLEAN=%s\n' "$SYSTEM_CLEAN"
+SCRIPT
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Skipped"* ]]
+    [[ "$output" != *"ENSURE_SUDO"* ]]
+    [[ "$output" == *"SYSTEM_CLEAN=false"* ]]
+}
+
 @test "cloud and office timeout path uses helper function instead of bash -c" {
     run bash -c "grep -Eq 'run_with_shell_timeout 300 run_cloud_and_office_cleanup' '$PROJECT_ROOT/bin/clean.sh'"
     [ "$status" -eq 0 ]
 
     run bash -c "! grep -Eq 'run_with_timeout 300[[:space:]]+bash[[:space:]]+-c' '$PROJECT_ROOT/bin/clean.sh'"
     [ "$status" -eq 0 ]
+}
+
+@test "mo clean summary separates tracked cleanup from free space change" {
+    local mock_bin="$HOME/bin"
+    mkdir -p "$mock_bin"
+    cat > "$mock_bin/df" <<'MOCK'
+#!/bin/bash
+count_file="${MOLE_DF_COUNT:?}"
+count=0
+if [[ -f "$count_file" ]]; then
+    count=$(cat "$count_file")
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+
+available=73400320
+if [[ "$count" -ge 2 ]]; then
+    available=74400320
+fi
+
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+printf '/dev/disk1 200000000 126599680 %s 64%% /\n' "$available"
+MOCK
+    chmod +x "$mock_bin/df"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$mock_bin:$PATH" MOLE_DF_COUNT="$HOME/df.count" MOLE_TEST_MODE=0 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+
+DRY_RUN=false
+SYSTEM_CLEAN=false
+EXTERNAL_VOLUME_TARGET=""
+WHITELIST_PATTERNS=()
+WHITELIST_WARNINGS=()
+
+check_tcc_permissions() { :; }
+start_section() { :; }
+end_section() { :; }
+log_operation_session_end() { :; }
+run_with_shell_timeout() { shift; "$@"; }
+
+clean_user_essentials() {
+    total_size_cleaned=$((total_size_cleaned + 1000000))
+    files_cleaned=$((files_cleaned + 1))
+    total_items=$((total_items + 1))
+}
+clean_finder_metadata() { :; }
+clean_app_caches() { :; }
+clean_browsers() { :; }
+run_cloud_and_office_cleanup() { :; }
+clean_developer_tools() { :; }
+clean_user_gui_applications() { :; }
+clean_virtualization_tools() { :; }
+clean_application_support_logs() { :; }
+clean_orphaned_app_data() { :; }
+clean_orphaned_system_services() { :; }
+clean_orphaned_container_stubs() { :; }
+clean_stale_launch_services_registrations() { :; }
+show_user_launch_agent_hint_notice() { :; }
+show_orphan_dotdir_hint_notice() { :; }
+clean_apple_silicon_caches() { :; }
+clean_cached_device_firmware() { :; }
+check_ios_device_backups() { :; }
+clean_time_machine_failed_backups() { :; }
+check_large_file_candidates() { :; }
+show_system_data_hint_notice() { :; }
+show_project_artifact_hint_notice() { :; }
+
+perform_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Free space: 75.16GB"* ]]
+    [[ "$output" == *"Tracked cleanup:"* ]]
+    [[ "$output" == *"1.02GB"* ]]
+    [[ "$output" == *"Free space change: +1.02GB"* ]]
+    [[ "$output" == *"Free space now: 76.19GB"* ]]
+    [[ "$output" != *"Space freed:"* ]]
+    [ "$(cat "$HOME/df.count")" = "2" ]
+}
+
+@test "safe_clean bulk file sizing does not report sparse logical size" {
+    local sparse_dir="$HOME/sparse-cache"
+    mkdir -p "$sparse_dir"
+    for i in {1..25}; do
+        if command -v truncate > /dev/null 2>&1; then
+            truncate -s 100g "$sparse_dir/item-$i.cache"
+        elif command -v mkfile > /dev/null 2>&1; then
+            mkfile -n 100g "$sparse_dir/item-$i.cache"
+        else
+            skip "truncate or mkfile required to create sparse files"
+        fi
+    done
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+DRY_RUN=true
+export MOLE_DRY_RUN=1
+EXPORT_LIST_FILE="$HOME/clean-list.txt"
+safe_clean "$sparse_dir"/* "Sparse CLI cache"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Sparse CLI cache"* ]]
+    [[ "$output" != *"GB"* ]]
+    [[ "$output" != *"TB"* ]]
+}
+
+@test "dry-run cleanup does not count children of already counted parents" {
+    local cache_dir="$HOME/Library/Caches/example"
+    mkdir -p "$cache_dir/nested"
+    dd if=/dev/zero of="$cache_dir/nested/payload" bs=1024 count=8 2> /dev/null
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+DRY_RUN=true
+export MOLE_DRY_RUN=1
+EXPORT_LIST_FILE="$HOME/clean-list.txt"
+DRY_RUN_SEEN_IDENTITIES=()
+DRY_RUN_SEEN_PATHS=()
+safe_clean "$cache_dir" "Parent cache"
+safe_clean "$cache_dir/nested/payload" "Nested cache"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Parent cache"* ]]
+    [[ "$output" != *"Nested cache"* ]]
 }
 
 @test "mo clean --dry-run survives an unwritable TMPDIR" {

@@ -25,16 +25,23 @@ setup_file() {
 setup() {
 	HOME="$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-scan-bash32.XXXXXX")"
 	export HOME
+	# Safety: refuse to operate on a real home directory.
+	if [[ "$HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+		printf 'FATAL: HOME is not a test temp dir: %s\n' "$HOME" >&2
+		return 1
+	fi
 	export TERM="dumb"
 }
 
 teardown() {
-	rm -rf "$HOME"
+	if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+		rm -rf "$HOME"
+	fi
 }
 
 # Build a sourceable copy of bin/uninstall.sh: rewrites SCRIPT_DIR so library
 # sources resolve, and strips the `main "$@"` invocation so we can drive
-# scan_applications directly. Mirrors tests/performance_uninstall_scan.sh.
+# scan_applications directly.
 sourceable_uninstall_sh() {
 	local out="$1"
 	awk -v script_dir="$PROJECT_ROOT/bin" '
@@ -42,6 +49,26 @@ sourceable_uninstall_sh() {
 		/^main "\$@"/ { print "# main skipped by test"; next }
 		{ print }
 	' "$PROJECT_ROOT/bin/uninstall.sh" > "$out"
+}
+
+create_test_app_bundle() {
+	local app_path="$1"
+	local bundle_id="$2"
+	local display_name="$3"
+
+	mkdir -p "$app_path/Contents"
+	cat > "$app_path/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>$bundle_id</string>
+    <key>CFBundleName</key>
+    <string>$display_name</string>
+</dict>
+</plist>
+PLIST
 }
 
 @test "scan_applications: Pass 2 tolerates empty app_data_tuples on /bin/bash 3.2 (#863)" {
@@ -65,13 +92,12 @@ sourceable_uninstall_sh() {
 
 	done_marker="$HOME/scan.done"
 
-	# The bug not only emits "unbound variable" — the spinner subshell
-	# `( ... ) &` launched just before the failing iteration keeps running
-	# after the parent script errors out (its `while true` loop has no
-	# inherited signal). The user-visible symptom is exactly "scanning
-	# forever". Mirror the marker-file watchdog from the #722 hang test
-	# (uninstall.bats: "uninstall_persist_cache_file does not hang…") so a
-	# regression surfaces as HANG rather than blocking the whole bats run.
+	# The bug not only emits "unbound variable"; the spinner subshell can
+	# keep running after the parent script errors out. The user-visible
+	# symptom is exactly "scanning forever". Mirror the marker-file watchdog
+	# from the #722 hang test (uninstall.bats: "uninstall_persist_cache_file
+	# does not hang...") so a regression surfaces as HANG rather than blocking
+	# the whole bats run.
 	(
 		env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
 			MOLE_TEST_NO_AUTH=1 \
@@ -162,6 +188,126 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"|$app_path|Artpaper|andriiliakh.Artpaper|"* ]]
+}
+
+@test "scan_applications includes top-level OneDrive even when background-only (#970)" {
+	src="$HOME/uninstall_source.sh"
+	sourceable_uninstall_sh "$src"
+
+	apps_root="$HOME/Applications"
+	app_path="$apps_root/OneDrive.app"
+	mkdir -p "$app_path/Contents"
+	cat > "$app_path/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.microsoft.OneDrive-mac</string>
+    <key>CFBundleName</key>
+    <string>OneDrive</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_NO_AUTH=1 APPS_ROOT="$apps_root" SRC_PATH="$src" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+# shellcheck source=/dev/null
+source "$SRC_PATH"
+
+uninstall_print_app_search_dirs() { printf '%s\n' "$APPS_ROOT"; }
+
+apps_file=$(scan_applications)
+cat "$apps_file"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"|$app_path|OneDrive|com.microsoft.OneDrive-mac|"* ]]
+}
+
+@test "scan_applications dedupes backup Applications clones by bundle id (#975)" {
+	src="$HOME/uninstall_source.sh"
+	sourceable_uninstall_sh "$src"
+
+	apps_root="$HOME/Applications"
+	backup_root="$HOME/BackupClone/Applications"
+	local_app="$apps_root/Dupe.app"
+	backup_app="$backup_root/Dupe.app"
+	create_test_app_bundle "$local_app" "com.example.Dupe" "Dupe"
+	create_test_app_bundle "$backup_app" "com.example.Dupe" "Dupe"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_NO_AUTH=1 APPS_ROOT="$apps_root" BACKUP_ROOT="$backup_root" SRC_PATH="$src" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+# shellcheck source=/dev/null
+source "$SRC_PATH"
+
+uninstall_print_app_search_dirs() { printf '%s\n' "$APPS_ROOT" "$BACKUP_ROOT"; }
+
+apps_file=$(scan_applications)
+cat "$apps_file"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"|$local_app|Dupe|com.example.Dupe|"* ]]
+	[[ "$output" != *"|$backup_app|Dupe|com.example.Dupe|"* ]]
+}
+
+@test "scan_applications keeps unique apps from backup Applications roots (#975)" {
+	src="$HOME/uninstall_source.sh"
+	sourceable_uninstall_sh "$src"
+
+	backup_root="$HOME/BackupClone/Applications"
+	backup_app="$backup_root/OnlyThere.app"
+	create_test_app_bundle "$backup_app" "com.example.OnlyThere" "OnlyThere"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_NO_AUTH=1 BACKUP_ROOT="$backup_root" SRC_PATH="$src" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+# shellcheck source=/dev/null
+source "$SRC_PATH"
+
+uninstall_print_app_search_dirs() { printf '%s\n' "$BACKUP_ROOT"; }
+
+apps_file=$(scan_applications)
+cat "$apps_file"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"|$backup_app|OnlyThere|com.example.OnlyThere|"* ]]
+}
+
+@test "scan_applications keeps original rows when dedupe pass fails (#975)" {
+	src="$HOME/uninstall_source.sh"
+	sourceable_uninstall_sh "$src"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" SRC_PATH="$src" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+# shellcheck source=/dev/null
+source "$SRC_PATH"
+
+scan_raw_file="$HOME/scan.raw"
+printf '%s\n' "$HOME/Applications/Keep.app|Keep|com.example.Keep|1" > "$scan_raw_file"
+
+awk() { return 2; }
+
+_scan_dedupe_bundle_ids
+cat "$scan_raw_file"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == "$HOME/Applications/Keep.app|Keep|com.example.Keep|1" ]]
 }
 
 @test "scan_applications ignores PATH stat shims (#865)" {

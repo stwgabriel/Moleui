@@ -13,6 +13,11 @@ setup_file() {
 setup() {
     FAKE_HOME="$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-bundle-home.XXXXXX")"
     export FAKE_HOME
+    # Safety: refuse to operate if mktemp failed.
+    if [[ "$FAKE_HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        printf 'FATAL: FAKE_HOME is not a test temp dir: %s\n' "$FAKE_HOME" >&2
+        return 1
+    fi
     mkdir -p "$FAKE_HOME/Applications"
 
     # Stage a fake /Applications tree inside the tmp area. bundle_has_installed_app
@@ -24,7 +29,9 @@ setup() {
 }
 
 teardown() {
-    rm -rf "$FAKE_HOME"
+    if [[ "$FAKE_HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
+        rm -rf "$FAKE_HOME"
+    fi
 }
 
 # Shared prelude: source base + resolver, disable mdfind, point resolver at FAKE_APPS.
