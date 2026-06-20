@@ -1221,10 +1221,26 @@ function centeredWindowBounds({ width, height, minWidth, minHeight }) {
   };
 }
 
+function mainWindowBounds() {
+  const workArea = screen.getPrimaryDisplay().workArea;
+  // Fill most of the screen so the app is comfortably large after login and
+  // adapts to the display, rather than capping at a fixed width.
+  const width = Math.min(2000, Math.max(MAIN_WINDOW_SIZE.minWidth, Math.round(workArea.width * 0.92)));
+  const height = Math.min(1320, Math.max(MAIN_WINDOW_SIZE.minHeight, Math.round(workArea.height * 0.92)));
+  return {
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
+    width,
+    height,
+    minWidth: Math.min(MAIN_WINDOW_SIZE.minWidth, width),
+    minHeight: Math.min(MAIN_WINDOW_SIZE.minHeight, height),
+  };
+}
+
 function applyMainWindowBounds(window) {
   if (!window || window.isDestroyed()) return;
 
-  const nextBounds = centeredWindowBounds(MAIN_WINDOW_SIZE);
+  const nextBounds = mainWindowBounds();
   window.setMinimumSize(nextBounds.minWidth, nextBounds.minHeight);
   window.setBounds({ x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height }, false);
 }
@@ -1240,7 +1256,7 @@ function denyChildWindows(window) {
 
 function createWindow(options = {}) {
   const shouldShow = options.show !== false;
-  const bounds = centeredWindowBounds(MAIN_WINDOW_SIZE);
+  const bounds = mainWindowBounds();
   const window = new BrowserWindow({
     width: bounds.width,
     height: bounds.height,
