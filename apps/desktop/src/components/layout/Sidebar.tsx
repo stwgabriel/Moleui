@@ -7,6 +7,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { CSSProperties } from 'react';
+import { motion } from 'motion/react';
 import { cn } from '@/utils/cn';
 import { UserAvatar } from '@/components/account/UserAvatar';
 import { FEATURE_ACCENTS } from '@/lib/featureAccents';
@@ -66,19 +67,27 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
               onClick={() => onPageChange(page)}
               style={accentStyle}
               className={cn(
-                'group flex w-[116px] flex-col items-center justify-center gap-2.5 rounded-[1.35rem] py-[clamp(0.6rem,1.25vh,0.8rem)] text-center transition-all duration-300 active:scale-[0.98]',
+                'group relative flex w-[116px] flex-col items-center justify-center gap-2.5 rounded-[1.35rem] py-[clamp(0.6rem,1.25vh,0.8rem)] text-center transition-colors duration-300 active:scale-[0.98]',
                 isActive
-                  ? 'bg-[rgba(var(--nav-accent-rgb),0.13)] text-[var(--nav-accent)] shadow-[0_16px_45px_rgba(var(--nav-accent-rgb),0.18)] ring-1 ring-[rgba(var(--nav-accent-rgb),0.35)]'
+                  ? 'text-[var(--nav-accent)]'
                   : 'text-slate-500 hover:bg-[rgba(var(--nav-accent-rgb),0.08)] hover:text-slate-700'
               )}
               aria-current={isActive ? 'page' : undefined}
             >
+              {isActive && (
+                <motion.span
+                  layoutId="nav-active-pill"
+                  className="absolute inset-0 rounded-[1.35rem] bg-[rgba(var(--nav-accent-rgb),0.13)] shadow-[0_16px_45px_rgba(var(--nav-accent-rgb),0.18)] ring-1 ring-[rgba(var(--nav-accent-rgb),0.35)]"
+                  transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                  aria-hidden="true"
+                />
+              )}
               <Icon
-                className="h-6 w-6 transition-transform duration-300 group-hover:scale-105"
+                className="relative h-6 w-6 transition-transform duration-300 group-hover:scale-105"
                 strokeWidth={isActive ? 2.2 : 1.9}
                 aria-hidden="true"
               />
-              <span className="text-[0.95rem] font-semibold leading-none tracking-[-0.02em]">{label}</span>
+              <span className="relative text-[0.95rem] font-semibold leading-none tracking-[-0.02em]">{label}</span>
             </button>
           );
         })}
