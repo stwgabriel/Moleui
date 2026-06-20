@@ -715,6 +715,27 @@ body {
   box-shadow: none !important;
 }
 
+/* Show / hide password toggle.
+   The width:100% reset above targets every <button> in the form, which would
+   otherwise stretch Clerk's show-password icon button across the whole field and
+   cover the input. Keep it a compact icon anchored on the right, give it the
+   form's secondary text color so it stays visible, and reserve room in the
+   password input so the value never slides underneath it. */
+.mole-native-login-form .cl-formFieldInputShowPasswordButton {
+  width: auto !important;
+  min-width: 0 !important;
+  flex: 0 0 auto !important;
+  color: #5a6473 !important;
+}
+
+.mole-native-login-form .cl-formFieldInputShowPasswordButton:hover {
+  color: #202936 !important;
+}
+
+.mole-native-login-form .cl-formFieldInputGroup:has(.cl-formFieldInputShowPasswordButton) .cl-formFieldInput {
+  padding-right: 2.75rem !important;
+}
+
 .mole-native-login-form :where(.cl-formFieldInput, input) {
   border-radius: 0.75rem !important;
 }
@@ -725,6 +746,57 @@ body {
 
 .mole-native-login-form .cl-formFieldInput:focus {
   outline: none !important;
+}
+
+/* Animate each sign-in step (email -> password -> 2FA) as Clerk swaps the form,
+   so moving between screens slides in smoothly instead of snapping. Clerk
+   re-creates the form element per screen, so the entrance animation replays on
+   every step. */
+@keyframes mole-clerk-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mole-native-login-form .cl-form {
+  animation: mole-clerk-step-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ============================================================
+   SKELETON SHIMMER (loading placeholders, e.g. My Mac dashboard)
+   ============================================================ */
+
+@keyframes mole-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.mole-skeleton {
+  background-color: rgba(148, 163, 184, 0.2);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 30%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: mole-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mole-skeleton {
+    animation: none;
+  }
 }
 
 /* ============================================================

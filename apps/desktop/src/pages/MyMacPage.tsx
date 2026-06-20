@@ -119,6 +119,113 @@ function DetailRow({ icon: Icon, label, value }: DetailRowProps) {
   );
 }
 
+// ── Loading skeleton ─────────────────────────────────────────────────────────
+// Mirrors the real dashboard layout (same grid, card frames, static titles and
+// icons) and only shimmers the dynamic values and graphs, so the page is already
+// in place when metrics arrive and the load feels seamless.
+
+function DetailRowSkeleton({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-900/10 py-3 last:border-b-0">
+      <div className="flex min-w-0 items-center gap-2.5 text-slate-600">
+        <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+        <span className="truncate font-medium">{label}</span>
+      </div>
+      <div className="mole-skeleton h-4 w-16 rounded-md" />
+    </div>
+  );
+}
+
+function MetricCardSkeleton({ title, className }: { title: string; className: string }) {
+  return (
+    <Card className={`min-h-36 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD} ${className}`}>
+      <div className="flex h-full flex-col">
+        <div className="flex items-start justify-between gap-3">
+          <div className="text-xl font-bold text-slate-950">{title}</div>
+          <div className="mole-skeleton h-6 w-14 rounded-lg" />
+        </div>
+        <div className={`min-h-0 flex-1 py-2 ${GRAPH_EDGE_FADE}`}>
+          <div className="mole-skeleton h-full min-h-[3rem] w-full rounded-xl" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function MyMacSkeleton() {
+  return (
+    <div
+      className="grid h-full min-h-0 grid-cols-4 gap-2"
+      style={{ gridTemplateRows: 'repeat(2, minmax(0, 1fr)) repeat(2, minmax(0, 0.78fr))' }}
+      role="status"
+      aria-label="Loading your Mac"
+    >
+      {/* Mac Info - Row 1-2, Col 1 */}
+      <Card className={`col-start-1 row-start-1 row-span-2 min-h-0 min-w-0 rounded-[1.75rem] p-4 ${GLASS_CARD}`}>
+        <div className="flex h-full min-h-0 flex-col justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <img
+                src="./assets/images/mac-preview.png"
+                alt="Mac preview"
+                className="w-24 shrink-0 object-contain drop-shadow-[0_16px_24px_rgba(15,23,42,0.16)]"
+              />
+              <div className="flex shrink-0 flex-col items-end gap-2 text-right">
+                <span className="text-[11px] font-semibold uppercase text-slate-500">Health</span>
+                <div className="mole-skeleton h-9 w-16 rounded-xl" />
+              </div>
+            </div>
+
+            <div className="mt-3 min-w-0 space-y-2.5">
+              <div className="mole-skeleton h-5 w-3/4 rounded-md" />
+              <div className="mole-skeleton h-4 w-2/3 rounded-md" />
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-slate-600">Health Score</span>
+                <div className="mole-skeleton h-4 w-24 rounded-md" />
+              </div>
+            </div>
+          </div>
+
+          <div className="min-w-0 rounded-3xl border border-white/60 bg-white/30 px-3 text-sm shadow-inner shadow-white/30 backdrop-blur-xl">
+            <DetailRowSkeleton icon={Settings2} label="System" />
+            <DetailRowSkeleton icon={Clock3} label="Uptime" />
+            <DetailRowSkeleton icon={Battery} label="Battery" />
+            <DetailRowSkeleton icon={Thermometer} label="Temperature" />
+          </div>
+        </div>
+      </Card>
+
+      {/* Metric cards - Col 2-4, Rows 1-2 */}
+      <MetricCardSkeleton title="Processor" className="col-start-2 row-start-1" />
+      <MetricCardSkeleton title="GPU" className="col-start-2 row-start-2" />
+      <MetricCardSkeleton title="RAM" className="col-start-3 row-start-1" />
+      <MetricCardSkeleton title="Network" className="col-start-3 row-start-2" />
+      <MetricCardSkeleton title="Storage" className="col-start-4 row-start-1" />
+      <MetricCardSkeleton title="Battery" className="col-start-4 row-start-2" />
+
+      {/* Processes - Row 3-4, All Columns */}
+      <Card className={`col-span-4 row-start-3 row-span-2 min-h-0 rounded-[1.75rem] p-4 ${GLASS_CARD}`}>
+        <div className="flex h-full min-h-0 flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xl font-bold text-slate-950">Apps &amp; Processes</div>
+            <div className="mole-skeleton h-8 w-40 rounded-full" />
+          </div>
+          <div className="min-h-0 flex-1 space-y-2.5 overflow-hidden">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="flex items-center gap-3">
+                <div className="mole-skeleton h-7 w-7 shrink-0 rounded-lg" />
+                <div className="mole-skeleton h-4 flex-1 rounded-md" />
+                <div className="mole-skeleton h-4 w-14 shrink-0 rounded-md" />
+                <div className="mole-skeleton h-4 w-14 shrink-0 rounded-md" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function ProcessAppIcon({ process, icon, iconMissing }: { process: ProcessInfo; icon?: string; iconMissing?: boolean }) {
   return (
     <span
@@ -838,12 +945,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
             <Button onClick={() => void fetchMetrics()}>Retry</Button>
           </Card>
         ) : !metrics ? (
-          <div className="flex h-full min-h-0 items-center justify-center" role="status" aria-label="Loading system metrics">
-            <div className="flex flex-col items-center gap-4">
-              <div className="h-10 w-10 animate-spin rounded-full border-4 border-violet-300/30 border-t-violet-600" />
-              <p className="text-sm font-medium text-slate-500">Loading your Mac...</p>
-            </div>
-          </div>
+          <MyMacSkeleton />
         ) : metrics && (
           <div
             className="grid h-full min-h-0 grid-cols-4 gap-2"
