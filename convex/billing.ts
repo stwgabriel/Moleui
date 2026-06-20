@@ -112,6 +112,12 @@ export const createCheckoutSession = action({
     }
 
     const discountOptions = await checkoutDiscountOptions(client);
+    // Stripe Tax requires a Tax-supported account country with Tax enabled. Default
+    // it off so checkout works everywhere; opt in with STRIPE_AUTOMATIC_TAX=true.
+    const automaticTaxEnabled = process.env.STRIPE_AUTOMATIC_TAX === 'true';
+    const customerUpdate: Stripe.Checkout.SessionCreateParams.CustomerUpdate = automaticTaxEnabled
+      ? { address: 'auto', name: 'auto' }
+      : { name: 'auto' };
     const session = await client.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
@@ -119,12 +125,9 @@ export const createCheckoutSession = action({
       success_url: process.env.APP_CHECKOUT_SUCCESS_URL ?? 'https://billing.moleui.local/success',
       cancel_url: process.env.APP_CHECKOUT_CANCEL_URL ?? 'https://billing.moleui.local/cancel',
       ...discountOptions,
-      automatic_tax: { enabled: true },
+      automatic_tax: { enabled: automaticTaxEnabled },
       billing_address_collection: 'auto',
-      customer_update: {
-        address: 'auto',
-        name: 'auto',
-      },
+      customer_update: customerUpdate,
       subscription_data: {
         metadata: {
           userId: user._id,
