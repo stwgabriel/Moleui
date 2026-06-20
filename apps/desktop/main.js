@@ -1258,7 +1258,7 @@ function createWindow(options = {}) {
     // macOS translucency: blur the desktop behind the window so the app blends
     // with the background. Ignored on other platforms.
     ...(process.platform === "darwin"
-      ? { backgroundColor: "#00000000", vibrancy: "under-window", visualEffectState: "active" }
+      ? { vibrancy: "under-window", visualEffectState: "active" }
       : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -1322,6 +1322,9 @@ function createLoginWindow() {
       y: 6,
     },
     icon: appIconPath,
+    ...(process.platform === "darwin"
+      ? { vibrancy: "under-window", visualEffectState: "active" }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1610,7 +1613,7 @@ function createSettingsWindow(parentWindow) {
     parent: parentWindow,
     icon: appIconPath,
     ...(process.platform === "darwin"
-      ? { backgroundColor: "#00000000", vibrancy: "under-window", visualEffectState: "active" }
+      ? { vibrancy: "under-window", visualEffectState: "active" }
       : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

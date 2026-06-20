@@ -99,7 +99,7 @@ body {
   background:
     radial-gradient(circle at 14% 18%, color-mix(in srgb, var(--color-accent-primary) 22%, transparent) 0, transparent 34%),
     radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--color-accent-secondary) 14%, transparent) 0, transparent 30%),
-    linear-gradient(135deg, color-mix(in srgb, var(--color-bg-primary) 80%, transparent) 0%, color-mix(in srgb, var(--color-bg-secondary) 84%, transparent) 100%);
+    linear-gradient(135deg, color-mix(in srgb, var(--color-bg-primary) 58%, transparent) 0%, color-mix(in srgb, var(--color-bg-secondary) 62%, transparent) 100%);
   background-color: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-family-primary);
