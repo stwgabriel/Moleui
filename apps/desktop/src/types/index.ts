@@ -58,6 +58,7 @@ export interface AppIconRequest {
 }
 
 export interface MoleDesktopAPI {
+  windowMode?: string;
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
   auth?: {
     complete: () => Promise<{ ok: boolean; message?: string }>;

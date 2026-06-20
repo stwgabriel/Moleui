@@ -165,14 +165,15 @@ export function SettingsWindow() {
   }
 
   async function handleSignOut() {
-    try {
-      await clerkSignOut();
-    } catch (error) {
+    // Kick off Clerk's server-side session revocation, but don't await it: Clerk
+    // navigates the window on sign-out, which can tear this handler down before
+    // the window hand-off runs. The main process clears the local session and
+    // returns to a clean login window authoritatively, so sign-out is guaranteed
+    // either way.
+    void clerkSignOut().catch((error) => {
       console.error('Clerk sign-out failed:', error);
-    } finally {
-      // Always reset app windows and return to login, even if Clerk sign-out fails.
-      await window.moleDesktop.auth?.signOut();
-    }
+    });
+    await window.moleDesktop.auth?.signOut();
   }
 
   const isSubscribed = subscription.isSubscribed;

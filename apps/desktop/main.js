@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, screen, shell } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, screen, session, shell } from "electron";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -1345,6 +1345,13 @@ function createLoginWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Pass the window mode as a launch argument (read in preload) so it
+      // survives in-window navigations. Clerk redirects this window to its
+      // afterSignInUrl ("/") after a fresh sign-in, which drops the
+      // "?window=login" query the renderer would otherwise rely on — without
+      // this, the post-sign-in reload would render the main app inside the small
+      // login window and the resize/hand-off would never fire.
+      additionalArguments: ["--mole-window-mode=login"],
       // Disable DevTools in packaged builds so the renderer state (including the
       // developer-unlock flag) cannot be edited to bypass the paywall.
       devTools: isDev,
@@ -1381,18 +1388,34 @@ function openMainWindowAfterAuth() {
     app.dock.show();
   }
 
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    mainWindow = createWindow();
-    applyMainWindowBounds(mainWindow);
-  } else {
+  const closeLoginWindow = () => {
+    if (loginWindow && !loginWindow.isDestroyed()) {
+      loginWindow.close();
+    }
+  };
+
+  // Already have a main window (e.g. re-auth without a full sign-out): just
+  // resize it back to the main bounds and show it.
+  if (mainWindow && !mainWindow.isDestroyed()) {
     applyMainWindowBounds(mainWindow);
     mainWindow.show();
     mainWindow.focus();
+    closeLoginWindow();
+    return mainWindow;
   }
 
-  if (loginWindow && !loginWindow.isDestroyed()) {
-    loginWindow.close();
-  }
+  // The app lives in its own window, fully separate from the login window, so the
+  // two never interfere (Clerk's sign-in flow does not play well with reusing the
+  // login window). The main window is created at full size from the start, so no
+  // resize is needed. Keep the login window up until the main window has painted,
+  // then close it so the hand-off looks seamless.
+  mainWindow = createWindow({ show: false });
+  mainWindow.once("ready-to-show", () => {
+    applyMainWindowBounds(mainWindow);
+    mainWindow.show();
+    mainWindow.focus();
+    closeLoginWindow();
+  });
 
   return mainWindow;
 }
@@ -1406,6 +1429,21 @@ function closeAppWindowsForSignOut() {
   mainWindow = null;
   settingsWindow = null;
   cliMonitorWindow = null;
+}
+
+// Wipe the shared session's auth artifacts (Clerk's session cookie plus the dev
+// browser JWT / cached auth in localStorage) so a freshly opened login window can
+// never restore the previous session and bounce the user straight back into the
+// app. This is the authoritative local sign-out; the renderer's Clerk call only
+// handles best-effort server-side revocation.
+async function clearAuthSessionData() {
+  try {
+    await session.defaultSession.clearStorageData({
+      storages: ["cookies", "localstorage"],
+    });
+  } catch (error) {
+    console.error("Failed to clear auth session data on sign-out:", error);
+  }
 }
 
 function isAllowedBillingUrl(url) {
@@ -1792,7 +1830,10 @@ ipcMain.handle("mole:auth:show-login", async (event) => {
 });
 
 ipcMain.handle("mole:auth:sign-out", async () => {
+  // Close every app window first so no live renderer can re-persist the session
+  // while we clear it, then wipe the session and return to a clean login window.
   closeAppWindowsForSignOut();
+  await clearAuthSessionData();
   createLoginWindow();
   return { ok: true };
 });

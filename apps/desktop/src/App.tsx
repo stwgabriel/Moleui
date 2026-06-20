@@ -27,7 +27,10 @@ function PageLoadingFallback() {
 }
 
 function App() {
-  const windowMode = new URLSearchParams(window.location.search).get('window');
+  // Prefer the launch-arg window mode (set in preload) so the login window keeps
+  // its identity even after Clerk's post-sign-in redirect strips the URL query.
+  // Fall back to the URL for other windows and for non-Electron contexts (tests).
+  const windowMode = window.moleDesktop?.windowMode || new URLSearchParams(window.location.search).get('window');
   const isLoginWindow = windowMode === 'login';
   const isSettingsWindow = windowMode === 'settings';
   const isDeveloperWindow = windowMode === 'developer';

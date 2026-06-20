@@ -52,7 +52,14 @@ function onStreamWithLog(channel, callback) {
 
 // ─── Exposed API ─────────────────────────────────────────────────────────────
 
+// Window mode is passed via a launch argument so it survives in-window
+// navigations (e.g. Clerk's post-sign-in redirect that drops the URL query).
+const WINDOW_MODE_PREFIX = "--mole-window-mode=";
+const windowModeArg = process.argv.find((arg) => arg.startsWith(WINDOW_MODE_PREFIX));
+const windowMode = windowModeArg ? windowModeArg.slice(WINDOW_MODE_PREFIX.length) : "";
+
 contextBridge.exposeInMainWorld("moleDesktop", {
+  windowMode,
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
   auth: {
     complete: () => ipcRenderer.invoke("mole:auth:complete"),
