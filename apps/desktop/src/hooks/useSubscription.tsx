@@ -1,5 +1,5 @@
 import { useUser } from '@clerk/clerk-react';
-import { useAction, useMutation, useQuery } from 'convex/react';
+import { useAction, useConvex, useMutation } from 'convex/react';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../../../../convex/_generated/api';
 
@@ -17,6 +17,10 @@ interface SubscriptionContextValue {
 const SubscriptionContext = createContext<SubscriptionContextValue | null>(null);
 const DEVELOPER_UNLOCK_KEY = 'moleui:developer-unlocked';
 
+function subscriptionStatus(entitlement: { status?: unknown } | undefined) {
+  return typeof entitlement?.status === 'string' ? entitlement.status : 'loading';
+}
+
 function billingApi() {
   if (!window.moleDesktop.billing) {
     throw new Error('Billing is not available in this window');
@@ -27,20 +31,21 @@ function billingApi() {
 
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const { user, isSignedIn, isLoaded } = useUser();
+  const convex = useConvex();
   const syncCurrentUser = useMutation(api.users.syncCurrentUser);
   const createCheckoutSession = useAction(api.billing.createCheckoutSession);
   const createBillingPortalSession = useAction(api.billing.createBillingPortalSession);
+  // Entitlement is fetched imperatively inside try/catch so a backend error
+  // (auth/config/server) degrades to an error state instead of throwing during
+  // render and blanking the whole app (which an un-bounded useQuery would do).
+  const [entitlement, setEntitlement] = useState<{ isSubscribed?: boolean; status?: string } | undefined>();
+  const [entitlementError, setEntitlementError] = useState<string | null>(null);
   const [country, setCountry] = useState('US');
+  const [billingRefreshKey, setBillingRefreshKey] = useState(0);
   const [isDeveloperUnlocked, setIsDeveloperUnlocked] = useState(() => localStorage.getItem(DEVELOPER_UNLOCK_KEY) === 'true');
 
-  // Reactive entitlement: re-renders automatically when a Stripe webhook changes
-  // the subscription (no manual refetch). Skipped while signed out.
-  const entitlement = useQuery(api.subscriptions.entitlement, isSignedIn ? {} : 'skip');
-
   // The developer "unlock without paying" flag is a dev-only convenience. In a
-  // packaged build it must never apply, even if the flag lingered in localStorage
-  // from a dev run. (DevTools are also disabled in packaged builds, so the flag
-  // cannot be set there in the first place.)
+  // packaged build it must never apply, even if the flag lingered in localStorage.
   useEffect(() => {
     let cancelled = false;
     window.moleDesktop.getRuntimeInfo?.()
@@ -66,6 +71,37 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!isSignedIn) {
+      setEntitlement(undefined);
+      setEntitlementError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setEntitlement(undefined);
+    setEntitlementError(null);
+
+    async function loadEntitlement() {
+      try {
+        const nextEntitlement = await convex.query(api.subscriptions.entitlement, {});
+        if (!cancelled) setEntitlement(nextEntitlement);
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : 'Failed to load subscription';
+          setEntitlementError(message);
+          console.error('Failed to load subscription:', error);
+        }
+      }
+    }
+
+    void loadEntitlement();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [billingRefreshKey, convex, isSignedIn]);
+
+  useEffect(() => {
     if (!isSignedIn || !user) return;
 
     let cancelled = false;
@@ -84,6 +120,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
           imageUrl: currentUser.imageUrl,
           country: nextCountry,
         });
+        setBillingRefreshKey((key) => key + 1);
       } catch (error) {
         console.error('Failed to sync user profile:', error);
       }
@@ -96,12 +133,18 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     };
   }, [isSignedIn, user, syncCurrentUser]);
 
+  useEffect(() => {
+    const onClosed = () => setBillingRefreshKey((key) => key + 1);
+    window.moleDesktop.billing?.onClosed(onClosed);
+    return () => window.moleDesktop.billing?.removeListeners();
+  }, []);
+
   const value = useMemo<SubscriptionContextValue>(() => ({
     isSubscribed: isDeveloperUnlocked || Boolean(entitlement?.isSubscribed),
     isDeveloperUnlocked,
     isSignedIn: Boolean(isSignedIn),
-    isLoading: !isDeveloperUnlocked && (!isLoaded || (Boolean(isSignedIn) && entitlement === undefined)),
-    status: isDeveloperUnlocked ? 'developer-unlocked' : (entitlement?.status ?? 'loading'),
+    isLoading: !isDeveloperUnlocked && (!isLoaded || (Boolean(isSignedIn) && entitlement === undefined && !entitlementError)),
+    status: isDeveloperUnlocked ? 'developer-unlocked' : entitlementError ? 'error' : subscriptionStatus(entitlement),
     country,
     startCheckout: async () => {
       if (!user) throw new Error('Sign in to start checkout');
@@ -138,7 +181,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       const result = await billing.openPortal(session.url);
       if (!result.ok) throw new Error(result.message || 'Failed to open billing portal');
     },
-  }), [country, createBillingPortalSession, createCheckoutSession, entitlement, isDeveloperUnlocked, isLoaded, isSignedIn, user, syncCurrentUser]);
+  }), [country, createBillingPortalSession, createCheckoutSession, entitlement, entitlementError, isDeveloperUnlocked, isLoaded, isSignedIn, user, syncCurrentUser, billingRefreshKey]);
 
   return <SubscriptionContext.Provider value={value}>{children}</SubscriptionContext.Provider>;
 }
