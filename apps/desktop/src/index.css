@@ -94,11 +94,13 @@ body {
 
 body {
   min-height: 100vh;
+  /* Translucent base so the window's macOS vibrancy (blurred desktop) shows
+     through a little, blending the app with whatever is behind it. */
   background:
-    radial-gradient(circle at 14% 18%, color-mix(in srgb, var(--color-accent-primary) 24%, transparent) 0, transparent 34%),
-    radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--color-accent-secondary) 16%, transparent) 0, transparent 30%),
-    linear-gradient(135deg, var(--color-bg-primary) 0%, var(--color-bg-secondary) 100%);
-  background-color: var(--color-bg-primary);
+    radial-gradient(circle at 14% 18%, color-mix(in srgb, var(--color-accent-primary) 22%, transparent) 0, transparent 34%),
+    radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--color-accent-secondary) 14%, transparent) 0, transparent 30%),
+    linear-gradient(135deg, color-mix(in srgb, var(--color-bg-primary) 80%, transparent) 0%, color-mix(in srgb, var(--color-bg-secondary) 84%, transparent) 100%);
+  background-color: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-family-primary);
   -webkit-font-smoothing: antialiased;

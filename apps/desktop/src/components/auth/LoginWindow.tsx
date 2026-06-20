@@ -6,7 +6,7 @@ function LoginLoadingState() {
     <main className="relative flex h-screen items-center justify-center overflow-hidden bg-[#f7f5ff] text-slate-950">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_28%_18%,rgba(140,63,252,0.18),transparent_34%),radial-gradient(circle_at_88%_16%,rgba(253,45,134,0.10),transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.86),rgba(246,242,255,0.92))]" />
       <div className="relative flex h-24 w-24 items-center justify-center">
-        <div className="absolute inset-0 animate-spin rounded-[2rem] border-[4px] border-violet-200/55 border-t-violet-600" />
+        <div className="absolute inset-0 animate-spin rounded-full border-[4px] border-violet-200/55 border-t-violet-600" />
         <div className="flex h-20 w-20 items-center justify-center rounded-[1.75rem]">
           <img src="./assets/images/rounded-logo.png" alt="Moleui" className="h-20 w-20 object-contain" draggable={false} />
         </div>

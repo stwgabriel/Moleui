@@ -18,7 +18,7 @@ const BATTERY_SAMPLE_INTERVAL_MS = 6 * 60 * 1000;
 const MAX_BATTERY_HISTORY = 24 * 60;
 const MAX_CLI_MONITOR_EVENTS = 1200;
 const MAX_CLI_EVENT_TEXT = 24000;
-const MAIN_WINDOW_SIZE = { width: 1280, height: 860, minWidth: 1180, minHeight: 760 };
+const MAIN_WINDOW_SIZE = { width: 1400, height: 900, minWidth: 1240, minHeight: 800 };
 const LOGIN_WINDOW_SIZE = { width: 880, height: 640, minWidth: 760, minHeight: 560 };
 const BILLING_WINDOW_SHOW_TIMEOUT_MS = 900;
 
@@ -1255,6 +1255,11 @@ function createWindow(options = {}) {
       y: 6,
     },
     icon: appIconPath,
+    // macOS translucency: blur the desktop behind the window so the app blends
+    // with the background. Ignored on other platforms.
+    ...(process.platform === "darwin"
+      ? { backgroundColor: "#00000000", vibrancy: "under-window", visualEffectState: "active" }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1604,6 +1609,9 @@ function createSettingsWindow(parentWindow) {
     },
     parent: parentWindow,
     icon: appIconPath,
+    ...(process.platform === "darwin"
+      ? { backgroundColor: "#00000000", vibrancy: "under-window", visualEffectState: "active" }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
