@@ -61,6 +61,9 @@ interface HistoryPoint {
 
 interface MyMacPageProps {
   onNavigate: (page: PageId) => void;
+  // When false, the page is mounted but not the visible view (kept alive in the
+  // background), so it pauses its periodic metrics polling.
+  active?: boolean;
 }
 
 interface DetailRowProps {
@@ -591,7 +594,7 @@ function getRenderableHistory(metrics: SystemMetrics | null, history: HistoryPoi
   ];
 }
 
-export function MyMacPage({ onNavigate }: MyMacPageProps) {
+export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [batteryHistory, setBatteryHistory] = useState<BatteryHistoryPoint[]>([]);
@@ -696,7 +699,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
     void loadCachedData();
 
     let interval: ReturnType<typeof setInterval> | null = null;
-    if (autoRefresh) {
+    if (autoRefresh && active) {
       interval = setInterval(() => {
         void fetchMetrics();
       }, 2000);
@@ -707,7 +710,7 @@ export function MyMacPage({ onNavigate }: MyMacPageProps) {
       if (fullFetchTimer) clearTimeout(fullFetchTimer);
       if (interval) clearInterval(interval);
     };
-  }, [autoRefresh, fetchMetrics]);
+  }, [autoRefresh, active, fetchMetrics]);
 
   useEffect(() => {
     if (!processMenu) return;

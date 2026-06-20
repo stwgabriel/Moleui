@@ -35,7 +35,11 @@ function App() {
   const isSettingsWindow = windowMode === 'settings';
   const isDeveloperWindow = windowMode === 'developer';
   const [currentPage, setCurrentPage] = useState<PageId>('mymac');
-  const [animationDirection, setAnimationDirection] = useState<'left' | 'right'>('left');
+  // Keep visited feature pages mounted so an in-flight run (clean, optimize, etc.)
+  // survives navigation and keeps running in the background, and so multiple
+  // features can run in parallel. Pages mount lazily on first visit and stay
+  // mounted; only their visibility toggles.
+  const [visitedPages, setVisitedPages] = useState<Set<PageId>>(() => new Set<PageId>(['mymac']));
 
   useEffect(() => {
     document.documentElement.classList.toggle('my-mac-effects', currentPage === 'mymac' || currentPage === 'analyze');
@@ -45,22 +49,16 @@ function App() {
     };
   }, [currentPage]);
 
-  const handlePageChange = async (newPage: PageId) => {
+  const handlePageChange = (newPage: PageId) => {
     if (newPage === currentPage) return;
-
-    const currentIndex = PAGE_ORDER.indexOf(currentPage);
-    const newIndex = PAGE_ORDER.indexOf(newPage);
-
-    // Determine animation direction based on page order
-    setAnimationDirection(newIndex > currentIndex ? 'left' : 'right');
+    setVisitedPages((prev) => (prev.has(newPage) ? prev : new Set(prev).add(newPage)));
     setCurrentPage(newPage);
-
   };
 
-  const renderCurrentPage = () => {
-    switch (currentPage) {
+  const renderPage = (id: PageId, isActive: boolean) => {
+    switch (id) {
       case 'mymac':
-        return <MyMacPage onNavigate={handlePageChange} />;
+        return <MyMacPage onNavigate={handlePageChange} active={isActive} />;
       case 'clean':
         return <CleanPage />;
       case 'optimize':
@@ -70,7 +68,7 @@ function App() {
       case 'analyze':
         return <AnalyzePage />;
       default:
-        return <MyMacPage onNavigate={handlePageChange} />;
+        return null;
     }
   };
 
@@ -112,17 +110,23 @@ function App() {
             onPageChange={handlePageChange}
           />
           <main className="relative min-h-0 flex-1 overflow-hidden" aria-live="polite">
-            <div
-              key={currentPage}
-              className={cn(
-                'absolute inset-0',
-                animationDirection === 'left' ? 'slide-in-up' : 'slide-in-down'
-              )}
-            >
-              <Suspense fallback={<PageLoadingFallback />}>
-                {renderCurrentPage()}
-              </Suspense>
-            </div>
+            {PAGE_ORDER.filter((id) => visitedPages.has(id)).map((id) => {
+              const isActive = id === currentPage;
+              return (
+                <div
+                  key={id}
+                  aria-hidden={!isActive}
+                  className={cn(
+                    'absolute inset-0 transition duration-300 ease-out',
+                    isActive ? 'opacity-100 translate-y-0' : 'pointer-events-none translate-y-2 opacity-0'
+                  )}
+                >
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    {renderPage(id, isActive)}
+                  </Suspense>
+                </div>
+              );
+            })}
           </main>
         </div>
       </div>
