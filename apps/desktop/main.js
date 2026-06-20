@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = !app.isPackaged;
+// Dev renderer URL is configurable so the app can run on a free port when the
+// default Vite port (5173) is taken by another project. Defaults to 5173.
+const DEV_SERVER_URL = process.env.MOLE_DEV_URL || "http://localhost:5173";
 const appIconPath = path.join(__dirname, "public", "assets", "base", isDev ? "molui-dark.png" : "molui-purple.png");
 const MY_MAC_METRICS_FILE = "my-mac-metrics.json";
 const BACKGROUND_SYSTEMS_FILE = "background-systems.json";
@@ -1284,7 +1287,7 @@ let billingWindow;
 
 function loadAppWindow(window, query = "") {
   if (isDev) {
-    window.loadURL(`http://localhost:5173${query}`);
+    window.loadURL(`${DEV_SERVER_URL}${query}`);
   } else {
     window.loadFile(path.join(__dirname, "dist", "index.html"), query ? { search: query.slice(1) } : undefined);
   }
