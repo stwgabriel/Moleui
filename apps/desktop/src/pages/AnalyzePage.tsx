@@ -9,6 +9,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { StartScreen } from '@/components/common/StartScreen';
+import { StageTransition } from '@/components/common/StageTransition';
 import { Button } from '@/components/ui/Button';
 import { getFileIconCategory } from '@/lib/fileIcons';
 import { featureAccentVars } from '@/lib/featureAccents';
@@ -748,6 +749,12 @@ export function AnalyzePage() {
     }
   };
 
+  // Group views so the start screen, path picker, and the scanning/results
+  // surface crossfade between each other, while transitions *within* the
+  // scanning/results surface keep their own (analyze-content-enter) animations.
+  const viewKey = stage === 'idle' ? (view === 'start' ? 'start' : 'pick') : 'feature';
+
+  const renderStage = () => {
   // ── Idle / Start Screen ──────────────────────────────────────────────────
   if (stage === 'idle' && view === 'start') {
     return (
@@ -1312,4 +1319,11 @@ export function AnalyzePage() {
   }
 
   return null;
+  };
+
+  return (
+    <StageTransition viewKey={viewKey}>
+      {renderStage()}
+    </StageTransition>
+  );
 }

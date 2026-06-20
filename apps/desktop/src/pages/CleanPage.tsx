@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
+import { StageTransition } from '@/components/common/StageTransition';
 import { Button } from '@/components/ui/Button';
 import { featureAccentVars } from '@/lib/featureAccents';
 import type { PageConfig } from '@/types';
@@ -1157,6 +1158,9 @@ export function CleanPage() {
     );
   };
 
+  const viewKey = stage === 'idle' ? 'start' : stage === 'complete' ? 'complete' : 'working';
+
+  const renderStage = () => {
   if (stage === 'idle') {
     return <StartScreen config={config} onStart={requestAnalyze} variant="feature" />;
   }
@@ -1325,5 +1329,12 @@ export function CleanPage() {
         </footer>
       </div>
     </div>
+  );
+  };
+
+  return (
+    <StageTransition viewKey={viewKey}>
+      {renderStage()}
+    </StageTransition>
   );
 }

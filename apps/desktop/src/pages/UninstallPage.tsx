@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StartScreen } from '@/components/common/StartScreen';
+import { StageTransition } from '@/components/common/StageTransition';
 import { featureAccentVars } from '@/lib/featureAccents';
 import { usePersistentState } from '@/utils/persistentState';
 import { formatBytes } from '@/utils/format';
@@ -996,6 +997,9 @@ export function UninstallPage() {
   };
 
   // Render stages
+  const viewKey = stage === 'idle' ? 'start' : 'working';
+
+  const renderStage = () => {
   if (stage === 'idle') {
     const config: PageConfig = {
       title: 'Uninstall',
@@ -1725,4 +1729,11 @@ export function UninstallPage() {
   }
 
   return null;
+  };
+
+  return (
+    <StageTransition viewKey={viewKey}>
+      {renderStage()}
+    </StageTransition>
+  );
 }

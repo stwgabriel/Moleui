@@ -28,6 +28,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { StartScreen } from '@/components/common/StartScreen';
+import { StageTransition } from '@/components/common/StageTransition';
 import { Button } from '@/components/ui/Button';
 import { featureAccentVars } from '@/lib/featureAccents';
 import { stripAnsi } from '@/utils/format';
@@ -1141,6 +1142,9 @@ export function OptimizePage() {
 
   // ─── Idle ────────────────────────────────────────────────────────────────────
 
+  const viewKey = stage === 'idle' ? 'start' : 'working';
+
+  const renderStage = () => {
   if (stage === 'idle') {
     return <StartScreen config={config} onStart={startPreview} variant="feature" />;
   }
@@ -1290,4 +1294,11 @@ export function OptimizePage() {
   }
 
   return null;
+  };
+
+  return (
+    <StageTransition viewKey={viewKey}>
+      {renderStage()}
+    </StageTransition>
+  );
 }
