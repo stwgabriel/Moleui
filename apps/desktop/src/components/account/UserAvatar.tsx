@@ -1,3 +1,5 @@
+import { useUser } from '@clerk/clerk-react';
+
 function initials(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return 'M';
@@ -16,7 +18,7 @@ function gradientSeed(value: string) {
 }
 
 export function UserAvatar({ className = 'h-10 w-10', showImage = true }: { className?: string; showImage?: boolean }) {
-  const user = (window as any).Clerk?.user;
+  const { user } = useUser();
   const label = user?.fullName || user?.primaryEmailAddress?.emailAddress || 'Moleui user';
 
   if (showImage && user?.imageUrl) {

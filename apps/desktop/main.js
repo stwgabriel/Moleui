@@ -1226,6 +1226,15 @@ function applyMainWindowBounds(window) {
   window.setBounds({ x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height }, false);
 }
 
+// App windows (main, settings, CLI monitor) never legitimately open child
+// windows; external links route through the allowlisted mole:open-external IPC.
+// Deny any window.open / target=_blank so a compromised renderer cannot spawn an
+// uncontrolled BrowserWindow. The login window is intentionally excluded so
+// Clerk's auth popups keep working.
+function denyChildWindows(window) {
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+}
+
 function createWindow(options = {}) {
   const shouldShow = options.show !== false;
   const bounds = centeredWindowBounds(MAIN_WINDOW_SIZE);
@@ -1254,6 +1263,7 @@ function createWindow(options = {}) {
   });
 
   loadAppWindow(window);
+  denyChildWindows(window);
 
   if (shouldShow) {
     window.once("ready-to-show", () => {
@@ -1602,6 +1612,7 @@ function createSettingsWindow(parentWindow) {
   });
 
   loadAppWindow(settingsWindow, "?window=settings");
+  denyChildWindows(settingsWindow);
 
   settingsWindow.once("ready-to-show", () => {
     settingsWindow.show();
@@ -1645,6 +1656,7 @@ function createCliMonitorWindow(parentWindow) {
   });
 
   loadAppWindow(cliMonitorWindow, "?window=developer");
+  denyChildWindows(cliMonitorWindow);
 
   cliMonitorWindow.once("ready-to-show", () => {
     cliMonitorWindow.show();

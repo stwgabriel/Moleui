@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useClerk, useUser } from '@clerk/clerk-react';
 import { Activity, CheckCircle2, Clock3, CreditCard, Crown, Fingerprint, History, LogOut, Monitor, RotateCw, Settings, XCircle, type LucideIcon } from 'lucide-react';
 import type { BackgroundSystemStatus } from '@/types';
 import { UserAvatar } from '@/components/account/UserAvatar';
@@ -57,7 +58,8 @@ function formatDuration(durationMs: number) {
 
 export function SettingsWindow() {
   const subscription = useSubscription();
-  const clerkUser = (window as any).Clerk?.user;
+  const { user: clerkUser } = useUser();
+  const { signOut: clerkSignOut } = useClerk();
   const [profile, setProfile] = useState<SettingsProfile>(FALLBACK_PROFILE);
   const [activePage, setActivePage] = useState<SettingsPage>('general');
   const [backgroundSystems, setBackgroundSystems] = useState<BackgroundSystemStatus[]>([]);
@@ -174,8 +176,14 @@ export function SettingsWindow() {
   }
 
   async function handleSignOut() {
-    await (window as any).Clerk?.signOut?.();
-    await window.moleDesktop.auth?.signOut();
+    try {
+      await clerkSignOut();
+    } catch (error) {
+      console.error('Clerk sign-out failed:', error);
+    } finally {
+      // Always reset app windows and return to login, even if Clerk sign-out fails.
+      await window.moleDesktop.auth?.signOut();
+    }
   }
 
   return (

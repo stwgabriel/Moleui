@@ -1,7 +1,7 @@
 import type { PageId } from '@/types';
 import type { CSSProperties } from 'react';
 
-export type AccentPageId = Exclude<PageId, 'home'>;
+export type AccentPageId = PageId;
 
 export interface FeatureAccent {
   accent: string;

@@ -252,7 +252,7 @@ export interface CleanCategory {
   scanned: boolean;
 }
 
-export type PageId = 'home' | 'mymac' | 'clean' | 'uninstall' | 'optimize' | 'analyze';
+export type PageId = 'mymac' | 'clean' | 'uninstall' | 'optimize' | 'analyze';
 
 export interface PageConfig {
   title: string;
