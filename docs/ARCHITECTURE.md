@@ -37,7 +37,7 @@ flowchart TD
 | Launcher | `packages/npm` | npm launcher that fetches and runs the desktop app. |
 | Specs | `specs/` | Spec-driven workspace (charter, audit, PRD/stories/tasks). |
 | Tests | `tests/` | Bats shell tests; Go tests live beside their packages. |
-| Tooling | `scripts/`, `.github/`, `.claude/`, `.kiro/` | Build/release helpers, CI, agent config, Kiro steering. |
+| Tooling | `scripts/`, `.github/`, `.claude/`, `.agents/` | Build/release helpers, CI, committed agent config/skills. (`.kiro/` is a gitignored local mirror.) |
 
 ## Auth + payment flow (desktop)
 
@@ -57,7 +57,7 @@ See [auth-billing-setup.md](auth-billing-setup.md) and `specs/WS3-auth-payment/`
 
 ## Agent context
 
-`.kiro/steering/` holds the steering docs (product / tech / structure / design) and
-is the committed source of truth. `AGENTS.md` (root, symlinked as `CLAUDE.md`) is the
-working agent guide. A local `agents/` mirror is gitignored (`/agents`) and is not
-part of the repository.
+The committed agent context is `AGENTS.md` (root, symlinked as `CLAUDE.md`), the
+allowlisted parts of `.claude/` (agents, hooks, skills, settings), and
+`.agents/skills/`. The `.kiro/` and `agents/` directories are gitignored local
+mirrors (Kiro steering docs) and are not part of the repository.

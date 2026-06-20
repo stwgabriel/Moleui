@@ -6,8 +6,9 @@ As a new contributor, I can understand the system at a glance.
 Clerk/Convex/Stripe + spawned mole engine) and a directory map.
 
 ## S2 — One source of truth for agent context
-**Done when:** docs state that `.kiro/steering/` (committed) + `AGENTS.md` are
-canonical, and that `agents/` is a gitignored local mirror (not in the repo).
+**Done when:** docs state that `AGENTS.md` (+ allowlisted `.claude/`) is the
+committed agent context, and that `.kiro/` and `agents/` are gitignored local
+mirrors (not in the repo).
 
 ## S3 — Steering docs are accurate
 **Done when:** the stale `github.com/tw93/mole/internal/pkg` import example in

@@ -59,4 +59,5 @@ the navigability benefit now.
 
 - `docs/ARCHITECTURE.md` exists with a diagram and a directory map.
 - Steering docs are accurate (stale import fixed).
-- Agent-context source of truth is documented (`.kiro/steering/` + `AGENTS.md`).
+- Agent-context source of truth is documented (`AGENTS.md` + allowlisted `.claude/`;
+  `.kiro/` is a gitignored local mirror).
