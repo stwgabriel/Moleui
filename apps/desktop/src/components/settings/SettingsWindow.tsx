@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useClerk, useUser } from '@clerk/clerk-react';
-import { Activity, CheckCircle2, Clock3, CreditCard, Crown, Fingerprint, History, LogOut, RotateCw, Settings, XCircle, type LucideIcon } from 'lucide-react';
+import { Activity, CheckCircle2, Clock3, CreditCard, Crown, Fingerprint, History, LogOut, RotateCw, Settings, ShieldCheck, XCircle, type LucideIcon } from 'lucide-react';
 import type { BackgroundSystemStatus } from '@/types';
 import { UserAvatar } from '@/components/account/UserAvatar';
+import { PermissionsPanel } from '@/components/permissions/PermissionsPanel';
 import { useSubscription } from '@/hooks/useSubscription';
 import { cn } from '@/utils/cn';
 
@@ -22,7 +23,7 @@ const FALLBACK_PROFILE: SettingsProfile = {
   },
 };
 
-type SettingsPage = 'general' | 'background';
+type SettingsPage = 'general' | 'permissions' | 'background';
 
 // Glass panel that matches the main app surfaces: translucent white over the body
 // gradient, purple-tinted shadow, soft blur and an inset highlight.
@@ -31,6 +32,7 @@ const SECTION_LABEL = 'text-[0.7rem] font-bold uppercase tracking-[0.08em] text-
 
 const SETTINGS_PAGES: Array<{ id: SettingsPage; label: string; icon: LucideIcon }> = [
   { id: 'general', label: 'General', icon: Settings },
+  { id: 'permissions', label: 'Permissions', icon: ShieldCheck },
   { id: 'background', label: 'Background', icon: Activity },
 ];
 
@@ -309,6 +311,11 @@ export function SettingsWindow() {
                   </div>
                 </section>
               </>
+            ) : activePage === 'permissions' ? (
+              <section aria-labelledby="permissions-heading" className={cn(PANEL, 'p-4 sm:p-5')}>
+                <h2 id="permissions-heading" className="mb-3 text-base font-bold text-slate-900">Permissions</h2>
+                <PermissionsPanel />
+              </section>
             ) : (
               <section aria-labelledby="background-heading" className="space-y-4">
                 <div className="flex items-center justify-between px-1">

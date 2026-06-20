@@ -66,6 +66,13 @@ contextBridge.exposeInMainWorld("moleDesktop", {
     showLogin: () => ipcRenderer.invoke("mole:auth:show-login"),
     signOut: () => ipcRenderer.invoke("mole:auth:sign-out"),
   },
+  permissions: {
+    status: () => ipcRenderer.invoke("mole:permissions:status"),
+    getPrefs: () => ipcRenderer.invoke("mole:permissions:get-prefs"),
+    setPrefs: (prefs) => ipcRenderer.invoke("mole:permissions:set-prefs", prefs),
+    openSettings: (pane) => ipcRenderer.invoke("mole:permissions:open-settings", pane),
+    requestFiles: () => ipcRenderer.invoke("mole:permissions:request-files"),
+  },
   billing: {
     detectCountry: () => ipcRenderer.invoke("mole:billing:country"),
     openCheckout: (url) => ipcRenderer.invoke("mole:billing:open-checkout", url),

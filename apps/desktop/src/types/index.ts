@@ -57,6 +57,14 @@ export interface AppIconRequest {
   source?: string;
 }
 
+export type PermissionStatus = 'granted' | 'denied' | 'unknown';
+export type PermissionPane = 'fullDiskAccess' | 'filesAndFolders' | 'automation' | 'privacy';
+
+export interface PermissionPrefs {
+  onboarded: boolean;
+  systemCleanupEnabled: boolean;
+}
+
 export interface MoleDesktopAPI {
   windowMode?: string;
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
@@ -64,6 +72,13 @@ export interface MoleDesktopAPI {
     complete: () => Promise<{ ok: boolean; message?: string }>;
     showLogin: () => Promise<{ ok: boolean; message?: string }>;
     signOut: () => Promise<{ ok: boolean; message?: string }>;
+  };
+  permissions?: {
+    status: () => Promise<{ fullDiskAccess: PermissionStatus }>;
+    getPrefs: () => Promise<PermissionPrefs>;
+    setPrefs: (prefs: Partial<PermissionPrefs>) => Promise<PermissionPrefs>;
+    openSettings: (pane?: PermissionPane) => Promise<{ ok: boolean }>;
+    requestFiles: () => Promise<{ ok: boolean }>;
   };
   billing?: {
     detectCountry: () => Promise<{ country: string }>;

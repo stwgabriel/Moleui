@@ -2091,6 +2091,105 @@ ipcMain.handle("mole:runtime", async () => ({
   executable: moleExecutable(),
 }));
 
+// ─── Permissions ─────────────────────────────────────────────────────────────
+// Read-only macOS permission detection plus a small persisted prefs file. We
+// never grant TCC permissions ourselves (macOS does not allow that); we only
+// detect status, deep-link to System Settings, or trigger the native
+// Files-&-Folders prompt by touching a user folder.
+
+const PERMISSIONS_PREFS_FILE = "permissions-prefs.json";
+const DEFAULT_PERMISSIONS_PREFS = { onboarded: false, systemCleanupEnabled: true };
+
+function permissionsPrefsPath() {
+  return path.join(app.getPath("userData"), PERMISSIONS_PREFS_FILE);
+}
+
+function readPermissionsPrefs() {
+  try {
+    return { ...DEFAULT_PERMISSIONS_PREFS, ...JSON.parse(fs.readFileSync(permissionsPrefsPath(), "utf8")) };
+  } catch {
+    return { ...DEFAULT_PERMISSIONS_PREFS };
+  }
+}
+
+function writePermissionsPrefs(next) {
+  const merged = { ...readPermissionsPrefs(), ...next };
+  try {
+    fs.writeFileSync(permissionsPrefsPath(), JSON.stringify(merged, null, 2));
+  } catch (error) {
+    console.error("Failed to write permissions prefs:", error);
+  }
+  return merged;
+}
+
+// Probe a Full-Disk-Access-gated path. stat is allowed without FDA, but reading
+// the directory/file is blocked with EPERM/EACCES unless FDA is granted.
+function probeReadable(target) {
+  try {
+    if (!fs.existsSync(target)) return null;
+    if (fs.statSync(target).isDirectory()) {
+      fs.readdirSync(target);
+    } else {
+      fs.closeSync(fs.openSync(target, "r"));
+    }
+    return true;
+  } catch (error) {
+    if (error && (error.code === "EPERM" || error.code === "EACCES")) return false;
+    return null;
+  }
+}
+
+function detectFullDiskAccess() {
+  const home = app.getPath("home");
+  const gated = [
+    path.join(home, "Library/Application Support/com.apple.TCC/TCC.db"),
+    path.join(home, "Library/Mail"),
+    path.join(home, "Library/Safari"),
+    path.join(home, "Library/Messages/chat.db"),
+  ];
+  let sawDenied = false;
+  for (const target of gated) {
+    const ok = probeReadable(target);
+    if (ok === true) return "granted";
+    if (ok === false) sawDenied = true;
+  }
+  return sawDenied ? "denied" : "unknown";
+}
+
+const PERMISSION_SETTINGS_PANES = {
+  fullDiskAccess: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+  filesAndFolders: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders",
+  automation: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+  privacy: "x-apple.systempreferences:com.apple.preference.security?Privacy",
+};
+
+ipcMain.handle("mole:permissions:status", async () => ({
+  fullDiskAccess: detectFullDiskAccess(),
+}));
+
+ipcMain.handle("mole:permissions:get-prefs", async () => readPermissionsPrefs());
+
+ipcMain.handle("mole:permissions:set-prefs", async (_event, next = {}) => writePermissionsPrefs(next));
+
+ipcMain.handle("mole:permissions:open-settings", async (_event, pane = "privacy") => {
+  await shell.openExternal(PERMISSION_SETTINGS_PANES[pane] || PERMISSION_SETTINGS_PANES.privacy);
+  return { ok: true };
+});
+
+// Trigger the native Files-&-Folders prompt by listing protected user folders.
+// Read-only; macOS shows the prompt on first access.
+ipcMain.handle("mole:permissions:request-files", async () => {
+  const home = app.getPath("home");
+  for (const folder of ["Desktop", "Documents", "Downloads"]) {
+    try {
+      fs.readdirSync(path.join(home, folder));
+    } catch {
+      // Prompt shown or already decided; the result is read back via status.
+    }
+  }
+  return { ok: true };
+});
+
 ipcMain.handle("mole:my-mac-cache:get", async () => readMyMacMetricsCache());
 
 ipcMain.handle("mole:my-mac-cache:set", async (_event, cache = {}) => writeMyMacMetricsCache({
