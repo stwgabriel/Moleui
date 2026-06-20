@@ -53,6 +53,25 @@ func TestPerformScanForJSONIncludesAllEntriesAndLargeFiles(t *testing.T) {
 	}
 }
 
+func TestPerformScanForJSONIncludesDiskCapacity(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file.bin"), make([]byte, 1<<20), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	result := performScanForJSON(root, false, false)
+
+	if result.DiskTotal <= 0 {
+		t.Fatalf("expected positive disk_total, got %d", result.DiskTotal)
+	}
+	if result.DiskFree < 0 || result.DiskFree > result.DiskTotal {
+		t.Fatalf("expected 0 <= disk_free <= disk_total, got free=%d total=%d", result.DiskFree, result.DiskTotal)
+	}
+	if result.TotalSize > result.DiskTotal {
+		t.Fatalf("expected total_size (%d) within disk_total (%d)", result.TotalSize, result.DiskTotal)
+	}
+}
+
 func TestJSONEntriesFromDirEntriesIncludesMetadata(t *testing.T) {
 	oldAccess := time.Now().AddDate(0, 0, -120)
 

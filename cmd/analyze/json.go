@@ -9,6 +9,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -19,6 +20,25 @@ type jsonOutput struct {
 	LargeFiles []jsonFileEntry `json:"large_files,omitempty"`
 	TotalSize  int64           `json:"total_size"`
 	TotalFiles int64           `json:"total_files,omitempty"`
+	// DiskTotal/DiskFree describe the volume the scanned path lives on, so the
+	// UI can show the directory's footprint as a proportion of the whole disk
+	// rather than only relative to itself. Zero when statfs is unavailable.
+	DiskTotal int64 `json:"disk_total,omitempty"`
+	DiskFree  int64 `json:"disk_free,omitempty"`
+}
+
+// diskStatsForPath reports the total and user-available capacity of the volume
+// that holds path. Returns zeroes when the volume cannot be queried so callers
+// can fall back to directory-relative display.
+func diskStatsForPath(path string) (total int64, free int64) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, 0
+	}
+	blockSize := int64(stat.Bsize)
+	total = int64(stat.Blocks) * blockSize
+	free = int64(stat.Bavail) * blockSize
+	return total, free
 }
 
 type jsonEntry struct {
@@ -72,6 +92,8 @@ func performDirectoryScanForJSON(path string, fresh bool) jsonOutput {
 		os.Exit(1)
 	}
 
+	diskTotal, diskFree := diskStatsForPath(path)
+
 	return jsonOutput{
 		Path:       path,
 		Overview:   false,
@@ -79,6 +101,8 @@ func performDirectoryScanForJSON(path string, fresh bool) jsonOutput {
 		LargeFiles: jsonFileEntriesFromFileEntries(result.LargeFiles),
 		TotalSize:  result.TotalSize,
 		TotalFiles: result.TotalFiles,
+		DiskTotal:  diskTotal,
+		DiskFree:   diskFree,
 	}
 }
 
@@ -105,11 +129,15 @@ func performOverviewScanForJSON(path string) jsonOutput {
 		return entries[i].Size > entries[j].Size
 	})
 
+	diskTotal, diskFree := diskStatsForPath(path)
+
 	return jsonOutput{
 		Path:      path,
 		Overview:  true,
 		Entries:   jsonEntriesFromDirEntries(entries, true, insightPaths),
 		TotalSize: totalSize,
+		DiskTotal: diskTotal,
+		DiskFree:  diskFree,
 	}
 }
 

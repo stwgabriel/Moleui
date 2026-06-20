@@ -292,6 +292,13 @@ function moleExecutable() {
   return path.join(runtimeDir(), "mole");
 }
 
+// The Go analyzer ships as a standalone binary inside the runtime. Calling it
+// directly avoids sourcing the 1100-line `mole` shell entrypoint on every scan,
+// which measured ~200ms of pure startup overhead per folder navigation.
+function analyzeBinaryPath() {
+  return path.join(runtimeDir(), "bin", "analyze-go");
+}
+
 function ensureRuntime() {
   const executable = moleExecutable();
 
@@ -308,11 +315,13 @@ function runMole(args, options = {}) {
   return new Promise((resolve) => {
     let executable;
     const runId = nextCliRunId++;
-    const command = `mole ${args.join(" ")}`;
+    const command = options.commandLabel || `mole ${args.join(" ")}`;
     const startedAt = Date.now();
 
     try {
-      executable = ensureRuntime();
+      // Allow callers to exec a specific bundled binary directly (e.g. the Go
+      // analyzer) to skip the ~200ms shell-wrapper startup tax per invocation.
+      executable = options.executable || ensureRuntime();
     } catch (error) {
       emitCliEvent({
         runId,
@@ -2041,11 +2050,19 @@ ipcMain.handle("mole:optimize:kill", async () => {
 // Analyze command handlers
 ipcMain.handle("mole:analyze:execute", async (event, path = "/", options = {}) => {
   const scanPath = normalizeAnalyzePath(path);
-  const args = ["analyze", "--json", scanPath];
-  if (options.fresh) args.splice(2, 0, "--fresh");
+
+  // Prefer the bundled Go binary directly; fall back to the shell entrypoint if
+  // it is missing (e.g. an incomplete runtime). The flag order keeps `--json`
+  // and `--fresh` ahead of the path so Go's flag parser stops at the path arg.
+  const binary = analyzeBinaryPath();
+  const useBinary = fs.existsSync(binary);
+  const jsonArgs = options.fresh ? ["--json", "--fresh", scanPath] : ["--json", scanPath];
+  const args = useBinary ? jsonArgs : ["analyze", ...jsonArgs];
 
   return runMole(args, {
     processId: "analyze",
+    executable: useBinary ? binary : undefined,
+    commandLabel: `analyze ${jsonArgs.join(" ")}`,
     onStdout: (text) => {
       event.sender.send("mole:analyze:stdout", text);
     },

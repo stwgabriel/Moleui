@@ -62,6 +62,11 @@ interface AnalyzeResult {
   large_files?: AnalyzeLargeFile[];
   total_size: number;
   total_files?: number;
+  // Capacity of the volume the scanned path lives on. Absent (0) when statfs
+  // is unavailable, in which case the usage graph falls back to showing the
+  // directory total instead of the whole-disk proportion.
+  disk_total?: number;
+  disk_free?: number;
 }
 
 interface TreemapItem extends AnalyzeEntry {
@@ -230,47 +235,90 @@ function formatEntryDate(entry: Pick<AnalyzeEntry, 'last_access'>) {
 function DiskUsageProportionGraph({
   items,
   totalSize,
+  diskTotal = 0,
+  diskFree = 0,
   isLoading = false,
 }: {
   items: TreemapItem[];
   totalSize: number;
+  diskTotal?: number;
+  diskFree?: number;
   isLoading?: boolean;
 }) {
   const visibleItems = items.filter((item) => item.size > 0).slice(0, 8);
-  const totalStorageLabel = formatBytes(totalSize);
 
   if (visibleItems.length === 0 || totalSize <= 0) {
     return null;
   }
+
+  // Whole-disk view: show this folder's footprint as a proportion of the
+  // entire volume. Falls back to a directory-relative view when the volume
+  // capacity is unknown (e.g. tests, or statfs failures).
+  const hasDisk = diskTotal > 0 && diskFree >= 0 && diskFree <= diskTotal && totalSize <= diskTotal;
+  const folderSize = totalSize;
+  const diskUsed = Math.max(0, diskTotal - diskFree);
+  const otherUsed = hasDisk ? Math.max(0, diskUsed - folderSize) : 0;
+  const folderPctOfDisk = hasDisk ? (folderSize / diskTotal) * 100 : 0;
+
+  const denominator = hasDisk ? diskTotal : folderSize;
+  const segments = [
+    ...visibleItems.map((item) => ({
+      key: item.path,
+      name: item.name,
+      bytes: item.size,
+      pct: denominator > 0 ? (item.size / denominator) * 100 : 0,
+      background: `linear-gradient(135deg, ${item.color}, ${item.color}dd)`,
+      swatch: item.color,
+      muted: false,
+    })),
+    ...(hasDisk && otherUsed > 0 ? [{
+      key: '__disk_other__',
+      name: 'Used by other files',
+      bytes: otherUsed,
+      pct: (otherUsed / denominator) * 100,
+      background: 'linear-gradient(135deg, rgba(100,116,139,0.50), rgba(100,116,139,0.34))',
+      swatch: 'rgba(100,116,139,0.55)',
+      muted: true,
+    }] : []),
+    ...(hasDisk && diskFree > 0 ? [{
+      key: '__disk_free__',
+      name: 'Free space',
+      bytes: diskFree,
+      pct: (diskFree / denominator) * 100,
+      background: 'rgba(255,255,255,0.62)',
+      swatch: 'rgba(148,163,184,0.4)',
+      muted: true,
+    }] : []),
+  ];
 
   return (
     <div className="rounded-[1.35rem] border border-white/55 bg-white/42 p-5 shadow-[0_18px_54px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="text-[0.78rem] font-black uppercase tracking-[0.24em] text-slate-500">Disk usage</div>
         <div className="shrink-0 font-mono text-[11px] font-black text-slate-600">
-          Total {totalStorageLabel}
+          {hasDisk ? `${formatBytes(diskTotal)} disk` : `Total ${formatBytes(totalSize)}`}
         </div>
       </div>
       <div
         aria-label="Disk usage proportions"
         className="relative flex h-6 overflow-hidden rounded-full bg-slate-900/10 shadow-inner shadow-slate-900/10"
       >
-        {visibleItems.map((item) => {
-          const showInlineLabel = item.percentage >= 9;
+        {segments.map((segment) => {
+          const showInlineLabel = segment.pct >= 9 && !segment.muted;
 
           return (
             <div
-              key={item.path}
-              className="flex min-w-[3px] items-center justify-center overflow-hidden border-r border-white/60 px-1 text-center last:border-r-0"
+              key={segment.key}
+              className="flex min-w-[2px] items-center justify-center overflow-hidden border-r border-white/60 px-1 text-center last:border-r-0"
               style={{
-                width: `${Math.max(1, item.percentage)}%`,
-                background: `linear-gradient(135deg, ${item.color}, ${item.color}dd)`,
+                width: `${Math.max(0.6, segment.pct)}%`,
+                background: segment.background,
               }}
-              title={`${item.name} - ${formatBytes(item.size)} - ${item.percentage.toFixed(1)}%`}
+              title={`${segment.name} - ${formatBytes(segment.bytes)} - ${segment.pct.toFixed(1)}%`}
             >
               {showInlineLabel && (
                 <span className="truncate text-[10px] font-black leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.38)]">
-                  {formatBytes(item.size)}
+                  {formatBytes(segment.bytes)}
                 </span>
               )}
             </div>
@@ -278,6 +326,25 @@ function DiskUsageProportionGraph({
         })}
         {isLoading && <div className="analyze-disk-usage-flow" />}
       </div>
+
+      {hasDisk && (
+        <div className="mt-4 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[0.66rem] font-black uppercase tracking-[0.2em] text-slate-500">This folder</div>
+            <div className="mt-0.5 truncate text-sm font-black text-slate-900">
+              {formatBytes(folderSize)}
+              <span className="ml-1.5 font-mono text-[11px] font-black text-[var(--page-accent)]">
+                {folderPctOfDisk < 0.1 ? '<0.1' : folderPctOfDisk.toFixed(folderPctOfDisk < 10 ? 1 : 0)}% of disk
+              </span>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-[0.66rem] font-black uppercase tracking-[0.2em] text-slate-500">Free</div>
+            <div className="mt-0.5 font-mono text-sm font-black text-slate-700">{formatBytes(diskFree)}</div>
+          </div>
+        </div>
+      )}
+
       <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-3 xl:grid-cols-4">
         {visibleItems.slice(0, 4).map((item) => (
           <div key={item.path} className="flex min-w-0 items-center gap-2">
@@ -292,12 +359,13 @@ function DiskUsageProportionGraph({
 
 function AnalyzePanelLoadingOverlay() {
   return (
-    <div className="analyze-panel-loading-overlay absolute inset-0 z-30 flex items-center justify-center rounded-[1.35rem] bg-white/30 p-6 text-center shadow-inner shadow-white/30 backdrop-blur-2xl" aria-live="polite">
+    <div className="analyze-panel-loading-overlay absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-[1.35rem] p-6 text-center" aria-live="polite">
       <div className="analyze-apple-spinner" aria-label="Loading folder" role="status">
         {Array.from({ length: 8 }, (_, index) => (
           <span key={index} style={{ transform: `rotate(${index * 45}deg) translateY(-1.28rem)` }} />
         ))}
       </div>
+      <span className="text-[0.7rem] font-black uppercase tracking-[0.22em] text-slate-500">Reading folder</span>
     </div>
   );
 }
@@ -1076,7 +1144,7 @@ export function AnalyzePage() {
 
         <div className="grid h-[calc(100%-5.35rem)] min-h-[42rem] grid-cols-1 gap-6 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_450px]">
           <div data-testid="storage-map-panel" className="relative min-h-[34rem] overflow-hidden rounded-[1.2rem] xl:min-h-0">
-            <div className={`relative h-full rounded-[1.35rem] ${contentEnterClass}`}>
+            <div className={`relative h-full rounded-[1.35rem] ${contentEnterClass} ${inlineScanPath ? 'analyze-panel-content--loading' : ''}`}>
               {filteredEntries.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 text-center">
                   <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
@@ -1175,7 +1243,13 @@ export function AnalyzePage() {
           </div>
 
           <div data-testid="disk-usage-list-panel" className="flex min-h-0 flex-col gap-5">
-            <DiskUsageProportionGraph items={treemapItems} totalSize={result.total_size} isLoading={Boolean(inlineScanPath)} />
+            <DiskUsageProportionGraph
+              items={treemapItems}
+              totalSize={result.total_size}
+              diskTotal={result.disk_total ?? 0}
+              diskFree={result.disk_free ?? 0}
+              isLoading={Boolean(inlineScanPath)}
+            />
 
             <div className="relative min-h-[31rem] flex-1 overflow-hidden rounded-[1.35rem] xl:min-h-0">
               <div className="flex h-full min-h-0 flex-col">
@@ -1190,7 +1264,7 @@ export function AnalyzePage() {
                     onScroll={updateFileListScrollShadows}
                     className="h-full overflow-hidden overflow-y-auto rounded-[1.35rem] pr-1 custom-scrollbar"
                   >
-                    <div className={`min-h-full ${contentEnterClass}`}>
+                    <div className={`min-h-full ${contentEnterClass} ${inlineScanPath ? 'analyze-panel-content--loading' : ''}`}>
                       {filteredEntries.length === 0 ? (
                         <div className="flex h-full min-h-[20rem] flex-col items-center justify-center text-center">
                           <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
