@@ -8,9 +8,18 @@ Desktop-first chapter: Moleui becomes primarily a macOS desktop application, wit
 - Convex backend powering the desktop app: Clerk authentication, Stripe subscription billing (checkout, billing portal, and signature-verified webhooks), and subscription entitlement checks.
 - Spec-driven development workspace under `specs/`: an engagement charter, a consolidated codebase audit, and a PRD/stories/tasks system with a status board.
 - Repository hardening configuration: gitleaks secret scanning and golangci-lint settings.
+- Animated sign-in: the brand logo rises from the loading state into the header as the form opens, and the email, password, and two-factor steps slide between each other.
+- My Mac shows a skeleton of its dashboard while metrics load, mirroring the real layout with shimmering placeholders for values and charts so it fills in seamlessly.
+- Smooth crossfade between each feature's start screen and its working view on Clean, Optimize, Uninstall, and Analyze.
 
 ### Changed
 - Repositioned the project around the Electron desktop application (authentication, account and settings, subscription paywall, and live system metrics), moving battery and metrics sampling into the Electron main process for stability.
+- After sign-in the app opens directly in a correctly sized main window, and the login window hands off once the app has painted.
+
+### Fixed
+- The show and hide password toggle on the sign-in form is no longer stretched across the input; it stays a compact icon inside the field.
+- Sign-out reliably returns to the login screen and clears the session, so it can no longer bounce straight back into the app.
+- A fresh sign-in now reliably opens the app instead of leaving it in the small login window (the window mode survives Clerk's post-sign-in redirect).
 
 ## [1.45.0] - 2026-05-31
 
