@@ -19,6 +19,20 @@ _preference_plist_is_protected() {
             ;;
     esac
 
+    # Preference files for data-protected vendors (1Password, Adobe, JetBrains,
+    # Docker, password managers, etc.) must survive a `plutil -lint` failure:
+    # lint can spuriously fail on a valid binary/custom-format plist or one that
+    # is transiently locked, and deleting it would discard real, often
+    # irreplaceable user configuration. Reuse the central data-protection list
+    # rather than maintaining a second copy here. Only reverse-DNS-shaped names
+    # are treated as bundle domains, so plain names like ByHost/loginwindow keep
+    # their existing handling.
+    local domain="${filename%.plist}"
+    if [[ "$domain" == *.* ]] && declare -f should_protect_data > /dev/null 2>&1 &&
+        should_protect_data "$domain"; then
+        return 0
+    fi
+
     return 1
 }
 

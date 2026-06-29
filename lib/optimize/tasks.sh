@@ -733,17 +733,28 @@ opt_spotlight_index_optimize() {
     fi
 
     if echo "$spotlight_status" | grep -qi "Indexing enabled" && ! echo "$spotlight_status" | grep -qi "Indexing and searching disabled"; then
+        # Probe Spotlight responsiveness. A healthy index answers near-instantly,
+        # so a fast first sample lets us conclude "optimal" immediately, without a
+        # second sample or the inter-sample settle sleep (this is the common case
+        # and what dry-run/preview hits). Only a slow first sample triggers a
+        # second, confirming sample: a rebuild still requires two slow samples so a
+        # one-off spike never forces the consequential (1-2 hour) reindex.
         local slow_count=0
         local test_start test_end test_duration
-        for _ in 1 2; do
+        local sample
+        for sample in 1 2; do
             test_start=$(get_epoch_seconds)
             mdfind "kMDItemFSName == 'Applications'" > /dev/null 2>&1 || true
             test_end=$(get_epoch_seconds)
             test_duration=$((test_end - test_start))
             if [[ $test_duration -gt 3 ]]; then
                 slow_count=$((slow_count + 1))
+            else
+                # Responsive sample: no need to keep probing.
+                break
             fi
-            sleep 1
+            # Settle only between samples, never after the last one.
+            [[ $sample -eq 1 ]] && sleep 1
         done
 
         if [[ $slow_count -ge 2 ]]; then

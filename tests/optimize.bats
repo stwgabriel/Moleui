@@ -156,7 +156,13 @@ EOF
 }
 
 @test "fix_broken_preferences does not count protected Adobe plists" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 bash --noprofile --norc <<'EOF'
+	# Use a dedicated HOME: the shared setup_file HOME accumulates preference
+	# plists from earlier fix_broken_preferences tests, which would otherwise
+	# inflate the count this test asserts is zero.
+	local tmp_home
+	tmp_home=$(mktemp -d)
+
+	run env HOME="$tmp_home" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/maintenance.sh"
@@ -173,6 +179,7 @@ echo "count=$count"
 [[ -f "$plist" ]] && echo "still-present"
 EOF
 
+	rm -rf "$tmp_home"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"count=0"* ]]
 	[[ "$output" == *"still-present"* ]]
@@ -1354,4 +1361,60 @@ EOF
 	[[ "$output" == *"/Library/Developer/CoreSimulator/Volumes/iOS_17.dmg"$'\t'"/Library/Developer/CoreSimulator/Volumes/iOS_17.0"* ]]
 	line_count=$(printf '%s\n' "$output" | awk 'NF' | wc -l | tr -d ' ')
 	[ "$line_count" = "2" ]
+}
+
+@test "opt_spotlight_index_optimize short-circuits on a responsive first sample" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+mdutil() { echo "Indexing enabled."; }
+# Constant clock => every probe reads as instantaneous (fast).
+get_epoch_seconds() { echo 100; }
+mdfind() { echo "mdfind" >> "$HOME/probe.log"; }
+sleep() { echo "sleep" >> "$HOME/probe.log"; }
+
+opt_spotlight_index_optimize
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Spotlight index already optimal"* ]]
+	# A fast first sample must probe exactly once and never sleep.
+	[ "$(grep -c mdfind "$HOME/probe.log")" = "1" ]
+	[ ! -s "$HOME/probe.log" ] || [ "$(grep -c sleep "$HOME/probe.log")" = "0" ]
+	rm -f "$HOME/probe.log"
+}
+
+@test "opt_spotlight_index_optimize confirms with a second slow sample before reindex" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+mdutil() { echo "Indexing enabled."; }
+# File-backed clock advancing 5s per call (command-substitution subshells can
+# not share a variable, so persist the counter on disk). Every sample therefore
+# spans 5s and reads as slow.
+get_epoch_seconds() {
+    local n
+    n=$(cat "$HOME/clock" 2> /dev/null || echo 0)
+    n=$((n + 5))
+    echo "$n" > "$HOME/clock"
+    echo "$n"
+}
+mdfind() { echo "mdfind" >> "$HOME/probe.log"; }
+sleep() { echo "sleep" >> "$HOME/probe.log"; }
+is_ac_power() { return 0; }
+
+opt_spotlight_index_optimize
+EOF
+
+	[ "$status" -eq 0 ]
+	# Two slow samples on AC power reach the rebuild path (dry-run reports only).
+	[[ "$output" == *"Spotlight index rebuild started"* ]]
+	# Exactly two probes with a single settle sleep between them.
+	[ "$(grep -c mdfind "$HOME/probe.log")" = "2" ]
+	[ "$(grep -c sleep "$HOME/probe.log")" = "1" ]
+	rm -f "$HOME/probe.log" "$HOME/clock"
 }
