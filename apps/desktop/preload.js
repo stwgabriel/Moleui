@@ -62,8 +62,11 @@ contextBridge.exposeInMainWorld("moleDesktop", {
   windowMode,
   getRuntimeInfo: () => invokeWithLog("mole:runtime", "runtime"),
   auth: {
-    complete: () => ipcRenderer.invoke("mole:auth:complete"),
-    showLogin: () => ipcRenderer.invoke("mole:auth:show-login"),
+    // The renderer drives the single primary window: enterApp grows it to full
+    // size once Clerk confirms a session, enterLogin keeps it compact when signed
+    // out, and signOut wipes the local session and returns to the login form.
+    enterApp: () => ipcRenderer.invoke("mole:auth:enter-app"),
+    enterLogin: () => ipcRenderer.invoke("mole:auth:enter-login"),
     signOut: () => ipcRenderer.invoke("mole:auth:sign-out"),
   },
   permissions: {

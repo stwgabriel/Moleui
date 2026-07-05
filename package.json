@@ -14,7 +14,8 @@
     "web:build": "bun run --cwd apps/web build",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "stripe:create-test-coupon": "node scripts/create_stripe_test_coupon.mjs"
+    "stripe:create-test-coupon": "node scripts/create_stripe_test_coupon.mjs",
+    "clerk:configure-desktop": "node scripts/configure_clerk_desktop.mjs"
   },
   "workspaces": [
     "apps/*",

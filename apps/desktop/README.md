@@ -81,9 +81,34 @@ This will:
 # Build React app
 bun run build
 
-# Create distributable
-bun run dist
+# Create a distributable (.dmg + .zip in dist-electron/)
+bun run dist:arm64   # Apple Silicon
+bun run dist:amd64   # Intel
 ```
+
+These builds are **ad-hoc signed, not notarized** (`mac.identity: null`,
+`mac.notarize: false` in `package.json`), so they need **no paid Apple Developer
+Program membership**. The trade-off is that macOS Gatekeeper blocks them on first
+launch — see "Installing an unsigned build" below.
+
+### Installing an unsigned build (for testers)
+
+Because the build isn't notarized, the first launch is blocked with
+"Moleui can't be opened because Apple cannot check it for malicious software."
+After dragging **Moleui.app** to `/Applications`, clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Moleui.app
+```
+
+Then open it normally. (Alternative: try to open it once, then go to
+**System Settings → Privacy & Security** and click **Open Anyway**.)
+
+This only affects builds that were *downloaded* — the quarantine flag isn't set
+on a local copy. Put the one-liner above in your release notes so testers aren't
+stuck. With a paid Apple Developer account you can avoid this entirely: set a
+Developer ID identity, flip `mac.notarize` back to `true`, and build the signed
+target (`bun run dist:signed:arm64`) so Gatekeeper accepts the app with no prompt.
 
 ## Component Architecture
 

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useAuth } from '@clerk/clerk-react';
 import { Toaster } from 'sonner';
 import { cn } from '@/utils/cn';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -30,14 +31,11 @@ function PageLoadingFallback() {
 }
 
 function App() {
-  // Prefer the launch-arg window mode (set in preload) so the login window keeps
-  // its identity even after Clerk's post-sign-in redirect strips the URL query.
-  // Fall back to the URL for other windows and for non-Electron contexts (tests).
+  // The settings and developer windows are separate BrowserWindows identified by
+  // their URL query. The primary window has no mode and gates on Clerk auth state
+  // in this same renderer (see PrimaryWindow), so the renderer that signs in
+  // becomes the app — no second window has to rehydrate the session.
   const windowMode = window.moleDesktop?.windowMode || new URLSearchParams(window.location.search).get('window');
-
-  if (windowMode === 'login') {
-    return <LoginWindow />;
-  }
 
   if (windowMode === 'settings') {
     return (
@@ -51,7 +49,27 @@ function App() {
     return <CliMonitorWindow />;
   }
 
-  return <MainApp />;
+  return <PrimaryWindow />;
+}
+
+// Primary window: one window for both the sign-in form and the app. We gate on
+// Clerk's in-memory auth state, so the moment sign-in completes this renderer
+// swaps from the login form to the app — there is no separate main window that
+// would need to independently restore the session from storage (the source of
+// the post-login bounce). The main process resizes the window to match.
+function PrimaryWindow() {
+  const { isLoaded, isSignedIn } = useAuth();
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    void (isSignedIn ? window.moleDesktop?.auth?.enterApp() : window.moleDesktop?.auth?.enterLogin());
+  }, [isLoaded, isSignedIn]);
+
+  if (isLoaded && isSignedIn) {
+    return <MainApp />;
+  }
+
+  return <LoginWindow ready={isLoaded} />;
 }
 
 function MainApp() {

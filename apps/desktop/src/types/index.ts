@@ -69,8 +69,8 @@ export interface MoleDesktopAPI {
   windowMode?: string;
   getRuntimeInfo: () => Promise<{ packaged: boolean; runtimeDir: string; executable: string }>;
   auth?: {
-    complete: () => Promise<{ ok: boolean; message?: string }>;
-    showLogin: () => Promise<{ ok: boolean; message?: string }>;
+    enterApp: () => Promise<{ ok: boolean; message?: string }>;
+    enterLogin: () => Promise<{ ok: boolean; message?: string }>;
     signOut: () => Promise<{ ok: boolean; message?: string }>;
   };
   permissions?: {

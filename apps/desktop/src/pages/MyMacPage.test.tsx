@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { getBatteryChartData, getBatteryPrediction } from '@/utils/batteryPrediction';
 import type { SystemMetrics } from '@/types';
-import { MyMacPage } from './MyMacPage';
+import { MyMacPage, getReadableTextColor } from './MyMacPage';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -274,5 +274,39 @@ describe('MyMacPage layout', () => {
     expect(screen.getByText('PID 4202')).toBeInTheDocument();
     expect(screen.getByText('18.0%')).toBeInTheDocument();
     expect(screen.getByText('200 MB')).toBeInTheDocument();
+  });
+});
+
+describe('getReadableTextColor', () => {
+  const DARK = '#0f172a';
+  const LIGHT = '#f8fafc';
+
+  it('uses dark text on light slices', () => {
+    expect(getReadableTextColor('hsl(50 70% 75%)').fill).toBe(DARK);
+    // "Other apps" slice ships as a light hex grey.
+    expect(getReadableTextColor('#d1d5db').fill).toBe(DARK);
+    expect(getReadableTextColor('#ffffff').fill).toBe(DARK);
+  });
+
+  it('uses light text on dark slices', () => {
+    expect(getReadableTextColor('hsl(240 80% 22%)').fill).toBe(LIGHT);
+    expect(getReadableTextColor('#101010').fill).toBe(LIGHT);
+  });
+
+  it('always pairs the fill with an opposite-tone halo', () => {
+    const onDark = getReadableTextColor('#101010');
+    const onLight = getReadableTextColor('#ffffff');
+    expect(onDark.halo).not.toBe(onLight.halo);
+    expect(onLight.fill).not.toBe(onDark.fill);
+  });
+
+  it('falls back to dark text for unparseable colors', () => {
+    expect(getReadableTextColor('not-a-color').fill).toBe(DARK);
+    expect(getReadableTextColor('').fill).toBe(DARK);
+  });
+
+  it('parses both space- and comma-separated hsl', () => {
+    expect(getReadableTextColor('hsl(240, 80%, 22%)').fill).toBe(LIGHT);
+    expect(getReadableTextColor('hsl(240 80% 22%)').fill).toBe(LIGHT);
   });
 });

@@ -1,28 +1,17 @@
-import { SignIn, useUser } from '@clerk/clerk-react';
+import { SignIn } from '@clerk/clerk-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect } from 'react';
 
 // Shared easing for the logo-rise / form-reveal choreography.
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
-export function LoginWindow() {
-  const { isLoaded, isSignedIn } = useUser();
-
-  // While Clerk is initializing (or we're signed in and handing off to the app)
-  // we show the logo as a loading spinner. Once Clerk is ready and there's no
-  // session, the logo rises and the sign-in form opens beneath it.
-  const showForm = isLoaded && !isSignedIn;
-
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    if (isSignedIn) {
-      void window.moleDesktop.auth?.complete();
-      return;
-    }
-
-    void window.moleDesktop.auth?.showLogin();
-  }, [isLoaded, isSignedIn]);
+// The sign-in surface of the single primary window. Rendered by PrimaryWindow
+// only while signed out; once Clerk reports a session, PrimaryWindow swaps to the
+// app in this same renderer, so there is no window hand-off to manage here.
+//
+// `ready` is Clerk's isLoaded: while false the logo spins as a loader; once true
+// the logo rises and the sign-in form opens beneath it.
+export function LoginWindow({ ready = true }: { ready?: boolean }) {
+  const showForm = ready;
 
   return (
     <main className="mole-native-login relative h-screen overflow-y-auto overflow-x-clip text-slate-950">
@@ -33,9 +22,6 @@ export function LoginWindow() {
 
       <section className="relative flex h-full min-h-0 items-center justify-center px-8 pb-10 pt-12">
         <div className="flex w-full max-w-[360px] min-w-0 flex-col items-center">
-          {/* Brand logo — the loading spinner's core and, once the form opens,
-              the sign-in header. `layout` animates it from center to top as the
-              form mounts and grows the column. */}
           <motion.div
             layout
             transition={{ duration: 0.55, ease: EASE }}
@@ -46,7 +32,7 @@ export function LoginWindow() {
                 <motion.span
                   key="loader-ring"
                   aria-hidden="true"
-                  className="absolute inset-0 animate-spin rounded-full border-[4px] border-violet-200/55 border-t-violet-600"
+                  className="absolute inset-0 animate-spin rounded-full border-4 border-violet-200/55 border-t-violet-600"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -64,7 +50,6 @@ export function LoginWindow() {
             />
           </motion.div>
 
-          {/* Heading + form — open beneath the logo once Clerk is ready. */}
           <AnimatePresence>
             {showForm && (
               <motion.div

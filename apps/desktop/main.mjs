@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, screen, session, shell } from "electron";
 import { execFile, execFileSync, spawn } from "node:child_process";
+import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,9 +10,155 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = !app.isPackaged;
 // Dev renderer URL is configurable so the app can run on a free port when the
-// default Vite port (5173) is taken by another project. Defaults to 5173.
-const DEV_SERVER_URL = process.env.MOLE_DEV_URL || "http://localhost:5173";
+// default Vite port (30736) is taken by another project. Defaults to 30736.
+const DEV_SERVER_URL = process.env.MOLE_DEV_URL || "http://localhost:30736";
 const appIconPath = path.join(__dirname, "public", "assets", "base", isDev ? "molui-dark.png" : "molui-purple.png");
+
+// Packaged builds serve the renderer over a loopback HTTP origin
+// (http://localhost:<port>) instead of file:// or a custom app:// scheme.
+// Clerk persists its session in cookies on the renderer's own origin, and
+// Chromium only stores cookies on "cookieable" schemes — http(s)/ws(s). Both
+// file:// AND custom standard+secure schemes (app://) are NON-cookieable in
+// Electron: cookie writes are silently dropped (EXCLUDE_NONCOOKIEABLE_SCHEME),
+// so a packaged app served from them signs in once (session in memory) but can
+// never restore it in the separately-created main window or after a restart —
+// which bounced the user straight back to the login screen. An in-process
+// loopback HTTP server is a real cookieable origin where the session persists
+// to disk and is shared across the login and main BrowserWindows (they share
+// session.defaultSession). `base: './'` in vite keeps asset URLs relative to
+// whatever origin serves index.html.
+const RENDERER_HOST = "127.0.0.1"; // bind loopback only (not reachable off-box)
+const RENDERER_URL_HOST = "localhost"; // navigate via localhost (Clerk dev trusts it)
+const RENDERER_PORT_FILE = "renderer-port.json";
+// Resolved once the loopback server is listening, e.g. "http://localhost:51763".
+let rendererOrigin = "";
+
+const RENDERER_MIME_TYPES = {
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".mjs": "text/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".map": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".txt": "text/plain",
+};
+
+function rendererPortFilePath() {
+  return path.join(app.getPath("userData"), RENDERER_PORT_FILE);
+}
+
+// Reuse the same port across launches so the renderer's origin stays stable.
+// Cookies survive a port change (they key on host, not port), but localStorage
+// IS origin/port-scoped and Clerk's dev-browser cache lives there — a drifting
+// port would keep the session cookie yet force an occasional re-handshake.
+function readSavedRendererPort() {
+  try {
+    const port = JSON.parse(fs.readFileSync(rendererPortFilePath(), "utf8"))?.port;
+    return Number.isInteger(port) && port > 1024 && port < 65536 ? port : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveRendererPort(port) {
+  try {
+    fs.mkdirSync(path.dirname(rendererPortFilePath()), { recursive: true });
+    fs.writeFileSync(rendererPortFilePath(), JSON.stringify({ port }), "utf8");
+  } catch (error) {
+    console.error("Failed to persist renderer port:", error);
+  }
+}
+
+// Static file handler for the built renderer (apps/desktop/dist). Every request
+// is contained inside dist/ so a crafted URL can't read arbitrary files; unknown
+// paths fall back to the SPA shell (so Clerk path routes like /sso-callback
+// resolve); files are read with fs (asar-aware in packaged builds) so it works
+// whether or not dist/ is inside app.asar.
+function createRendererRequestHandler() {
+  const distDir = path.join(__dirname, "dist");
+  return async (req, res) => {
+    let pathname = "/";
+    try {
+      ({ pathname } = new URL(req.url, rendererOrigin || `http://${RENDERER_URL_HOST}`));
+    } catch {
+      res.writeHead(400);
+      res.end("Bad request");
+      return;
+    }
+    let relativePath = decodeURIComponent(pathname);
+    if (!relativePath || relativePath === "/") relativePath = "/index.html";
+    const resolved = path.normalize(path.join(distDir, relativePath));
+    if (resolved !== distDir && !resolved.startsWith(distDir + path.sep)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+    let filePath = resolved;
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (!stat.isFile()) {
+        filePath = path.join(distDir, "index.html");
+      }
+    } catch {
+      filePath = path.join(distDir, "index.html");
+    }
+
+    try {
+      const data = await fs.promises.readFile(filePath);
+      const type = RENDERER_MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+      res.writeHead(200, { "content-type": type });
+      res.end(data);
+    } catch {
+      res.writeHead(404);
+      res.end("Not found");
+    }
+  };
+}
+
+// Starts the loopback renderer server and resolves rendererOrigin before any
+// window loads. Tries the saved port first; on EADDRINUSE falls back to an
+// OS-assigned free port and persists the new one.
+function startRendererServer() {
+  const server = http.createServer(createRendererRequestHandler());
+
+  const listenOn = (port) =>
+    new Promise((resolve, reject) => {
+      const onError = (error) => {
+        server.removeListener("listening", onListening);
+        reject(error);
+      };
+      const onListening = () => {
+        server.removeListener("error", onError);
+        resolve(server.address().port);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(port, RENDERER_HOST);
+    });
+
+  return (async () => {
+    let port;
+    try {
+      port = await listenOn(readSavedRendererPort());
+    } catch (error) {
+      if (error?.code !== "EADDRINUSE") throw error;
+      port = await listenOn(0);
+    }
+    saveRendererPort(port);
+    rendererOrigin = `http://${RENDERER_URL_HOST}:${port}`;
+    return rendererOrigin;
+  })();
+}
 const MY_MAC_METRICS_FILE = "my-mac-metrics.json";
 const BACKGROUND_SYSTEMS_FILE = "background-systems.json";
 const BATTERY_SAMPLE_INTERVAL_MS = 6 * 60 * 1000;
@@ -105,7 +252,7 @@ async function getAppIconData(appPath) {
 
   try {
     const fileIcon = await withTimeout(
-      app.getFileIcon(appPath, { size: "normal" }),
+      app.getFileIcon(appPath, { size: "large" }),
       1500,
       "Icon lookup timed out",
     );
@@ -942,10 +1089,13 @@ function appLookupNamesMatch(appName, lookupName) {
   return shorter.length >= 6 && longer.startsWith(shorter);
 }
 
-async function findNamedApplicationPaths(processName) {
+// Index-only name resolution. Touches only the in-memory application index, so
+// it is safe to call once per process during icon resolution. Crucially it does
+// NOT reach findSpotlightApplicationPaths, whose synchronous mdfind would block
+// the main process per unmatched name when fanned out across the process list.
+async function findIndexedApplicationPaths(processName) {
   const lookupName = normalizeAppLookupName(processName);
   if (!lookupName) return [];
-  if (applicationNameLookupCache.has(lookupName)) return applicationNameLookupCache.get(lookupName);
 
   const matches = [];
   const { entries, byLookupName } = await getSystemApplicationIndex();
@@ -958,6 +1108,15 @@ async function findNamedApplicationPaths(processName) {
     }
   }
 
+  return matches;
+}
+
+async function findNamedApplicationPaths(processName) {
+  const lookupName = normalizeAppLookupName(processName);
+  if (!lookupName) return [];
+  if (applicationNameLookupCache.has(lookupName)) return applicationNameLookupCache.get(lookupName);
+
+  const matches = await findIndexedApplicationPaths(processName);
   findSpotlightApplicationPaths(processName).forEach((appPath) => addUniquePath(matches, appPath));
 
   applicationNameLookupCache.set(lookupName, matches);
@@ -1005,6 +1164,33 @@ function execFileOutput(file, args, timeoutMs) {
       resolve(error ? "" : String(stdout || "").trim());
     });
   }), timeoutMs, `${file} timed out`).catch(() => "");
+}
+
+// Maps each PID to the full path of its running executable via `ps`. The Go
+// status command feeds ProcessInfo.command from `ps -c comm=`, where `-c` emits
+// the bare accounting name (no path), so the renderer never sees a .app path.
+// Without `-c`, `comm=` prints the full executable path; the leading
+// `/Applications/Foo.app` portion appears long before ps' ~120-char column clip,
+// so appBundlePath still extracts the bundle. Unlike the System Events bridge
+// this needs no Automation permission and resolves bundled helpers/daemons too.
+async function getProcessExecutablePathsByPid(pids) {
+  const wantedPids = new Set(pids.map(Number).filter(Number.isFinite));
+  const executablePaths = new Map();
+
+  if (process.platform !== "darwin" || wantedPids.size === 0) return executablePaths;
+
+  const output = await execFileOutput("ps", ["-axww", "-o", "pid=,comm="], 2500);
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/^\s*(\d+)\s+(.+?)\s*$/);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    const executablePath = match[2];
+    if (wantedPids.has(pid) && executablePath.startsWith("/")) {
+      executablePaths.set(pid, executablePath);
+    }
+  }
+
+  return executablePaths;
 }
 
 async function getProcessAppBundlePath(pid) {
@@ -1068,29 +1254,42 @@ return outputLines as text
 }
 
 async function processIconPaths(processInfo, bundlePath = "") {
-  const paths = [];
   const processPath = existingProcessPath(processInfo?.command);
   const processBundlePath = appBundlePath(processPath);
   const processExecutableName = processPath ? path.basename(processPath) : "";
 
-  addUniquePath(paths, bundlePath);
-  addUniquePath(paths, processBundlePath);
-  addUniquePath(paths, processPath);
+  // A real .app bundle from the command path (or System Events) is the
+  // authoritative icon source. When we already have one, there is no need to
+  // widen the search by name.
+  const appBundleCandidates = [];
+  addUniquePath(appBundleCandidates, bundlePath);
+  addUniquePath(appBundleCandidates, processBundlePath);
 
-  if (paths.length > 0) return paths;
+  if (appBundleCandidates.length > 0) {
+    const paths = [...appBundleCandidates];
+    addUniquePath(paths, processPath);
+    return paths;
+  }
 
+  // No .app in the command path: this is a bare executable, daemon, or helper.
+  // getAppIconData would return a generic exec icon for the binary, so try to
+  // map the process to an installed app by name first. Use the index-only
+  // resolver to keep the synchronous Spotlight lookup out of the per-process
+  // fan-out, and keep the bare executable as a last-resort candidate so a
+  // matched .app icon always wins over the generic exec icon.
+  const paths = [];
   const lookupNames = [
     processInfo?.name,
     processExecutableName,
-    path.basename(processBundlePath),
     ...processIconSlugCandidates(processInfo),
   ].filter(Boolean);
 
   for (const name of lookupNames) {
-    const namedPaths = await findNamedApplicationPaths(name);
+    const namedPaths = await findIndexedApplicationPaths(name);
     namedPaths.forEach((appPath) => addUniquePath(paths, appPath));
   }
 
+  addUniquePath(paths, processPath);
   return paths;
 }
 
@@ -1254,63 +1453,29 @@ function applyMainWindowBounds(window) {
   window.setBounds({ x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height }, false);
 }
 
-// App windows (main, settings, CLI monitor) never legitimately open child
-// windows; external links route through the allowlisted mole:open-external IPC.
-// Deny any window.open / target=_blank so a compromised renderer cannot spawn an
-// uncontrolled BrowserWindow. The login window is intentionally excluded so
-// Clerk's auth popups keep working.
+// The settings and CLI monitor windows never legitimately open child windows;
+// external links route through the allowlisted mole:open-external IPC. Deny any
+// window.open / target=_blank so a compromised renderer cannot spawn an
+// uncontrolled BrowserWindow. The primary window's handler is auth-state
+// dependent: allowAuthPopupsOnly while signed out (Clerk's popups), then this
+// deny-all once signed in (see the mole:auth:enter-app handler).
 function denyChildWindows(window) {
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 }
 
-function createWindow(options = {}) {
-  const shouldShow = options.show !== false;
-  const bounds = mainWindowBounds();
-  const window = new BrowserWindow({
-    width: bounds.width,
-    height: bounds.height,
-    x: bounds.x,
-    y: bounds.y,
-    minWidth: bounds.minWidth,
-    minHeight: bounds.minHeight,
-    show: false,
-    titleBarStyle: "hidden",
-    trafficLightPosition: {
-      x: 18,
-      y: 6,
-    },
-    icon: appIconPath,
-    // macOS translucency: blur the desktop behind the window so the app blends
-    // with the background. Ignored on other platforms.
-    ...(process.platform === "darwin"
-      ? { vibrancy: "under-window", visualEffectState: "active" }
-      : {}),
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      // Disable DevTools in packaged builds so the renderer state (including the
-      // developer-unlock flag) cannot be edited to bypass the paywall.
-      devTools: isDev,
-    },
-  });
-
-  loadAppWindow(window);
-  denyChildWindows(window);
-
-  if (shouldShow) {
-    window.once("ready-to-show", () => {
-      applyMainWindowBounds(window);
-      window.show();
-      window.focus();
-    });
-  }
-
-  return window;
+// The signed-out primary window must allow Clerk's social sign-in popup (an
+// external https window.open). Permit https while still denying any attempt to
+// spawn a new in-app window. After sign-in the enter-app handler swaps this for
+// denyChildWindows, so the app surface is as locked down as the other windows.
+function allowAuthPopupsOnly(window) {
+  window.webContents.setWindowOpenHandler(({ url }) => (isHttpsUrl(url) ? { action: "allow" } : { action: "deny" }));
 }
 
+// One primary window serves both the sign-in form and the app. It is sized
+// compact while signed out and full-size once signed in; the renderer drives the
+// transition (enterApp / enterLogin) once Clerk resolves the session.
 let mainWindow;
-let loginWindow;
+let primaryWindowFallbackShow = null;
 let settingsWindow;
 let cliMonitorWindow;
 let billingWindow;
@@ -1319,20 +1484,58 @@ function loadAppWindow(window, query = "") {
   if (isDev) {
     window.loadURL(`${DEV_SERVER_URL}${query}`);
   } else {
-    window.loadFile(path.join(__dirname, "dist", "index.html"), query ? { search: query.slice(1) } : undefined);
+    window.loadURL(`${rendererOrigin}/index.html${query}`);
   }
 }
 
-function createLoginWindow() {
-  if (loginWindow && !loginWindow.isDestroyed()) {
-    if (loginWindow.isVisible()) {
-      loginWindow.focus();
-    }
-    return loginWindow;
-  }
+function applyLoginWindowBounds(window) {
+  if (!window || window.isDestroyed()) return;
 
   const bounds = centeredWindowBounds(LOGIN_WINDOW_SIZE);
-  loginWindow = new BrowserWindow({
+  window.setMinimumSize(bounds.minWidth, bounds.minHeight);
+  window.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }, false);
+}
+
+// Reveal the primary window at the size for the current auth state. The renderer
+// calls this (via enterApp / enterLogin) the moment Clerk resolves the session,
+// so a signed-in user opens straight into the full-size app and a signed-out user
+// into the compact login window — no second window, no resize flash.
+function showPrimaryWindow(mode) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  if (primaryWindowFallbackShow) {
+    clearTimeout(primaryWindowFallbackShow);
+    primaryWindowFallbackShow = null;
+  }
+
+  if (mode === "app") {
+    applyMainWindowBounds(mainWindow);
+  } else {
+    applyLoginWindowBounds(mainWindow);
+  }
+
+  if (process.platform === "darwin") {
+    app.dock.show();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createPrimaryWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (process.platform === "darwin") {
+      app.dock.show();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    return mainWindow;
+  }
+
+  // Start compact (login size). The renderer grows it via enterApp once Clerk
+  // confirms a signed-in session.
+  const bounds = centeredWindowBounds(LOGIN_WINDOW_SIZE);
+  mainWindow = new BrowserWindow({
     width: bounds.width,
     height: bounds.height,
     x: bounds.x,
@@ -1340,7 +1543,7 @@ function createLoginWindow() {
     minWidth: bounds.minWidth,
     minHeight: bounds.minHeight,
     show: false,
-    title: "Sign in to Moleui",
+    title: "Moleui",
     titleBarStyle: "hidden",
     trafficLightPosition: {
       x: 18,
@@ -1354,90 +1557,60 @@ function createLoginWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      // Pass the window mode as a launch argument (read in preload) so it
-      // survives in-window navigations. Clerk redirects this window to its
-      // afterSignInUrl ("/") after a fresh sign-in, which drops the
-      // "?window=login" query the renderer would otherwise rely on — without
-      // this, the post-sign-in reload would render the main app inside the small
-      // login window and the resize/hand-off would never fire.
-      additionalArguments: ["--mole-window-mode=login"],
       // Disable DevTools in packaged builds so the renderer state (including the
       // developer-unlock flag) cannot be edited to bypass the paywall.
       devTools: isDev,
     },
   });
 
-  loadAppWindow(loginWindow, "?window=login");
+  allowAuthPopupsOnly(mainWindow);
+  loadAppWindow(mainWindow);
 
-  loginWindow.once("ready-to-show", () => {
-    loginWindow.show();
+  // Recovery net: if the initial load fails outright (loopback server not ready,
+  // crash, missing dist), `ready-to-show` may never fire, so the renderer can
+  // never send enterApp/enterLogin and the window — created with show:false —
+  // would stay invisible forever. Reveal it compact on a real main-frame load
+  // failure, mirroring the billing window's did-fail-load handling. -3 is
+  // ERR_ABORTED (e.g. an in-flight navigation superseded by a redirect), not a
+  // real failure, so ignore it.
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, _desc, _url, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return;
+    showPrimaryWindow("login");
   });
 
-  loginWindow.on("closed", () => {
-    loginWindow = null;
-  });
-
-  return loginWindow;
-}
-
-function showLoginWindow() {
-  if (!loginWindow || loginWindow.isDestroyed()) {
-    return { ok: false, message: "Login window is not available" };
-  }
-
-  const nextBounds = centeredWindowBounds(LOGIN_WINDOW_SIZE);
-  loginWindow.setBounds({ x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height }, false);
-  loginWindow.show();
-  loginWindow.focus();
-  return { ok: true };
-}
-
-function openMainWindowAfterAuth() {
-  if (process.platform === "darwin") {
-    app.dock.show();
-  }
-
-  const closeLoginWindow = () => {
-    if (loginWindow && !loginWindow.isDestroyed()) {
-      loginWindow.close();
-    }
-  };
-
-  // Already have a main window (e.g. re-auth without a full sign-out): just
-  // resize it back to the main bounds and show it.
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    applyMainWindowBounds(mainWindow);
-    mainWindow.show();
-    mainWindow.focus();
-    closeLoginWindow();
-    return mainWindow;
-  }
-
-  // The app lives in its own window, fully separate from the login window, so the
-  // two never interfere (Clerk's sign-in flow does not play well with reusing the
-  // login window). The main window is created at full size from the start, so no
-  // resize is needed. Keep the login window up until the main window has painted,
-  // then close it so the hand-off looks seamless.
-  mainWindow = createWindow({ show: false });
+  // The renderer reveals the window at the correct size once Clerk settles. If
+  // Clerk never loads (offline, misconfig), fall back to showing the compact
+  // login window so the app is never stuck invisible.
   mainWindow.once("ready-to-show", () => {
-    applyMainWindowBounds(mainWindow);
-    mainWindow.show();
-    mainWindow.focus();
-    closeLoginWindow();
+    if (primaryWindowFallbackShow) clearTimeout(primaryWindowFallbackShow);
+    primaryWindowFallbackShow = setTimeout(() => {
+      primaryWindowFallbackShow = null;
+      showPrimaryWindow("login");
+    }, 2500);
+  });
+
+  mainWindow.on("closed", () => {
+    if (primaryWindowFallbackShow) {
+      clearTimeout(primaryWindowFallbackShow);
+      primaryWindowFallbackShow = null;
+    }
+    mainWindow = null;
   });
 
   return mainWindow;
 }
 
-function closeAppWindowsForSignOut() {
-  for (const window of [mainWindow, settingsWindow, cliMonitorWindow]) {
+// Sign-out keeps the single primary window alive (it reloads back to the login
+// form); only the auxiliary, auth-gated windows are torn down here.
+function closeAuxWindowsForSignOut() {
+  for (const window of [settingsWindow, cliMonitorWindow, billingWindow]) {
     if (window && !window.isDestroyed()) {
       window.close();
     }
   }
-  mainWindow = null;
   settingsWindow = null;
   cliMonitorWindow = null;
+  billingWindow = null;
 }
 
 // Wipe the shared session's auth artifacts (Clerk's session cookie plus the dev
@@ -1761,12 +1934,26 @@ ipcMain.handle("mole:process:icons", async (_event, processes) => {
     return { ok: false, icons: {}, message: "Invalid processes" };
   }
 
-  const bundlePathsByPid = await getProcessAppBundlePathsByPid(processes.map((proc) => proc?.pid));
-  const resolvedProcessIconEntries = await mapWithConcurrency(processes, 8, async (proc) => ({
-    pid: proc?.pid,
-    processInfo: proc,
-    iconPaths: await processIconPaths(proc, bundlePathsByPid.get(Number(proc?.pid))),
-  }));
+  const pids = processes.map((proc) => proc?.pid);
+  // `ps` gives the full executable path (and therefore the .app bundle) for
+  // every PID without needing Automation permission. The System Events bridge
+  // is kept only as a fallback for the few PIDs `ps` can't resolve, so the
+  // whole-batch osascript timeout no longer gates the common case.
+  const executablePathsByPid = await getProcessExecutablePathsByPid(pids);
+  const unresolvedPids = pids.filter((pid) => !executablePathsByPid.get(Number(pid)));
+  const bundlePathsByPid = await getProcessAppBundlePathsByPid(unresolvedPids);
+  const resolvedProcessIconEntries = await mapWithConcurrency(processes, 8, async (proc) => {
+    const executablePath = executablePathsByPid.get(Number(proc?.pid));
+    // Enrich command with the real executable path so the existing .app
+    // extraction, executable-name lookup, and binary-path fallback all work off
+    // a real path instead of the bare accounting name the renderer received.
+    const enrichedProc = executablePath ? { ...proc, command: executablePath } : proc;
+    return {
+      pid: proc?.pid,
+      processInfo: proc,
+      iconPaths: await processIconPaths(enrichedProc, bundlePathsByPid.get(Number(proc?.pid))),
+    };
+  });
   const processIconEntries = resolvedProcessIconEntries.filter(({ pid, iconPaths }) => Number.isFinite(pid) && iconPaths.length > 0);
 
   const uniqueIconPaths = [...new Set(processIconEntries.flatMap(({ iconPaths }) => iconPaths))];
@@ -1823,27 +2010,45 @@ ipcMain.handle("mole:developer:clear-cli-events", async () => {
   return { ok: true };
 });
 
-ipcMain.handle("mole:auth:complete", async () => {
-  openMainWindowAfterAuth();
+// The renderer that just signed in IS the app — grow the primary window to full
+// size and reveal it. No second window is created, so there is no fresh Clerk
+// instance that has to rehydrate the session from storage (the source of the
+// post-login bounce on the packaged build). The signed-in app never legitimately
+// opens child windows (settings/billing/links all route through IPC), so lock the
+// window-open handler back down to deny-all now that the auth popup phase is over.
+ipcMain.handle("mole:auth:enter-app", async (event) => {
+  if (BrowserWindow.fromWebContents(event.sender) === mainWindow) {
+    showPrimaryWindow("app");
+    denyChildWindows(mainWindow);
+  }
   return { ok: true };
 });
 
-ipcMain.handle("mole:auth:show-login", async (event) => {
-  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-
-  if (sourceWindow !== loginWindow) {
-    return { ok: true };
+// Signed out (initial launch, or after sign-out): keep the primary window compact
+// and re-allow https auth popups so Clerk's social sign-in can open its popup.
+ipcMain.handle("mole:auth:enter-login", async (event) => {
+  if (BrowserWindow.fromWebContents(event.sender) === mainWindow) {
+    showPrimaryWindow("login");
+    allowAuthPopupsOnly(mainWindow);
   }
-
-  return showLoginWindow();
+  return { ok: true };
 });
 
 ipcMain.handle("mole:auth:sign-out", async () => {
-  // Close every app window first so no live renderer can re-persist the session
-  // while we clear it, then wipe the session and return to a clean login window.
-  closeAppWindowsForSignOut();
+  // Tear down the auth-gated auxiliary windows, wipe the local session so nothing
+  // can restore it, then reload the primary window. Reloading re-inits Clerk
+  // against the now-empty session, so it comes up signed-out and renders the login
+  // form — deterministic, without relying on cross-window Clerk sync timing.
+  closeAuxWindowsForSignOut();
   await clearAuthSessionData();
-  createLoginWindow();
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    showPrimaryWindow("login");
+    mainWindow.webContents.reload();
+  } else {
+    createPrimaryWindow();
+  }
+
   return { ok: true };
 });
 
@@ -2295,7 +2500,11 @@ ipcMain.handle("mole:signal-process", async (_event, pid, signal) => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (!isDev) {
+    // Resolve rendererOrigin before any window calls loadAppWindow().
+    await startRendererServer();
+  }
   configureApplicationMenu();
   configureMacStartupService();
   setImmediate(() => {
@@ -2326,7 +2535,7 @@ app.whenReady().then(() => {
   }
 
   if (!openedAsHidden) {
-    createLoginWindow();
+    createPrimaryWindow();
   }
 
   app.on("activate", () => {
@@ -2335,7 +2544,7 @@ app.whenReady().then(() => {
     }
 
     if (BrowserWindow.getAllWindows().length === 0) {
-      createLoginWindow();
+      createPrimaryWindow();
     }
   });
 });

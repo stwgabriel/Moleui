@@ -264,26 +264,43 @@ function ProcessDonutIconLabel(props: any) {
   const labelY = Number(cy) + Math.sin(radians) * labelRadius;
   const textAnchor = Math.cos(radians) >= 0 ? 'start' : 'end';
   const percent = item.totalPercent == null ? '' : `${item.totalPercent.toFixed(0)}%`;
+  // Thin slices can't hold an icon + percent without colliding with their
+  // neighbours, so they fall back to just the outer name label.
+  const showInline = (item.totalPercent ?? 0) >= PROCESS_DONUT_MIN_INLINE_PERCENT;
+  const textColor = getReadableTextColor(item.color);
 
   return (
     <g>
-      <g transform={`translate(${x}, ${y})`}>
-        {item.icon && !item.isOther ? (
-          <image
-            href={item.icon}
-            x={-iconSize / 2}
-            y={-15}
-            width={iconSize}
-            height={iconSize}
-            preserveAspectRatio="xMidYMid meet"
-          />
-        ) : (
-          <circle r={item.isOther ? 5 : 7} cy={-11} fill={item.color} opacity={item.isOther ? 0.7 : 0.95} />
-        )}
-        <text dominantBaseline="central" textAnchor="middle" fill="#334155" fontSize={9} fontWeight={800} y={13}>
-          {percent}
-        </text>
-      </g>
+      {showInline ? (
+        <g transform={`translate(${x}, ${y})`}>
+          {item.icon && !item.isOther ? (
+            <image
+              href={item.icon}
+              x={-iconSize / 2}
+              y={-15}
+              width={iconSize}
+              height={iconSize}
+              preserveAspectRatio="xMidYMid meet"
+            />
+          ) : (
+            <circle r={item.isOther ? 5 : 7} cy={-11} fill={item.color} opacity={item.isOther ? 0.7 : 0.95} />
+          )}
+          <text
+            dominantBaseline="central"
+            textAnchor="middle"
+            fill={textColor.fill}
+            stroke={textColor.halo}
+            strokeWidth={2.4}
+            strokeLinejoin="round"
+            paintOrder="stroke"
+            fontSize={9}
+            fontWeight={800}
+            y={13}
+          >
+            {percent}
+          </text>
+        </g>
+      ) : null}
       <text
         x={labelX}
         y={labelY}
@@ -350,6 +367,65 @@ function getProcessColor(name: string, icon?: string): string {
   const lightness = icon ? 54 : 58;
   return `hsl(${hue} ${saturation}% ${lightness}%)`;
 }
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const huePrime = (((h % 360) + 360) % 360) / 60;
+  const second = chroma * (1 - Math.abs((huePrime % 2) - 1));
+  const [r1, g1, b1] = huePrime < 1 ? [chroma, second, 0]
+    : huePrime < 2 ? [second, chroma, 0]
+    : huePrime < 3 ? [0, chroma, second]
+    : huePrime < 4 ? [0, second, chroma]
+    : huePrime < 5 ? [second, 0, chroma]
+    : [chroma, 0, second];
+  const match = l - chroma / 2;
+  return [
+    Math.round((r1 + match) * 255),
+    Math.round((g1 + match) * 255),
+    Math.round((b1 + match) * 255),
+  ];
+}
+
+function parseColorToRgb(color: string): [number, number, number] | null {
+  const value = String(color || '').trim();
+  const hslMatch = value.match(/^hsl\(\s*([\d.]+)[ ,]+([\d.]+)%[ ,]+([\d.]+)%\s*\)$/i);
+  if (hslMatch) {
+    return hslToRgb(Number(hslMatch[1]), Number(hslMatch[2]) / 100, Number(hslMatch[3]) / 100);
+  }
+  const hex = value.replace('#', '');
+  if (/^[0-9a-f]{6}$/i.test(hex)) {
+    return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+  }
+  if (/^[0-9a-f]{3}$/i.test(hex)) {
+    return [parseInt(hex[0] + hex[0], 16), parseInt(hex[1] + hex[1], 16), parseInt(hex[2] + hex[2], 16)];
+  }
+  return null;
+}
+
+function relativeLuminance([r, g, b]: [number, number, number]): number {
+  const toLinear = (channel: number) => {
+    const srgb = channel / 255;
+    return srgb <= 0.03928 ? srgb / 12.92 : Math.pow((srgb + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+// Slice fills come in two flavours: hsl() from getProcessColor and the hex
+// "Other apps" grey. The percent label is painted on top of the slice, so it
+// needs a fill that contrasts with whatever colour landed underneath it, plus a
+// thin halo in the opposite tone so mid-luminance slices stay legible too.
+export function getReadableTextColor(color: string): { fill: string; halo: string } {
+  const rgb = parseColorToRgb(color);
+  const luminance = rgb ? relativeLuminance(rgb) : 1;
+  // The flip point between black and white text sits near 0.18 luminance.
+  return luminance > 0.18
+    ? { fill: '#0f172a', halo: 'rgba(255,255,255,0.9)' }
+    : { fill: '#f8fafc', halo: 'rgba(15,23,42,0.6)' };
+}
+
+// Slices thinner than this render their identity via the outer name label only;
+// cramming a 22px icon + percent into a sliver collides with neighbours.
+const PROCESS_DONUT_MIN_INLINE_PERCENT = 5;
 
 function getProcessAppIdentity(process: ProcessInfo): { id: string; name: string } {
   const command = process.command ?? '';

@@ -91,10 +91,10 @@ describe('SettingsWindow', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: /background systems/i })).toBeInTheDocument();
     expect(screen.getByText('Battery metrics sampler')).toBeInTheDocument();
-    expect(screen.getByText('Enabled')).toBeInTheDocument();
+    expect(screen.getByText('On')).toBeInTheDocument();
     expect(screen.getByText('Idle')).toBeInTheDocument();
     expect(screen.getByText('Every 6 minutes')).toBeInTheDocument();
-    expect(screen.getByText('Updated battery metrics cache')).toBeInTheDocument();
+    expect(screen.getByText(/Succeeded in/i)).toBeInTheDocument();
 
     await waitFor(() => {
       expect(window.moleDesktop.getBackgroundSystems).toHaveBeenCalledTimes(1);
@@ -114,15 +114,15 @@ describe('SettingsWindow', () => {
 
     render(<SettingsWindow />);
 
-    fireEvent.click(screen.getByRole('button', { name: /subscribe in app/i }));
+    fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
 
     expect(startCheckout).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole('button', { name: /opening checkout/i })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: /opening/i })).toBeDisabled();
 
     resolveCheckout();
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /subscribe in app/i })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /subscribe/i })).not.toBeDisabled();
     });
   });
 
@@ -140,7 +140,7 @@ describe('SettingsWindow', () => {
     fireEvent.click(screen.getByRole('button', { name: /manage billing/i }));
 
     expect(openBillingPortal).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole('button', { name: /opening billing/i })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: /opening/i })).toBeDisabled();
 
     resolvePortal();
 

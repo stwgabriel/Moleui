@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   HardDrive, FolderOpen, File, BarChart3, Search,
@@ -817,6 +817,26 @@ export function AnalyzePage() {
     }
   };
 
+  // Derive the results data — including the recursive treemap layout, the most
+  // expensive computation on this page — only when the scan result or the
+  // file/folder visibility filters change. Without this memo it recomputed on
+  // every render, so unrelated state updates (scroll-shadow tracking on the file
+  // list, scan-progress ticks, opening the context menu) re-ran the whole
+  // treemap layout each frame and made the page stutter.
+  const resultsView = useMemo(() => {
+    if (stage !== 'results' || !result) return null;
+    const entries = [...(result.entries ?? [])].sort((a, b) => b.size - a.size);
+    const fileCount = entries.filter((entry) => !entry.is_dir).length;
+    const folderCount = entries.length - fileCount;
+    const filteredEntries = entries.filter((entry) => (entry.is_dir ? showFolders : showFiles));
+    const groupedEntries = groupSmallFiles(filteredEntries, result.path);
+    const sortedListEntries = [...groupedEntries].sort((a, b) => b.size - a.size);
+    const filteredSize = sumSizes(groupedEntries);
+    const treemapItems = buildTreemapItems(groupedEntries, result.total_size, result.path, filteredSize);
+    const treemapRects = createTreemapLayout(treemapItems);
+    return { fileCount, folderCount, filteredEntries, sortedListEntries, filteredSize, treemapItems, treemapRects };
+  }, [stage, result, showFolders, showFiles]);
+
   // Group views so the start screen, path picker, and the scanning/results
   // surface crossfade between each other, while transitions *within* the
   // scanning/results surface keep their own (analyze-content-enter) animations.
@@ -989,16 +1009,8 @@ export function AnalyzePage() {
   }
 
   // ── Results ──────────────────────────────────────────────────────────────
-  if (stage === 'results' && result) {
-    const entries = [...(result.entries ?? [])].sort((a, b) => b.size - a.size);
-    const fileCount = entries.filter((entry) => !entry.is_dir).length;
-    const folderCount = entries.length - fileCount;
-    const filteredEntries = entries.filter((entry) => (entry.is_dir ? showFolders : showFiles));
-    const groupedEntries = groupSmallFiles(filteredEntries, result.path);
-    const sortedListEntries = [...groupedEntries].sort((a, b) => b.size - a.size);
-    const filteredSize = sumSizes(groupedEntries);
-    const treemapItems = buildTreemapItems(groupedEntries, result.total_size, result.path, filteredSize);
-    const treemapRects = createTreemapLayout(treemapItems);
+  if (stage === 'results' && result && resultsView) {
+    const { fileCount, folderCount, filteredEntries, sortedListEntries, filteredSize, treemapItems, treemapRects } = resultsView;
     const breadcrumbs = buildBreadcrumbs();
     const canGoUp = result.path !== '/';
     const pathParts = result.path.split('/').filter(Boolean);
@@ -1167,7 +1179,7 @@ export function AnalyzePage() {
                             setScanPath(entry.path);
                             startScan(entry.path);
                           }}
-                          className="group flex min-h-[8.75rem] max-h-[11rem] min-w-[7.25rem] flex-col items-center justify-center overflow-hidden rounded-[1.1rem] border border-white/62 bg-white/46 p-3 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] transition hover:bg-white/70 hover:shadow-[0_18px_44px_rgba(15,23,42,0.14)]"
+                          className="group flex min-h-[8.75rem] max-h-[11rem] min-w-[7.25rem] flex-col items-center justify-center overflow-hidden rounded-[1.1rem] border border-white/62 bg-white/46 p-3 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] transition-colors hover:bg-white/70 hover:shadow-[0_18px_44px_rgba(15,23,42,0.14)]"
                           title={`${entry.name} - ${formatBytes(entry.size)}`}
                         >
                           <span className="mb-3 flex h-24 w-24 min-h-12 min-w-12 max-w-full items-center justify-center rounded-2xl bg-white/35 p-2 shadow-inner shadow-white/50">
@@ -1207,7 +1219,7 @@ export function AnalyzePage() {
                           startScan(rect.path);
                         }
                       }}
-                      className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition duration-300 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
+                      className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition-transform duration-200 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
                       style={{
                         left: `${rect.x}%`,
                         top: `${rect.y}%`,

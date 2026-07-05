@@ -151,6 +151,50 @@ describe('AnalyzePage', () => {
     expect(screen.queryByText(/Total storage/i)).not.toBeInTheDocument();
   });
 
+  it('shows the folder as a proportion of the whole disk when capacity is known', () => {
+    storage.set('mole-analyze-stage', JSON.stringify('results'));
+    storage.set('mole-analyze-result', JSON.stringify({
+      path: '/Users/example',
+      overview: false,
+      total_size: 100_000_000_000,
+      disk_total: 500_000_000_000,
+      disk_free: 200_000_000_000,
+      entries: [
+        { name: 'Documents', path: '/Users/example/Documents', size: 60_000_000_000, is_dir: true },
+        { name: 'movie.mov', path: '/Users/example/movie.mov', size: 40_000_000_000, is_dir: false },
+      ],
+      large_files: [],
+    }));
+
+    render(<AnalyzePage />);
+
+    // Whole-disk framing: total capacity, this folder's share, and free space.
+    expect(screen.getByText(/GB disk$/)).toBeInTheDocument();
+    expect(screen.getByText('This folder')).toBeInTheDocument();
+    expect(screen.getByText(/of disk$/)).toBeInTheDocument();
+    expect(screen.getByText('Free')).toBeInTheDocument();
+    // Not the directory-relative fallback.
+    expect(screen.queryByText(/^Total /)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the directory total when disk capacity is unknown', () => {
+    storage.set('mole-analyze-stage', JSON.stringify('results'));
+    storage.set('mole-analyze-result', JSON.stringify({
+      path: '/Users/example',
+      overview: false,
+      total_size: 1000,
+      entries: [
+        { name: 'Documents', path: '/Users/example/Documents', size: 600, is_dir: true },
+      ],
+      large_files: [],
+    }));
+
+    render(<AnalyzePage />);
+
+    expect(screen.getByText('Total 1000 B')).toBeInTheDocument();
+    expect(screen.queryByText(/of disk$/)).not.toBeInTheDocument();
+  });
+
   it('shows file management rows sorted by size', () => {
     storage.set('mole-analyze-stage', JSON.stringify('results'));
     storage.set('mole-analyze-result', JSON.stringify({

@@ -24,10 +24,15 @@ export function StageTransition({ viewKey, children }: StageTransitionProps) {
         <motion.div
           key={viewKey}
           className="absolute inset-0"
-          initial={{ opacity: 0, scale: 0.99 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.99 }}
-          transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          // Opacity-only crossfade. Animating transform (scale) here forced the
+          // browser to re-rasterize every backdrop-blur glass surface in the
+          // subtree on each frame, which stuttered; opacity is compositor-only.
+          // Short + plain decelerate so stepping start -> scan location ->
+          // scanning still feels immediate.
+          transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
         >
           {children}
         </motion.div>

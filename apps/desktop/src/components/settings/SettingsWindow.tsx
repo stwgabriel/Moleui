@@ -175,7 +175,7 @@ export function SettingsWindow() {
     void clerkSignOut().catch((error) => {
       console.error('Clerk sign-out failed:', error);
     });
-    await window.moleDesktop.auth?.signOut();
+    await window.moleDesktop?.auth?.signOut();
   }
 
   const isSubscribed = subscription.isSubscribed;
