@@ -56,13 +56,19 @@ EOF
 	tmp_dir=$(mktemp -d)
 	nc_db_dir="$tmp_dir/com.apple.notificationcenter/db2"
 	mkdir -p "$nc_db_dir"
-	create_logical_file "$nc_db_dir/db" 60m
+	# A small placeholder is enough: the >50MB precondition is forced by stubbing
+	# the size helper below. get_path_size_kb now reports physical disk usage
+	# (stat -f%b), so a sparse `mkfile -n` fixture reads as ~0KB and would skip the
+	# cleanup path this test exercises. Mocking the size mirrors how the coreduet
+	# case stubs du.
+	create_logical_file "$nc_db_dir/db" 1k
 
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
 set -euo pipefail
 source "\$PROJECT_ROOT/lib/core/common.sh"
 source "\$PROJECT_ROOT/lib/optimize/tasks.sh"
 getconf() { echo "$tmp_dir"; }
+opt_existing_path_size_kb() { echo 61440; }
 sqlite3() { return 1; }
 opt_notification_cleanup
 EOF
