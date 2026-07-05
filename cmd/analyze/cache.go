@@ -325,6 +325,37 @@ func loadStaleCacheFromDisk(path string) (*cacheEntry, error) {
 	return entry, nil
 }
 
+// foldedDirSizeFromCache returns a cached size for a folded directory when a
+// cache entry is fresh under the same TTL/modtime rules used for regular subdir
+// caches. Folded dirs are sized but never expanded, so only TotalSize is
+// reused; this lets repeat scans skip the du subprocess that otherwise reruns
+// for every folded dir (node_modules, .cache, .cargo, ...) on each scan.
+func foldedDirSizeFromCache(path string, useCache bool) (int64, bool) {
+	if !useCache {
+		return 0, false
+	}
+	if cached, err := loadCacheFromDisk(path); err == nil && cached.TotalSize > 0 {
+		return cached.TotalSize, true
+	}
+	return 0, false
+}
+
+// storeFoldedDirSize caches a folded directory's measured size so later scans
+// can reuse it. It persists even during a fresh (cache-ignoring) scan, matching
+// scanSubdirWithCacheOption which always refreshes the on-disk entry.
+//
+// The stored entry has empty Entries by design (folded dirs are sized, never
+// expanded). This is safe only because a path is deterministically folded or
+// not, so this entry is never read by loadCachedSubdirResult. If a name is ever
+// REMOVED from foldDirs, bump cacheSchemaVersion so its stale empty-Entries
+// cache is rejected instead of surfacing as an empty directory until TTL.
+func storeFoldedDirSize(path string, size int64) {
+	if size <= 0 {
+		return
+	}
+	_ = saveCacheToDisk(path, scanResult{TotalSize: size})
+}
+
 func saveCacheToDisk(path string, result scanResult) error {
 	return saveCacheToDiskWithOptions(path, result, false)
 }

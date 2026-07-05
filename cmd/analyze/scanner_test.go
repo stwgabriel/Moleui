@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -32,6 +33,84 @@ func TestShouldFoldDirWithPathFoldsEggInfo(t *testing.T) {
 		if got := shouldFoldDirWithPath(name, "/tmp/project/"+name); got != want {
 			t.Errorf("shouldFoldDirWithPath(%q) = %v, want %v", name, got, want)
 		}
+	}
+}
+
+func TestFoldedDirSizeCacheRoundTrip(t *testing.T) {
+	// getCacheDir resolves under $HOME/.cache/mole; isolate it per test.
+	t.Setenv("HOME", t.TempDir())
+
+	dir := t.TempDir()
+
+	// Nothing cached yet.
+	if size, ok := foldedDirSizeFromCache(dir, true); ok {
+		t.Fatalf("expected cache miss, got size=%d ok=%v", size, ok)
+	}
+
+	const want int64 = 4096 * 1024
+	storeFoldedDirSize(dir, want)
+
+	if size, ok := foldedDirSizeFromCache(dir, true); !ok || size != want {
+		t.Fatalf("foldedDirSizeFromCache = (%d, %v), want (%d, true)", size, ok, want)
+	}
+
+	// useCache=false must always miss so fresh scans recompute.
+	if size, ok := foldedDirSizeFromCache(dir, false); ok {
+		t.Fatalf("expected miss with useCache=false, got size=%d", size)
+	}
+
+	// Non-positive sizes are never persisted.
+	other := t.TempDir()
+	storeFoldedDirSize(other, 0)
+	if _, ok := foldedDirSizeFromCache(other, true); ok {
+		t.Fatalf("expected no cache entry for zero-size store")
+	}
+}
+
+func TestFoldedDirCacheScanValueEquivalence(t *testing.T) {
+	// Isolate the on-disk analyzer cache.
+	t.Setenv("HOME", t.TempDir())
+
+	root := t.TempDir()
+	// A folded child (node_modules) plus a normal child, on a static tree so
+	// the only between-run difference would be a caching bug.
+	writeFileWithSize(t, filepath.Join(root, "node_modules", "pkg", "big.bin"), 512*1024)
+	writeFileWithSize(t, filepath.Join(root, "node_modules", "small.txt"), 4*1024)
+	writeFileWithSize(t, filepath.Join(root, "docs", "readme.md"), 8*1024)
+
+	scan := func() scanResult {
+		var f, d, b int64
+		cur := &atomic.Value{}
+		cur.Store("")
+		res, err := scanPathConcurrentAllEntries(root, &f, &d, &b, cur)
+		if err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		return res
+	}
+
+	first := scan() // populates the folded cache
+	second := scan()
+
+	if first.TotalSize != second.TotalSize {
+		t.Fatalf("total size changed across cached scans: %d -> %d", first.TotalSize, second.TotalSize)
+	}
+
+	sizeOf := func(res scanResult, name string) (int64, bool) {
+		for _, e := range res.Entries {
+			if e.Name == name {
+				return e.Size, true
+			}
+		}
+		return 0, false
+	}
+	fs, ok1 := sizeOf(first, "node_modules")
+	ss, ok2 := sizeOf(second, "node_modules")
+	if !ok1 || !ok2 {
+		t.Fatalf("node_modules entry missing: first=%v second=%v", ok1, ok2)
+	}
+	if fs != ss || fs <= 0 {
+		t.Fatalf("folded node_modules size mismatch: %d vs %d", fs, ss)
 	}
 }
 

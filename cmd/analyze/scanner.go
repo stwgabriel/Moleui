@@ -308,8 +308,21 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 				continue
 			}
 
-			// Folded dirs: fast size without expanding.
+			// Folded dirs: fast size without expanding. Reuse a cached size when
+			// fresh so repeat scans skip the du subprocess entirely.
 			if shouldFoldDirWithPath(child.Name(), fullPath) {
+				if size, ok := foldedDirSizeFromCache(fullPath, useCache); ok {
+					atomic.AddInt64(&total, size)
+					atomic.AddInt64(dirsScanned, 1)
+					trySend(entryChan, dirEntry{
+						Name:       child.Name(),
+						Path:       fullPath,
+						Size:       size,
+						IsDir:      true,
+						LastAccess: time.Time{},
+					}, scanSendTimeout)
+					continue
+				}
 				duQueueSem <- struct{}{}
 				wg.Go(func() {
 					defer func() { <-duQueueSem }()
@@ -322,6 +335,7 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 					if err != nil || size <= 0 {
 						size = calculateDirSizeFastWithLimiter(fullPath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 					}
+					storeFoldedDirSize(fullPath, size)
 					atomic.AddInt64(&total, size)
 					atomic.AddInt64(dirsScanned, 1)
 
