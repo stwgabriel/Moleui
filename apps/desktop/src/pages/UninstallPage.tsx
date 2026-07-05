@@ -82,7 +82,15 @@ function stripPersistedIcon(app: App) {
 
 const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; size?: 'sm' | 'md' | 'lg' }) {
   const [failed, setFailed] = useState(false);
-  const iconClassName = size === 'sm' ? 'w-6 h-6 rounded-lg' : size === 'lg' ? 'w-16 h-16 rounded-[1.35rem]' : 'w-10 h-10 rounded-xl';
+  const iconBoxClassName = size === 'sm' ? 'w-6 h-6' : size === 'lg' ? 'w-16 h-16' : 'w-10 h-10';
+  const iconRadiusClassName = size === 'sm' ? 'rounded-lg' : size === 'lg' ? 'rounded-[1.35rem]' : 'rounded-xl';
+  // drop-shadow follows the icon's real alpha silhouette, so there is no
+  // rounded-rectangle "card" behind the icon the way box-shadow would draw one.
+  const iconDropShadowClassName = size === 'sm'
+    ? 'drop-shadow-[0_2px_5px_rgba(15,23,42,0.28)]'
+    : size === 'lg'
+      ? 'drop-shadow-[0_8px_18px_rgba(15,23,42,0.32)]'
+      : 'drop-shadow-[0_4px_10px_rgba(15,23,42,0.30)]';
   const fallbackIconClassName = size === 'sm' ? 'w-3.5 h-3.5' : size === 'lg' ? 'w-8 h-8' : 'w-5 h-5';
 
   useEffect(() => {
@@ -94,14 +102,14 @@ const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; si
       <img
         src={icon}
         alt=""
-        className={`${iconClassName} object-contain flex-shrink-0 shadow-[0_10px_24px_rgba(15,23,42,0.10)]`}
+        className={`${iconBoxClassName} object-contain flex-shrink-0 ${iconDropShadowClassName}`}
         onError={() => setFailed(true)}
       />
     );
   }
 
   return (
-    <div className={`${iconClassName} border border-rose-200/70 bg-rose-100/35 flex items-center justify-center flex-shrink-0 shadow-[0_10px_24px_rgba(244,63,94,0.14)] backdrop-blur-xl`}>
+    <div className={`${iconBoxClassName} ${iconRadiusClassName} border border-rose-200/70 bg-rose-100/35 flex items-center justify-center flex-shrink-0 shadow-[0_10px_24px_rgba(244,63,94,0.14)] backdrop-blur-xl`}>
       <Package className={`${fallbackIconClassName} text-[var(--page-accent)]`} />
     </div>
   );
@@ -161,6 +169,17 @@ function AppRemovalAnimation({ progressPercent }: { progressPercent: number }) {
       </div>
     </div>
   );
+}
+
+// Cold scans return "--" sizes because the backend computes sizes in a
+// detached worker that warms a cache the first `--list` cannot wait for. We
+// re-list a bounded number of times so those placeholders resolve.
+const MAX_SIZE_SETTLE_ATTEMPTS = 3;
+const SIZE_SETTLE_DELAY_MS = 1500;
+
+function appSizeMissing(app: App) {
+  const size = (app.size || '').trim();
+  return size === '' || size === '--' || size === 'N/A' || size === '0';
 }
 
 function parseAppSizeToBytes(sizeStr: string): number {
@@ -454,6 +473,15 @@ export function UninstallPage() {
   const scanCancelledRef = useRef(false);
   const iconLoadRunRef = useRef(0);
   const requestedIconsRef = useRef<Set<string>>(new Set());
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settleAttemptsRef = useRef(0);
+  const stageRef = useRef(stage);
+  const didAutoRefreshRef = useRef(false);
+  // Mirror live state so a deferred background refresh (settle timer or the
+  // on-open auto-refresh) reads current apps/selection rather than the stale
+  // closure of the render that scheduled it.
+  const appsRef = useRef(apps);
+  const selectedAppIndexesRef = useRef(selectedAppIndexes);
   const [appListShadows, setAppListShadows] = useState({ top: false, bottom: false });
 
   useEffect(() => {
@@ -481,6 +509,38 @@ export function UninstallPage() {
       setStage('idle');
       setScanStatus('');
     }
+  }, []);
+
+  useEffect(() => {
+    stageRef.current = stage;
+  }, [stage]);
+
+  useEffect(() => {
+    appsRef.current = apps;
+  }, [apps]);
+
+  useEffect(() => {
+    selectedAppIndexesRef.current = selectedAppIndexes;
+  }, [selectedAppIndexes]);
+
+  // On open, instantly show the cached list and silently reload in the
+  // background so freshly computed sizes (warmed by the previous scan's
+  // metadata worker) and any installed/removed apps are picked up without a
+  // blocking scan. Clear the size-settle timer on unmount.
+  useEffect(() => {
+    if (!didAutoRefreshRef.current) {
+      didAutoRefreshRef.current = true;
+      if (stage === 'selection' && apps.length > 0) {
+        void refreshApps({ showCached: true });
+      }
+    }
+
+    return () => {
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -555,11 +615,38 @@ export function UninstallPage() {
     loadAppIcons(appsWithoutIcons, iconLoadRunRef.current);
   }, [stage, apps, appIcons]);
 
+  // When a list still has "--" sizes, the backend's detached metadata worker
+  // is mid-flight warming the cache. Re-list once after a short delay (bounded)
+  // so sizes resolve without a blocking initial scan.
+  const scheduleSizeSettle = (parsedApps: App[]) => {
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+
+    if (!parsedApps.some(appSizeMissing)) {
+      settleAttemptsRef.current = 0;
+      return;
+    }
+
+    if (settleAttemptsRef.current >= MAX_SIZE_SETTLE_ATTEMPTS) return;
+    settleAttemptsRef.current += 1;
+
+    settleTimerRef.current = setTimeout(() => {
+      settleTimerRef.current = null;
+      if (scanCancelledRef.current || stageRef.current !== 'selection') return;
+      void refreshApps({ showCached: true });
+    }, SIZE_SETTLE_DELAY_MS);
+  };
+
   const refreshApps = async ({ showCached }: { showCached: boolean }) => {
     scanCancelledRef.current = false;
     iconLoadRunRef.current += 1;
 
-    if (showCached && apps.length > 0) {
+    // Read live state via refs: a deferred refresh may run with a stale closure.
+    const hasCachedList = appsRef.current.length > 0;
+
+    if (showCached && hasCachedList) {
       setStage('selection');
       setIsRefreshingApps(true);
       setScanStatus('Refreshing applications in the background...');
@@ -593,7 +680,7 @@ export function UninstallPage() {
       // Parse JSON output
       try {
         const jsonOutput = result.stdout.trim();
-        const parsedApps = JSON.parse(jsonOutput);
+        const parsedApps: App[] = JSON.parse(jsonOutput);
 
         if (!Array.isArray(parsedApps)) {
           setError({
@@ -604,10 +691,47 @@ export function UninstallPage() {
           return;
         }
 
-        requestedIconsRef.current.clear();
-        setApps(parsedApps.map(stripPersistedIcon));
-        setStage('selection');
-        setScanStatus('');
+        if (showCached && hasCachedList) {
+          // Background refresh of an already-displayed list: merge fresh data
+          // into the current array by path so the on-screen order stays put
+          // (the backend re-sorts as sizes/last-used fill in) and index-based
+          // selection keeps pointing at the same apps. Read live state via refs
+          // so a deferred refresh does not clobber selection made mid-window.
+          const liveApps = appsRef.current;
+          const selectedPaths = new Set(
+            selectedAppIndexesRef.current.map(index => liveApps[index]?.path).filter(Boolean)
+          );
+          const freshByPath = new Map(parsedApps.map(app => [app.path, app] as const));
+          const seen = new Set<string>();
+          const merged: App[] = [];
+          liveApps.forEach(existing => {
+            const fresh = freshByPath.get(existing.path);
+            if (fresh) {
+              merged.push(stripPersistedIcon(fresh));
+              seen.add(existing.path);
+            }
+          });
+          parsedApps.forEach(app => {
+            if (!seen.has(app.path)) merged.push(stripPersistedIcon(app));
+          });
+
+          setApps(merged);
+          setSelectedAppIndexes(
+            merged.reduce<number[]>((indexes, app, index) => {
+              if (selectedPaths.has(app.path)) indexes.push(index);
+              return indexes;
+            }, [])
+          );
+          setStage('selection');
+          setScanStatus('');
+        } else {
+          requestedIconsRef.current.clear();
+          setApps(parsedApps.map(stripPersistedIcon));
+          setStage('selection');
+          setScanStatus('');
+        }
+
+        scheduleSizeSettle(parsedApps);
       } catch (e: any) {
         if (!showCached) {
           setError({
@@ -638,12 +762,18 @@ export function UninstallPage() {
     setError(null);
     setResult(null);
     setAnalysisProgress(0);
+    settleAttemptsRef.current = 0;
     await refreshApps({ showCached: apps.length > 0 });
   };
 
   const cancelScan = async () => {
     scanCancelledRef.current = true;
     iconLoadRunRef.current += 1;
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+    settleAttemptsRef.current = 0;
     setScanStatus('Cancelling scan...');
     setStage('idle');
     setScanStatus('');
@@ -809,6 +939,11 @@ export function UninstallPage() {
 
   const reset = () => {
     iconLoadRunRef.current += 1;
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+    settleAttemptsRef.current = 0;
     setStage('idle');
     setSelectedAppIndexes([]);
     setScanStatus('');
