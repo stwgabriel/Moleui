@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { forceCollide, forceSimulation, forceX, forceY } from 'd3-force';
 import type { SimulationNodeDatum } from 'd3-force';
 import { AnimatePresence, motion } from 'motion/react';
@@ -115,58 +115,194 @@ const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; si
   );
 });
 
-function AppRemovalAnimation({ progressPercent }: { progressPercent: number }) {
+type RemovalSceneApp = { name: string; icon?: string };
+
+const REMOVAL_RING_RADIUS = 80;
+const REMOVAL_RING_CIRCUMFERENCE = 2 * Math.PI * REMOVAL_RING_RADIUS;
+const REMOVAL_QUEUE_LIMIT = 5;
+
+// Deterministic dust field: positions are percentages of the core so the
+// motes stay anchored to the orb at any container size, and the fixed
+// delays/durations keep renders stable (no randomness, no timers).
+const REMOVAL_DUST_MOTES = [
+  { left: '46%', top: '30%', size: 6, drift: '-18px', delay: '0s', duration: '2.7s', tint: 'rgba(244, 63, 94, 0.65)' },
+  { left: '58%', top: '26%', size: 5, drift: '14px', delay: '-0.7s', duration: '3.2s', tint: 'rgba(251, 113, 133, 0.7)' },
+  { left: '38%', top: '38%', size: 4, drift: '-26px', delay: '-1.4s', duration: '2.9s', tint: 'rgba(148, 163, 184, 0.65)' },
+  { left: '66%', top: '40%', size: 4, drift: '24px', delay: '-2.1s', duration: '3.4s', tint: 'rgba(255, 255, 255, 0.95)' },
+  { left: '52%', top: '22%', size: 3.5, drift: '6px', delay: '-0.35s', duration: '2.5s', tint: 'rgba(255, 255, 255, 0.95)' },
+  { left: '30%', top: '46%', size: 3.5, drift: '-12px', delay: '-1.8s', duration: '3.6s', tint: 'rgba(244, 63, 94, 0.5)' },
+  { left: '70%', top: '48%', size: 3, drift: '18px', delay: '-2.6s', duration: '3.1s', tint: 'rgba(251, 113, 133, 0.6)' },
+  { left: '44%', top: '52%', size: 3, drift: '-8px', delay: '-0.9s', duration: '2.4s', tint: 'rgba(148, 163, 184, 0.6)' },
+] as const;
+
+// Joins the live CLI output (source of truth for what is happening right
+// now) with the selected apps (source of icons and of what is still
+// waiting). Every degraded input keeps a sensible scene: no persisted
+// selection falls back to the parsed name with a glyph icon, CLI names that
+// differ from scan names match through uninstall_name, and output with no
+// progress line yet falls back to selection order.
+function buildRemovalScene(
+  executingApps: Array<{ name: string; completed: boolean }>,
+  summary: string,
+  orderedSelectedApps: App[],
+  appIcons: Record<string, string>,
+): { current: RemovalSceneApp | null; upcoming: RemovalSceneApp[]; done: boolean } {
+  const normalize = (value: string) => value.trim().toLowerCase();
+  const done = Boolean(summary);
+
+  const selectedByName = new Map<string, App>();
+  for (const app of orderedSelectedApps) {
+    for (const name of [app.name, app.uninstall_name]) {
+      if (name && !selectedByName.has(normalize(name))) selectedByName.set(normalize(name), app);
+    }
+  }
+  const iconFor = (app?: App) => (app?.path ? appIcons[app.path] : undefined);
+  const completed = new Set(executingApps.filter(app => app.completed).map(app => normalize(app.name)));
+  const active = [...executingApps].reverse().find(app => !app.completed);
+
+  let current: RemovalSceneApp | null = null;
+  if (!done) {
+    if (active) {
+      const match = selectedByName.get(normalize(active.name));
+      current = { name: match?.name ?? active.name, icon: iconFor(match) };
+    } else {
+      const next = orderedSelectedApps.find(
+        app => ![app.name, app.uninstall_name].some(name => name && completed.has(normalize(name))),
+      );
+      if (next) current = { name: next.name, icon: iconFor(next) };
+    }
+  }
+
+  const upcoming = done
+    ? []
+    : orderedSelectedApps
+        .filter(app => {
+          const names = [app.name, app.uninstall_name]
+            .filter((name): name is string => Boolean(name))
+            .map(normalize);
+          if (names.some(name => completed.has(name))) return false;
+          if (current && names.includes(normalize(current.name))) return false;
+          return true;
+        })
+        .map(app => ({ name: app.name, icon: iconFor(app) }));
+
+  return { current, upcoming, done };
+}
+
+// The removal scene is deliberately self-anchored: the progress ring is an
+// SVG that scales with its own box, the dust motes travel distances relative
+// to themselves, and the queue is a centered flex row. Nothing depends on
+// the container's width, so the scene cannot come apart when the window
+// narrows the way the old fixed-offset card-to-bin flight path did.
+function AppRemovalAnimation({
+  progressPercent,
+  currentApp,
+  upcomingApps = [],
+  done = false,
+}: {
+  progressPercent: number;
+  currentApp?: RemovalSceneApp | null;
+  upcomingApps?: RemovalSceneApp[];
+  done?: boolean;
+}) {
+  const clampedPercent = Math.min(100, Math.max(0, Number.isFinite(progressPercent) ? progressPercent : 0));
+  const ringOffset = REMOVAL_RING_CIRCUMFERENCE * (1 - (done ? 100 : clampedPercent) / 100);
+  const visibleQueue = upcomingApps.slice(0, REMOVAL_QUEUE_LIMIT);
+  const overflowCount = upcomingApps.length - visibleQueue.length;
+
   return (
     <div
-      className="relative mx-auto h-56 w-[25rem] max-w-full overflow-hidden"
+      className="relative mx-auto flex w-full max-w-md flex-col items-center gap-4"
       aria-hidden="true"
       data-testid="uninstall-removal-animation"
     >
-      <div className="absolute bottom-7 left-1/2 h-5 w-72 -translate-x-1/2 rounded-full bg-slate-950/10 blur-xl" />
-      <div className="uninstall-animation-removal-field absolute left-[7.4rem] top-[5.75rem] h-20 w-44 rotate-[8deg] rounded-full border border-rose-200/55 bg-[linear-gradient(90deg,rgba(255,255,255,0.08),rgba(244,63,94,0.18),rgba(255,255,255,0.04))] shadow-[0_0_42px_rgba(244,63,94,0.14)]" />
+      <div className="relative h-44 w-44">
+        <div className="absolute -bottom-3 left-1/2 h-4 w-32 -translate-x-1/2 rounded-full bg-slate-950/10 blur-lg" />
+        <div className="uninstall-core-halo absolute inset-1 rounded-full" />
 
-      <div className="absolute left-10 top-8 h-[5.6rem] w-40 animate-uninstall-source-card rounded-[1.55rem] border border-white/70 bg-white/85 p-3 shadow-[0_24px_64px_rgba(244,63,94,0.14)] backdrop-blur-2xl">
-        <div className="absolute -inset-px rounded-[1.55rem] bg-[linear-gradient(135deg,rgba(255,255,255,0.8),transparent_52%,rgba(244,63,94,0.12))]" />
-        <div className="relative flex h-full flex-col justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-rose-200/80 bg-rose-50/80 shadow-inner shadow-white/70">
-              <Package className="h-[1.05rem] w-[1.05rem] text-[var(--page-accent)]" />
-            </div>
-            <div className="min-w-0 space-y-1.5">
-              <div className="h-1.5 w-16 rounded-full bg-slate-200/85" />
-              <div className="h-1.5 w-10 rounded-full bg-slate-100/95" />
-            </div>
-          </div>
-          <div className="relative h-2 w-28 overflow-hidden rounded-full bg-gradient-to-r from-rose-100 via-red-100 to-transparent">
-            <div className="animate-uninstall-card-scan h-full w-9 rounded-full bg-gradient-to-r from-transparent via-rose-400/80 to-transparent" />
-          </div>
-        </div>
-      </div>
-
-      <div className="absolute left-[6.7rem] top-[6.25rem] h-2 w-24 animate-uninstall-strip-into-receiver rounded-full bg-white/90 shadow-[0_8px_20px_rgba(244,63,94,0.18)]" style={{ animationDelay: '-1.86s' }} />
-      <div className="absolute left-[6.9rem] top-[7.1rem] h-1.5 w-20 animate-uninstall-strip-into-receiver rounded-full bg-rose-200/90 shadow-[0_8px_18px_rgba(244,63,94,0.16)]" style={{ animationDelay: '-1.28s' }} />
-      <div className="absolute left-[6.4rem] top-[7.85rem] h-1.5 w-16 animate-uninstall-strip-into-receiver rounded-full bg-slate-200/95 shadow-[0_8px_16px_rgba(15,23,42,0.08)]" style={{ animationDelay: '-0.7s' }} />
-      <div className="absolute left-[7.25rem] top-[8.55rem] h-1.5 w-14 animate-uninstall-strip-into-receiver rounded-full bg-red-200/90 shadow-[0_8px_18px_rgba(248,113,113,0.16)]" style={{ animationDelay: '-0.14s' }} />
-
-      <div className="absolute right-12 bottom-8 h-28 w-28">
-        <div className="absolute left-1/2 top-2 h-4 w-[4.7rem] -translate-x-1/2 animate-uninstall-receiver-lid rounded-full border border-slate-400/40 bg-slate-800 shadow-[0_14px_24px_rgba(15,23,42,0.18)]" />
-        <div className="absolute bottom-2 left-1/2 h-[5.7rem] w-[4.9rem] -translate-x-1/2 overflow-hidden rounded-[1.35rem] border border-slate-500/25 bg-slate-900/90 shadow-[0_26px_56px_rgba(15,23,42,0.24)]">
-          <div className="absolute inset-x-2 top-2 h-3 rounded-full bg-white/[0.08]" />
-          <div
-            className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-red-500 via-rose-400 to-rose-200 opacity-95 transition-all duration-500"
-            style={{ height: `${Math.max(10, progressPercent)}%` }}
+        <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 176 176" fill="none">
+          <circle cx="88" cy="88" r={REMOVAL_RING_RADIUS} stroke="rgba(255, 255, 255, 0.6)" strokeWidth="5" />
+          <circle
+            data-testid="uninstall-removal-ring-progress"
+            cx="88"
+            cy="88"
+            r={REMOVAL_RING_RADIUS}
+            stroke={done ? 'rgb(16, 185, 129)' : 'url(#uninstall-ring-gradient)'}
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeDasharray={REMOVAL_RING_CIRCUMFERENCE}
+            strokeDashoffset={ringOffset}
+            className="uninstall-ring-progress"
           />
-          <div className="absolute inset-x-4 top-6 space-y-2">
-            <div className="h-1 rounded-full bg-white/[0.24]" />
-            <div className="h-1 rounded-full bg-white/[0.18]" />
-            <div className="h-1 rounded-full bg-white/[0.12]" />
-          </div>
-          <div className="absolute bottom-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-white/10 bg-slate-950/35">
-            <Trash2 className="h-4 w-4 text-white/70" />
+          <defs>
+            <linearGradient id="uninstall-ring-gradient" x1="0" y1="0" x2="176" y2="176" gradientUnits="userSpaceOnUse">
+              <stop stopColor="rgba(251, 113, 133, 0.85)" />
+              <stop offset="1" stopColor="var(--page-accent, #f43f5e)" />
+            </linearGradient>
+          </defs>
+        </svg>
+
+        {!done &&
+          REMOVAL_DUST_MOTES.map((mote, index) => (
+            <span
+              key={index}
+              className="uninstall-dust-mote"
+              style={
+                {
+                  left: mote.left,
+                  top: mote.top,
+                  width: mote.size,
+                  height: mote.size,
+                  background: mote.tint,
+                  animationDelay: mote.delay,
+                  animationDuration: mote.duration,
+                  '--dust-drift': mote.drift,
+                } as CSSProperties
+              }
+            />
+          ))}
+
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div
+            key={done ? 'removal-done' : currentApp?.name ?? 'removal-idle'}
+            className="uninstall-orbit-bubble uninstall-bubble-pop relative flex h-24 w-24 items-center justify-center rounded-full"
+            data-testid={done ? 'uninstall-removal-done' : 'uninstall-removal-current'}
+          >
+            {done ? (
+              <CheckCircle className="h-11 w-11 text-emerald-500" strokeWidth={2.2} />
+            ) : (
+              <div className="uninstall-dissolve-target">
+                <AppIcon icon={currentApp?.icon} size="lg" />
+              </div>
+            )}
           </div>
         </div>
-        <div className="absolute bottom-0 left-1/2 h-2 w-24 -translate-x-1/2 rounded-full bg-slate-950/[0.12] blur-sm" />
       </div>
+
+      <div className="flex min-h-5 items-center justify-center">
+        <span className="max-w-[16rem] truncate text-sm font-bold tracking-[-0.01em] text-slate-700">
+          {done ? 'Complete' : currentApp?.name ?? 'Preparing…'}
+        </span>
+      </div>
+
+      {!done && visibleQueue.length > 0 && (
+        <div className="flex items-center justify-center gap-2.5" data-testid="uninstall-removal-queue">
+          {visibleQueue.map((app, index) => (
+            <div
+              key={`${app.name}-${index}`}
+              className="uninstall-orbit-bubble uninstall-bubble-float flex h-11 w-11 items-center justify-center rounded-full opacity-80"
+              style={{ animationDelay: `${index * -0.9}s` }}
+            >
+              <AppIcon icon={app.icon} size="sm" />
+            </div>
+          ))}
+          {overflowCount > 0 && (
+            <div className="uninstall-orbit-bubble flex h-11 w-11 items-center justify-center rounded-full">
+              <span className="text-xs font-black text-slate-600">+{overflowCount}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1657,10 +1793,11 @@ export function UninstallPage() {
     const parsedExecute = parseExecuteOutput(executeOutput);
     const { apps: executingApps, summary, progress } = parsedExecute;
     const activeApp = [...executingApps].reverse().find(app => !app.completed) || executingApps[executingApps.length - 1];
-    const selectedAppNames = sortAppIndexesBySize(selectedAppIndexes)
-      .map(index => apps[index]?.name)
-      .filter(Boolean);
-    const progressTotal = progress.total || selectedAppNames.length;
+    const orderedSelectedApps = sortAppIndexesBySize(selectedAppIndexes)
+      .map(index => apps[index])
+      .filter((app): app is App => Boolean(app));
+    const removalScene = buildRemovalScene(executingApps, summary, orderedSelectedApps, appIcons);
+    const progressTotal = progress.total || orderedSelectedApps.length;
     const progressCurrent = progress.total
       ? progress.current
       : Math.min(executingApps.filter(app => app.completed).length + (activeApp && !summary ? 1 : 0), progressTotal);
@@ -1713,7 +1850,12 @@ export function UninstallPage() {
           <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-auto">
             <div ref={executeListRef} className="space-y-4">
               <div className="flex justify-center py-6">
-                <AppRemovalAnimation progressPercent={progressPercent} />
+                <AppRemovalAnimation
+                  progressPercent={progressPercent}
+                  currentApp={removalScene.current}
+                  upcomingApps={removalScene.upcoming}
+                  done={removalScene.done}
+                />
               </div>
 
               {executingApps.map((app, appIndex) => (

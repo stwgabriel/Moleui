@@ -100,9 +100,83 @@ describe('UninstallPage', () => {
 
     const animation = container.querySelector('[data-testid="uninstall-removal-animation"]');
     expect(animation).toBeInTheDocument();
-    expect(animation?.querySelector('.animate-uninstall-strip-into-receiver')).toBeInTheDocument();
-    expect(animation?.querySelector('.animate-uninstall-receiver-lid')).toBeInTheDocument();
-    expect(animation?.querySelector('.uninstall-animation-removal-field')).toBeInTheDocument();
+    expect(animation?.querySelector('[data-testid="uninstall-removal-ring-progress"]')).toBeInTheDocument();
+
+    // No persisted selection in this test, so the scene falls back to the
+    // parsed CLI name with the glyph fallback icon instead of breaking.
+    const current = animation?.querySelector('[data-testid="uninstall-removal-current"]');
+    expect(current).toBeInTheDocument();
+    expect(current?.querySelector('img')).toBeNull();
+    expect(animation?.textContent).toContain('App 2');
+  });
+
+  it('shows the active app icon in the removal core and queues the waiting apps by size', () => {
+    localStorage.setItem('mole-uninstall-stage', JSON.stringify('executing'));
+    localStorage.setItem(
+      'mole-uninstall-apps',
+      JSON.stringify([
+        {
+          name: 'Figma',
+          bundle_id: 'com.figma.Desktop',
+          source: 'Application',
+          uninstall_name: 'Figma',
+          path: '/Applications/Figma.app',
+          size: '1.2 GB',
+          icon: 'data:image/png;base64,figma',
+        },
+        {
+          name: 'Raycast',
+          bundle_id: 'com.raycast.macos',
+          source: 'Homebrew',
+          uninstall_name: 'Raycast',
+          path: '/Applications/Raycast.app',
+          size: '350 MB',
+          icon: 'data:image/png;base64,raycast',
+        },
+        {
+          name: 'Slack',
+          bundle_id: 'com.tinyspeck.slackmacgap',
+          source: 'Application',
+          uninstall_name: 'Slack',
+          path: '/Applications/Slack.app',
+          size: '600 MB',
+          icon: 'data:image/png;base64,slack',
+        },
+      ]),
+    );
+    localStorage.setItem('mole-uninstall-selected-apps', JSON.stringify([0, 1, 2]));
+    localStorage.setItem(
+      'mole-uninstall-execute-output',
+      JSON.stringify(['[1/3] Uninstalling Figma...']),
+    );
+
+    render(<UninstallPage />);
+
+    const current = screen.getByTestId('uninstall-removal-current');
+    expect(current.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,figma');
+
+    // Queue holds the not-yet-started apps in removal (size) order.
+    const queue = screen.getByTestId('uninstall-removal-queue');
+    const queueIcons = Array.from(queue.querySelectorAll('img')).map(img => img.getAttribute('src'));
+    expect(queueIcons).toEqual(['data:image/png;base64,slack', 'data:image/png;base64,raycast']);
+  });
+
+  it('collapses the removal scene into a completed state when the summary arrives', () => {
+    localStorage.setItem('mole-uninstall-stage', JSON.stringify('executing'));
+    localStorage.setItem(
+      'mole-uninstall-execute-output',
+      JSON.stringify([
+        ['[1/1] Uninstalling Figma...', '✓ [1/1] Figma', 'Removed 1 app, freed 1.2 GB'].join('\n'),
+      ]),
+    );
+
+    render(<UninstallPage />);
+
+    const done = screen.getByTestId('uninstall-removal-done');
+    expect(done).toBeInTheDocument();
+    expect(screen.queryByTestId('uninstall-removal-current')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('uninstall-removal-queue')).not.toBeInTheDocument();
+    expect(screen.getByTestId('uninstall-removal-ring-progress').getAttribute('stroke-dashoffset')).toBe('0');
   });
 
   it('renders selected applications as glass bubbles and removes them from the cluster', () => {
