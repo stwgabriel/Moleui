@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { UninstallPage } from './UninstallPage';
 
 function mockLocalStorage() {
@@ -159,6 +159,71 @@ describe('UninstallPage', () => {
     const queue = screen.getByTestId('uninstall-removal-queue');
     const queueIcons = Array.from(queue.querySelectorAll('img')).map(img => img.getAttribute('src'));
     expect(queueIcons).toEqual(['data:image/png;base64,slack', 'data:image/png;base64,raycast']);
+  });
+
+  it('erases the finished app before the next one enters the core', () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem('mole-uninstall-stage', JSON.stringify('executing'));
+      localStorage.setItem(
+        'mole-uninstall-apps',
+        JSON.stringify([
+          {
+            name: 'Figma',
+            bundle_id: 'com.figma.Desktop',
+            source: 'Application',
+            uninstall_name: 'Figma',
+            path: '/Applications/Figma.app',
+            size: '1.2 GB',
+            icon: 'data:image/png;base64,figma',
+          },
+          {
+            name: 'Raycast',
+            bundle_id: 'com.raycast.macos',
+            source: 'Homebrew',
+            uninstall_name: 'Raycast',
+            path: '/Applications/Raycast.app',
+            size: '350 MB',
+            icon: 'data:image/png;base64,raycast',
+          },
+        ]),
+      );
+      localStorage.setItem('mole-uninstall-selected-apps', JSON.stringify([0, 1]));
+      localStorage.setItem(
+        'mole-uninstall-execute-output',
+        JSON.stringify(['[1/2] Uninstalling Figma...']),
+      );
+
+      render(<UninstallPage />);
+
+      const current = screen.getByTestId('uninstall-removal-current');
+      expect(current.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,figma');
+      expect(document.querySelector('.uninstall-erasing')).toBeNull();
+
+      // CLI finishes Figma and starts Raycast: the scene must hold Figma
+      // while its erase sweep plays instead of cutting straight to Raycast.
+      const stdoutHandler = vi.mocked(window.moleDesktop.uninstall.onExecuteStdout).mock.calls[0][0];
+      act(() => {
+        stdoutHandler('✓ [1/2] Figma\n[2/2] Uninstalling Raycast...');
+      });
+
+      const erasing = document.querySelector('.uninstall-erasing');
+      expect(erasing).not.toBeNull();
+      expect(
+        screen.getByTestId('uninstall-removal-current').querySelector('img')?.getAttribute('src'),
+      ).toBe('data:image/png;base64,figma');
+
+      // After the erase beat, Raycast takes the core and the sweep is gone.
+      act(() => {
+        vi.advanceTimersByTime(800);
+      });
+      expect(
+        screen.getByTestId('uninstall-removal-current').querySelector('img')?.getAttribute('src'),
+      ).toBe('data:image/png;base64,raycast');
+      expect(document.querySelector('.uninstall-erasing')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('collapses the removal scene into a completed state when the summary arrives', () => {

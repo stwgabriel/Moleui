@@ -135,6 +135,23 @@ const REMOVAL_DUST_MOTES = [
   { left: '44%', top: '52%', size: 3, drift: '-8px', delay: '-0.9s', duration: '2.4s', tint: 'rgba(148, 163, 184, 0.6)' },
 ] as const;
 
+// How long the scene holds a finished app while its erase plays out. The
+// erase keyframes (640ms) and burst (620ms) both finish inside this window.
+const REMOVAL_ERASE_MS = 700;
+
+// One-shot debris fired when an app finishes erasing. Offsets are from the
+// core's center, so the burst scales with nothing and clips nowhere.
+const REMOVAL_ERASE_BURST = [
+  { x: '44px', y: '-26px', size: 5, delay: '0ms', tint: 'rgba(244, 63, 94, 0.75)' },
+  { x: '-42px', y: '-32px', size: 4, delay: '30ms', tint: 'rgba(251, 113, 133, 0.8)' },
+  { x: '54px', y: '8px', size: 3.5, delay: '60ms', tint: 'rgba(148, 163, 184, 0.7)' },
+  { x: '-54px', y: '4px', size: 3.5, delay: '20ms', tint: 'rgba(255, 255, 255, 0.95)' },
+  { x: '30px', y: '-54px', size: 4, delay: '50ms', tint: 'rgba(255, 255, 255, 0.9)' },
+  { x: '-26px', y: '-52px', size: 3, delay: '80ms', tint: 'rgba(244, 63, 94, 0.6)' },
+  { x: '8px', y: '-64px', size: 3, delay: '10ms', tint: 'rgba(251, 113, 133, 0.7)' },
+  { x: '-6px', y: '40px', size: 3, delay: '70ms', tint: 'rgba(148, 163, 184, 0.6)' },
+] as const;
+
 // Joins the live CLI output (source of truth for what is happening right
 // now) with the selected apps (source of icons and of what is still
 // waiting). Every degraded input keeps a sensible scene: no persisted
@@ -210,6 +227,37 @@ function AppRemovalAnimation({
   const visibleQueue = upcomingApps.slice(0, REMOVAL_QUEUE_LIMIT);
   const overflowCount = upcomingApps.length - visibleQueue.length;
 
+  // App-by-app hand-off: the scene keeps showing the app that just finished
+  // while a mask sweep erases its icon and a debris burst fires, then the
+  // next app pops into the core. `displayedApp` therefore lags `currentApp`
+  // by one erase beat.
+  const [displayedApp, setDisplayedApp] = useState<RemovalSceneApp | null>(currentApp ?? null);
+  const [isErasing, setIsErasing] = useState(false);
+
+  useEffect(() => {
+    const incoming = done ? null : currentApp ?? null;
+    if (incoming?.name === displayedApp?.name) {
+      // Same app: refresh anyway so a late-loading icon still swaps in.
+      if (incoming && incoming.icon !== displayedApp?.icon) setDisplayedApp(incoming);
+      return;
+    }
+    if (!displayedApp || done) {
+      setDisplayedApp(incoming);
+      setIsErasing(false);
+      return;
+    }
+    setIsErasing(true);
+    const timer = setTimeout(() => {
+      setDisplayedApp(incoming);
+      setIsErasing(false);
+    }, REMOVAL_ERASE_MS);
+    return () => clearTimeout(timer);
+    // Primitive deps: currentApp is rebuilt on every parent render while
+    // output streams, and an object dep would restart the erase timer each
+    // chunk, so the hand-off would never complete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentApp?.name, currentApp?.icon, displayedApp?.name, displayedApp?.icon, done]);
+
   return (
     <div
       className="relative mx-auto flex w-full max-w-md flex-col items-center gap-4"
@@ -264,24 +312,43 @@ function AppRemovalAnimation({
 
         <div className="absolute inset-0 flex items-center justify-center">
           <div
-            key={done ? 'removal-done' : currentApp?.name ?? 'removal-idle'}
+            key={done ? 'removal-done' : displayedApp?.name ?? 'removal-idle'}
             className="uninstall-orbit-bubble uninstall-bubble-pop relative flex h-24 w-24 items-center justify-center rounded-full"
             data-testid={done ? 'uninstall-removal-done' : 'uninstall-removal-current'}
           >
             {done ? (
               <CheckCircle className="h-11 w-11 text-emerald-500" strokeWidth={2.2} />
             ) : (
-              <div className="uninstall-dissolve-target">
-                <AppIcon icon={currentApp?.icon} size="lg" />
+              <div className={`uninstall-dissolve-target${isErasing ? ' uninstall-erasing' : ''}`}>
+                <AppIcon icon={displayedApp?.icon} size="lg" />
               </div>
             )}
           </div>
         </div>
+
+        {!done &&
+          isErasing &&
+          REMOVAL_ERASE_BURST.map((particle, index) => (
+            <span
+              key={index}
+              className="uninstall-erase-burst"
+              style={
+                {
+                  width: particle.size,
+                  height: particle.size,
+                  background: particle.tint,
+                  animationDelay: particle.delay,
+                  '--burst-x': particle.x,
+                  '--burst-y': particle.y,
+                } as CSSProperties
+              }
+            />
+          ))}
       </div>
 
       <div className="flex min-h-5 items-center justify-center">
         <span className="max-w-[16rem] truncate text-sm font-bold tracking-[-0.01em] text-slate-700">
-          {done ? 'Complete' : currentApp?.name ?? 'Preparing…'}
+          {done ? 'Complete' : displayedApp?.name ?? 'Preparing…'}
         </span>
       </div>
 
