@@ -1,0 +1,4419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moleui — Give your Mac room to breathe</title>
+<meta name="description" content="Moleui is the macOS app that cleans junk, removes bloated apps completely, optimizes performance, and shows you exactly where your storage went. Safe by design.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,100..1000&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   MOLEUI DESIGN TOKENS (extracted from apps/desktop shipped CSS)
+   ============================================================ */
+:root{
+  --bg-primary:#fff8f5;
+  --bg-secondary:#eee8ff;
+  --surface:rgba(255,255,255,.82);
+  --surface-elevated:rgba(255,255,255,.94);
+  --surface-hover:rgba(238,232,255,.72);
+  --text-primary:#202936;
+  --text-secondary:#5a6473;
+  --text-tertiary:#9b8f9f;
+  --heading:#020617;
+
+  --accent:#8c3ffc;
+  --accent-hover:#7730e5;
+  --accent-rgb:140,63,252;
+  --accent-2:#fd2d86;
+  --accent-2-rgb:253,45,134;
+  --success:#10b981;
+  --warning:#f5a524;
+  --danger:#fc3638;
+
+  --clean:#2973fd;      --clean-rgb:41,115,253;
+  --optimize:#8c3ffc;   --optimize-rgb:140,63,252;
+  --uninstall:#fc3638;  --uninstall-rgb:252,54,56;
+  --analyze:#fd2d86;    --analyze-rgb:253,45,134;
+  --mymac:#10b981;      --mymac-rgb:16,185,129;
+
+  --mole-fur:#343B48;
+  --mole-beret:#D93B3B;
+  --mole-pink:#F2A099;
+
+  --radius-sm:8px; --radius-md:12px; --radius-lg:16px; --radius-xl:20px;
+  --radius-2xl:24px; --radius-3xl:28px; --radius-full:9999px;
+
+  --shadow-sm:0 2px 8px rgba(0,0,0,.04),0 1px 2px rgba(0,0,0,.06);
+  --shadow-md:0 4px 16px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.06);
+  --shadow-lg:0 8px 24px rgba(0,0,0,.12),0 4px 8px rgba(0,0,0,.08);
+  --shadow-xl:0 20px 60px rgba(0,0,0,.16),0 8px 24px rgba(0,0,0,.12);
+  --shadow-2xl:0 32px 80px rgba(0,0,0,.20),0 12px 32px rgba(0,0,0,.16);
+  --shadow-accent:0 8px 24px rgba(140,63,252,.28),0 4px 8px rgba(253,45,134,.12);
+
+  --ease-smooth:cubic-bezier(.4,0,.2,1);
+  --ease-out-expo:cubic-bezier(.16,1,.3,1);
+  --ease-out-quint:cubic-bezier(.22,1,.36,1);
+  --ease-bounce:cubic-bezier(.68,-.55,.265,1.55);
+  --ease-spring:cubic-bezier(.175,.885,.32,1.275);
+
+  --dur-fast:150ms; --dur-normal:250ms; --dur-slow:400ms; --dur-slower:600ms;
+
+  --font:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --mono:'SF Mono',Monaco,'Cascadia Code',Consolas,monospace;
+  color-scheme:light;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;overflow-x:clip}
+body{
+  font-family:var(--font);
+  color:var(--text-primary);
+  background-color:var(--bg-primary);
+  -webkit-font-smoothing:antialiased;
+  overflow-x:clip;
+  position:relative;
+}
+/* aurora backdrop: fixed layer instead of background-attachment:fixed
+   (cheaper for the compositor, identical look) */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background-image:
+    radial-gradient(1100px 700px at 14% 6%, rgba(var(--accent-rgb),.20), transparent 60%),
+    radial-gradient(900px 640px at 88% 10%, rgba(var(--accent-2-rgb),.13), transparent 55%),
+    linear-gradient(135deg,var(--bg-primary),var(--bg-secondary));
+}
+img,svg{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+button{font:inherit;border:0;cursor:pointer;background:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+::selection{background:rgba(var(--accent-rgb),.22)}
+
+h1,h2,h3{color:var(--heading);font-weight:900;letter-spacing:-.03em;line-height:1.08}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:.5rem;
+  font-size:.82rem;font-weight:700;letter-spacing:-.01em;
+  color:var(--accent);background:rgba(var(--accent-rgb),.10);
+  border:1px solid rgba(var(--accent-rgb),.22);
+  padding:.42rem 1rem;border-radius:var(--radius-full);
+}
+.section-sub{color:var(--text-secondary);font-size:1.12rem;font-weight:500;line-height:1.6;max-width:38rem}
+
+/* ---- glass ---- */
+.glass{
+  background:var(--surface);
+  backdrop-filter:blur(20px) saturate(180%);
+  -webkit-backdrop-filter:blur(20px) saturate(180%);
+  border:1px solid rgba(255,255,255,.55);
+  box-shadow:0 8px 32px rgba(109,93,252,.10), inset 0 1px 0 rgba(255,255,255,.5);
+}
+.glass-elevated{
+  background:var(--surface-elevated);
+  backdrop-filter:blur(24px) saturate(200%);
+  -webkit-backdrop-filter:blur(24px) saturate(200%);
+  border:1px solid rgba(255,255,255,.6);
+  box-shadow:0 20px 60px rgba(109,93,252,.14),0 8px 24px rgba(239,35,60,.06), inset 0 1px 0 rgba(255,255,255,.6);
+}
+
+/* ---- buttons ---- */
+.btn{
+  display:inline-flex;align-items:center;gap:.55rem;
+  padding:.95rem 1.9rem;border-radius:var(--radius-full);
+  font-weight:700;font-size:1rem;letter-spacing:-.01em;
+  transition:transform var(--dur-fast) var(--ease-smooth),box-shadow var(--dur-normal) var(--ease-smooth),background var(--dur-fast) var(--ease-smooth);
+  will-change:transform;
+}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:var(--shadow-accent)}
+.btn-primary:hover{background:var(--accent-hover);transform:translateY(-2px);box-shadow:0 14px 34px rgba(var(--accent-rgb),.38),0 4px 8px rgba(var(--accent-2-rgb),.12)}
+.btn-primary:active{transform:translateY(0) scale(.98)}
+.btn-ghost{background:var(--surface);color:var(--heading);border:1px solid rgba(var(--accent-rgb),.18);backdrop-filter:blur(12px)}
+.btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);background:var(--surface-elevated)}
+
+/* ---- reveal framework ---- */
+[data-io]{opacity:0;transform:translateY(26px);transition:opacity .7s var(--ease-out-quint),transform .7s var(--ease-out-quint)}
+[data-io].in-view{opacity:1;transform:none}
+[data-io="left"]{transform:translateX(-34px)}
+[data-io="right"]{transform:translateX(34px)}
+[data-io="scale"]{transform:scale(.92) translateY(14px)}
+[data-io].in-view{transform:none}
+.stagger>*{opacity:0;transform:translateY(18px);transition:opacity .6s var(--ease-out-quint),transform .6s var(--ease-out-quint)}
+.stagger.in-view>*{opacity:1;transform:none}
+.stagger.in-view>*:nth-child(1){transition-delay:.05s}
+.stagger.in-view>*:nth-child(2){transition-delay:.14s}
+.stagger.in-view>*:nth-child(3){transition-delay:.23s}
+.stagger.in-view>*:nth-child(4){transition-delay:.32s}
+.stagger.in-view>*:nth-child(5){transition-delay:.41s}
+.stagger.in-view>*:nth-child(6){transition-delay:.5s}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}
+  html{scroll-behavior:auto}
+  [data-io],.stagger>*{opacity:1!important;transform:none!important}
+}
+
+/* ============================================================
+   NAV
+   ============================================================ */
+.nav{
+  position:fixed;inset:1rem 0 auto;z-index:50;
+  width:min(1060px,calc(100% - 2rem));margin-inline:auto;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.6rem .8rem .6rem 1.1rem;border-radius:var(--radius-full);
+  transition:box-shadow var(--dur-slow) var(--ease-smooth),background var(--dur-slow) var(--ease-smooth);
+}
+.nav.scrolled{box-shadow:var(--shadow-lg), inset 0 1px 0 rgba(255,255,255,.6)}
+.nav-brand{display:flex;align-items:center;gap:.65rem;font-weight:900;font-size:1.18rem;letter-spacing:-.02em;color:var(--heading)}
+.nav-links{display:flex;gap:.35rem;align-items:center}
+.nav-links a{
+  padding:.55rem 1rem;border-radius:var(--radius-full);white-space:nowrap;
+  font-size:.95rem;font-weight:600;color:var(--text-secondary);
+  transition:background var(--dur-fast) var(--ease-smooth),color var(--dur-fast) var(--ease-smooth);
+}
+.nav-links a:hover{background:var(--surface-hover);color:var(--accent)}
+.nav .btn{padding:.62rem 1.35rem;font-size:.95rem}
+@media (max-width:760px){.nav-links a:not(.keep){display:none}}
+
+.brand-avatar{
+  width:38px;height:38px;border-radius:50%;
+  background:linear-gradient(135deg,#8b7df0,#5b4fd0);
+  display:grid;place-items:center;overflow:hidden;
+  box-shadow:0 4px 12px rgba(var(--accent-rgb),.35), inset 0 1px 0 rgba(255,255,255,.4);
+}
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero{position:relative;padding:9.5rem 1.5rem 5rem;text-align:center;overflow:visible}
+.hero-inner{max-width:1120px;margin-inline:auto;position:relative;z-index:2}
+.hero h1{font-size:clamp(2.7rem,6.4vw,4.9rem);margin:1.4rem auto 1.2rem;max-width:17ch}
+.hero h1 .grad{
+  background:linear-gradient(100deg,var(--accent) 10%,var(--accent-2) 55%,#ff7a59 95%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  background-size:180% 100%;animation:hue-slide 7s var(--ease-smooth) infinite alternate;
+}
+@keyframes hue-slide{from{background-position:0% 0}to{background-position:100% 0}}
+.hero .section-sub{margin:0 auto 2.2rem}
+.hero-ctas{display:flex;gap:.9rem;justify-content:center;flex-wrap:wrap;position:relative}
+.hero-lock{margin-top:1.1rem;font-size:.88rem;font-weight:600;color:var(--text-tertiary);display:flex;gap:.4rem;align-items:center;justify-content:center}
+
+/* hand-drawn "start here" motif, mirrors in-app CTA */
+.start-here{
+  position:absolute;left:50%;transform:translateX(-330px) rotate(-6deg);top:-.4rem;
+  font-family:'Comic Sans MS','Bradley Hand',cursive;
+  color:var(--accent);font-size:1.05rem;font-weight:700;white-space:nowrap;
+  display:flex;align-items:center;gap:.3rem;pointer-events:none;
+}
+.start-here svg{width:52px;height:30px;overflow:visible}
+.start-here svg path{stroke:var(--accent);stroke-width:2.2;fill:none;stroke-linecap:round;stroke-dasharray:90;stroke-dashoffset:90}
+.in-view .start-here svg path,.hero .start-here svg path{animation:draw-arrow 1.2s var(--ease-out-quint) .9s forwards}
+@keyframes draw-arrow{to{stroke-dashoffset:0}}
+@media (max-width:900px){.start-here{display:none}}
+
+/* ambient orbs */
+.orb{position:absolute;border-radius:50%;filter:blur(70px);opacity:.5;pointer-events:none;z-index:0}
+.orb-1{width:420px;height:420px;left:-120px;top:8%;background:rgba(var(--accent-rgb),.35);animation:orb-drift 16s ease-in-out infinite alternate}
+.orb-2{width:360px;height:360px;right:-100px;top:22%;background:rgba(var(--accent-2-rgb),.28);animation:orb-drift 19s ease-in-out infinite alternate-reverse}
+.orb-3{width:300px;height:300px;left:12%;top:64%;background:rgba(41,115,253,.20);animation:orb-drift 22s ease-in-out infinite alternate}
+@keyframes orb-drift{from{transform:translate(0,0) scale(1)}to{transform:translate(46px,-40px) scale(1.12)}}
+
+/* sparkle field */
+.spark{position:absolute;width:10px;height:10px;pointer-events:none;z-index:1;opacity:0;animation:spark-pop 4.5s ease-in-out infinite}
+.spark svg path{fill:var(--accent)}
+.spark.pink svg path{fill:var(--accent-2)}
+.spark.blue svg path{fill:var(--clean)}
+@keyframes spark-pop{0%,100%{opacity:0;transform:scale(.3) rotate(0)}45%{opacity:.9;transform:scale(1.15) rotate(40deg)}60%{opacity:.7;transform:scale(.95) rotate(60deg)}}
+
+/* ---- hero app-window mockup ---- */
+.hero-stage{position:relative;max-width:980px;margin:4.2rem auto 0;perspective:1600px}
+.hero-window{
+  position:relative;border-radius:var(--radius-xl);text-align:left;
+  transform-origin:50% 100%;
+  animation:window-breathe 7s ease-in-out infinite;
+}
+@keyframes window-breathe{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.006) translateY(-4px)}}
+.hero-window .win-body{display:grid;grid-template-columns:150px 1fr;border-radius:var(--radius-xl);overflow:hidden}
+
+.traffic{position:absolute;top:14px;left:16px;display:flex;gap:7px;z-index:5}
+.traffic i{width:11px;height:11px;border-radius:50%}
+.traffic i:nth-child(1){background:#FF5F57}.traffic i:nth-child(2){background:#FEBC2E}.traffic i:nth-child(3){background:#28C840}
+
+.win-side{
+  background:rgba(255,255,255,.30);backdrop-filter:blur(32px);
+  border-right:1px solid rgba(255,255,255,.55);
+  padding:2.6rem .7rem 1rem;display:flex;flex-direction:column;align-items:center;gap:.35rem;
+}
+.win-avatar{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#8b7df0,#5b4fd0);display:grid;place-items:center;margin-bottom:.7rem;box-shadow:0 6px 16px rgba(var(--accent-rgb),.35)}
+.win-nav{display:flex;flex-direction:column;gap:.3rem;width:100%;align-items:stretch}
+.win-nav-item{
+  display:flex;flex-direction:column;align-items:center;gap:.22rem;
+  padding:.55rem .3rem;border-radius:1.05rem;
+  font-size:.62rem;font-weight:600;color:var(--text-secondary);letter-spacing:-.01em;
+}
+.win-nav-item svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.win-nav-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);font-weight:700}
+
+.win-main{padding:2.4rem 1.3rem 1.2rem;display:flex;flex-direction:column;gap:.8rem;background:linear-gradient(160deg,rgba(255,248,245,.6),rgba(238,232,255,.55))}
+.win-grid{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:.8rem}
+.win-card{background:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.7);border-radius:var(--radius-lg);padding:.9rem 1rem;box-shadow:var(--shadow-sm)}
+.win-card h4{font-size:.72rem;font-weight:700;color:var(--text-secondary);letter-spacing:-.01em;margin-bottom:.4rem}
+
+.score-card{display:flex;flex-direction:column;justify-content:center;gap:.15rem}
+.score-num{font-size:2.9rem;font-weight:900;letter-spacing:-.04em;line-height:1;color:var(--danger);transition:color .8s var(--ease-smooth)}
+.score-num.good{color:var(--success)}
+.score-label{display:flex;align-items:center;gap:.4rem;font-size:.74rem;font-weight:700;color:var(--text-secondary)}
+.score-dot{width:7px;height:7px;border-radius:50%;background:var(--danger);transition:background .8s var(--ease-smooth)}
+.score-dot.good{background:var(--success)}
+.score-sub{font-size:.68rem;font-weight:600;color:var(--text-tertiary)}
+
+.ring-wrap{display:flex;align-items:center;gap:.75rem}
+.ring{width:64px;height:64px;flex:none}
+.ring svg{transform:rotate(-90deg)}
+.ring .track{stroke:rgba(var(--accent-rgb),.10)}
+.ring .bar{transition:stroke-dashoffset 1.4s var(--ease-out-quint),stroke .9s var(--ease-smooth)}
+.ring-val{font-size:1.02rem;font-weight:900;letter-spacing:-.02em;color:var(--heading)}
+.ring-cap{font-size:.64rem;font-weight:600;color:var(--text-tertiary);line-height:1.35}
+
+.spark-card .sparkline{width:100%;height:44px}
+.spark-card .sparkline path{fill:none;stroke:var(--optimize);stroke-width:2.4;stroke-linecap:round}
+.spark-card .sparkline .area{fill:url(#cpuFill);stroke:none;opacity:.55}
+.cpu-pct{font-weight:900;color:var(--warning);font-size:.86rem;transition:color .8s var(--ease-smooth)}
+.cpu-pct.good{color:var(--success)}
+
+.proc-list{display:flex;flex-direction:column;gap:.42rem}
+.proc-row{display:flex;align-items:center;gap:.6rem;font-size:.7rem;font-weight:600;color:var(--text-secondary)}
+.proc-row .rank{width:16px;height:16px;border-radius:50%;background:rgba(var(--accent-rgb),.10);color:var(--accent);display:grid;place-items:center;font-size:.58rem;font-weight:700;flex:none}
+.proc-row .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proc-bar{width:86px;height:5px;border-radius:99px;background:rgba(var(--accent-rgb),.10);overflow:hidden;flex:none}
+.proc-bar i{display:block;height:100%;border-radius:99px;background:var(--optimize);transition:width 1.2s var(--ease-out-quint)}
+
+/* freed chip */
+.freed-chip{
+  position:absolute;right:-14px;top:26%;z-index:6;
+  padding:.6rem 1.05rem;border-radius:var(--radius-full);
+  background:var(--surface-elevated);backdrop-filter:blur(16px);
+  border:1px solid rgba(16,185,129,.35);
+  color:var(--success);font-weight:900;font-size:.95rem;letter-spacing:-.01em;
+  box-shadow:0 10px 30px rgba(16,185,129,.25);
+  opacity:0;transform:translateY(14px) scale(.8);
+  transition:opacity .5s var(--ease-spring),transform .5s var(--ease-spring);
+}
+.freed-chip.show{opacity:1;transform:translateY(0) scale(1)}
+
+/* scanning shimmer sweep */
+.win-sweep{
+  position:absolute;inset:0;border-radius:var(--radius-xl);pointer-events:none;z-index:4;overflow:hidden;opacity:0;transition:opacity .4s;
+}
+.win-sweep.on{opacity:1}
+.win-sweep::before{
+  content:"";position:absolute;inset:-40% -60%;
+  background:linear-gradient(105deg,transparent 42%,rgba(var(--accent-rgb),.14) 48%,rgba(var(--accent-2-rgb),.14) 52%,transparent 58%);
+  animation:sweep-move 1.5s var(--ease-smooth) infinite;
+}
+@keyframes sweep-move{from{transform:translateX(-38%)}to{transform:translateX(38%)}}
+
+/* junk dust particles */
+.dust{position:absolute;bottom:18%;border-radius:50%;background:rgba(var(--accent-rgb),.5);pointer-events:none;z-index:5;opacity:0}
+.dust.fly{animation:dust-rise 2.4s var(--ease-out-quint) forwards}
+@keyframes dust-rise{
+  0%{opacity:0;transform:translate(0,0) scale(.6)}
+  18%{opacity:.85}
+  100%{opacity:0;transform:translate(var(--dx,14px),-150px) scale(.2)}
+}
+
+/* peeking mole */
+.hero-mole{position:absolute;top:-104px;right:5%;width:150px;z-index:3;transform:translateY(105px);animation:mole-peek 1.4s var(--ease-out-quint) .7s forwards}
+@keyframes mole-peek{
+  0%{transform:translateY(105px)}
+  70%{transform:translateY(-8px)}
+  100%{transform:translateY(0)}
+}
+.hero-mole .mole-body{transform-origin:50% 90%;animation:mole-sway 5.5s ease-in-out 2.2s infinite}
+@keyframes mole-sway{0%,100%{transform:rotate(0)}30%{transform:rotate(-2.4deg)}65%{transform:rotate(2deg)}}
+@media (max-width:760px){.hero-mole{width:104px;top:-72px;transform:translateY(74px)}.hero-window .win-body{grid-template-columns:1fr}.win-side{display:none}.win-grid{grid-template-columns:1fr 1fr}}
+
+/* ============================================================
+   STAT STRIP
+   ============================================================ */
+.strip{max-width:1060px;margin:4.5rem auto 0;padding:0 1.5rem}
+.strip-inner{display:grid;grid-template-columns:repeat(4,1fr);gap:.9rem}
+.strip-item{padding:1.25rem 1.4rem;border-radius:var(--radius-xl);display:flex;flex-direction:column;gap:.3rem;transition:transform var(--dur-normal) var(--ease-smooth),box-shadow var(--dur-normal) var(--ease-smooth)}
+.strip-item:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
+.strip-item b{font-size:1.02rem;font-weight:900;letter-spacing:-.02em;color:var(--heading)}
+.strip-item span{font-size:.85rem;font-weight:500;color:var(--text-secondary);line-height:1.45}
+@media (max-width:860px){.strip-inner{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:480px){.strip-inner{grid-template-columns:1fr}}
+
+/* ============================================================
+   SHARED FEATURE-SECTION LAYOUT (builders extend with scoped css)
+   ============================================================ */
+.feature{position:relative;padding:7.5rem 1.5rem;overflow:hidden}
+.feature-inner{max-width:1120px;margin-inline:auto;display:grid;grid-template-columns:1fr 1.1fr;gap:4.5rem;align-items:center}
+.feature.flip .feature-inner{grid-template-columns:1.1fr 1fr}
+.feature.flip .feature-copy{order:2}
+.feature h2{font-size:clamp(2rem,4.3vw,3.1rem);margin:.9rem 0 1rem}
+.feature .rows{margin-top:1.8rem;display:flex;flex-direction:column;gap:.35rem}
+.feature .row{display:flex;gap:.95rem;padding:.85rem .9rem;border-radius:var(--radius-lg);transition:background var(--dur-fast) var(--ease-smooth),transform var(--dur-fast) var(--ease-smooth)}
+.feature .row:hover{background:var(--surface-hover);transform:translateX(4px)}
+.feature .row .tile{width:40px;height:40px;flex:none;border-radius:var(--radius-md);display:grid;place-items:center}
+.feature .row .tile svg{width:20px;height:20px;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.feature .row b{display:block;font-size:1rem;font-weight:700;letter-spacing:-.01em;color:var(--heading)}
+.feature .row span{font-size:.9rem;color:var(--text-secondary);line-height:1.45}
+@media (max-width:960px){
+  .feature-inner,.feature.flip .feature-inner{grid-template-columns:1fr;gap:3rem}
+  .feature.flip .feature-copy{order:0}
+}
+
+/* accent helpers per feature (background wash + eyebrow tint) */
+.feature[data-accent]{--fa:var(--accent);--fa-rgb:var(--accent-rgb)}
+.feature[data-accent="clean"]{--fa:var(--clean);--fa-rgb:var(--clean-rgb)}
+.feature[data-accent="optimize"]{--fa:var(--optimize);--fa-rgb:var(--optimize-rgb)}
+.feature[data-accent="uninstall"]{--fa:var(--uninstall);--fa-rgb:var(--uninstall-rgb)}
+.feature[data-accent="analyze"]{--fa:var(--analyze);--fa-rgb:var(--analyze-rgb)}
+.feature[data-accent="mymac"]{--fa:var(--mymac);--fa-rgb:var(--mymac-rgb)}
+.feature[data-accent]::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(760px 520px at var(--wash-x,80%) 30%,rgba(var(--fa-rgb),.10),transparent 65%);
+}
+.feature.flip[data-accent]::before{--wash-x:20%}
+.feature .eyebrow{color:var(--fa);background:rgba(var(--fa-rgb),.10);border-color:rgba(var(--fa-rgb),.22)}
+.feature .row .tile{background:rgba(var(--fa-rgb),.12);color:var(--fa)}
+.feature .row .tile svg{stroke:var(--fa)}
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+<nav class="nav glass" id="nav" aria-label="Main">
+  <a class="nav-brand" href="#top">
+    <span class="brand-avatar">
+      <svg viewBox="0 0 40 40" width="30" height="30" aria-hidden="true">
+        <path d="M12 33 C12 20 15 12 20 12 C25 12 28 20 28 33 Z" fill="#fff"/>
+        <ellipse cx="26.5" cy="18" rx="2.6" ry="2.2" fill="#F2A099"/>
+        <circle cx="22" cy="16.6" r="1.5" fill="#10131A"/>
+        <path d="M13.5 13.5 C13 9 17.5 6.5 21.5 7 C25 7.5 27.5 10 26.6 12.6 C26 14.4 22 14.8 19 14.6 C16.5 14.4 13.8 14.6 13.5 13.5 Z" fill="#D93B3B"/>
+      </svg>
+    </span>
+    Moleui
+  </a>
+  <div class="nav-links">
+    <a href="#clean">Cleanup</a>
+    <a href="#optimize">Optimize</a>
+    <a href="#uninstall">Uninstall</a>
+    <a href="#analyze">Storage</a>
+    <a href="#mymac">My Mac</a>
+    <a href="#safety">Safety</a>
+  </div>
+  <a class="btn btn-primary" href="#download">Download</a>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header class="hero" id="top">
+  <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
+  <div class="spark" style="left:16%;top:24%;animation-delay:.4s"><svg viewBox="0 0 24 24"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg></div>
+  <div class="spark pink" style="right:14%;top:18%;animation-delay:1.6s"><svg viewBox="0 0 24 24"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg></div>
+  <div class="spark blue" style="left:24%;top:58%;animation-delay:2.8s"><svg viewBox="0 0 24 24"><path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z"/></svg></div>
+
+  <div class="hero-inner">
+    <span class="eyebrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.2 9.8 L22 12 L14.2 14.2 L12 22 L9.8 14.2 L2 12 L9.8 9.8 Z"/></svg> Meet Moleui for macOS</span>
+    <h1>Give your Mac room to <span class="grad">breathe</span>.</h1>
+    <p class="section-sub">Moleui digs out the junk, removes bloated apps completely, tunes performance, and shows you exactly where your storage went. You review everything before it moves, and it moves to the Trash, not into thin air.</p>
+    <div class="hero-ctas">
+      <span class="start-here">start here
+        <svg viewBox="0 0 52 30"><path d="M2 4 C 16 26, 34 28, 46 18 M46 18 l-7 -1.5 M46 18 l-2.5 6.5"/></svg>
+      </span>
+      <a class="btn btn-primary" href="#download"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M4 21h16"/></svg> Download for macOS</a>
+      <a class="btn btn-ghost" href="#clean">See it in action</a>
+    </div>
+    <p class="hero-lock"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Nothing is removed without your review.</p>
+
+    <div class="hero-stage" id="heroStage">
+      <div class="hero-mole" aria-hidden="true">
+        <svg viewBox="0 0 240 200" class="mole-svg">
+          <defs><clipPath id="gclip"><rect x="0" y="0" width="240" height="168"/></clipPath></defs>
+          <g clip-path="url(#gclip)"><g class="mole-body">
+            <path d="M52 168 C52 96 76 44 120 44 C164 44 188 96 188 168 Z" fill="#343B48"/>
+            <path d="M74 92 C74 52 94 30 120 30 C150 30 172 56 178 84 C181 98 182 112 182 126 L74 126 Z" fill="#343B48"/>
+            <path d="M158 62 C170 58 182 62 188 72 C193 80 191 90 182 92 C170 94 158 86 154 76 C152 70 154 64 158 62 Z" fill="#343B48"/>
+            <ellipse cx="186" cy="76" rx="12" ry="10" fill="#F2A099"/>
+            <circle cx="146" cy="66" r="8.5" fill="#10131A"/><circle cx="149" cy="63" r="3" fill="#FFFFFF"/>
+            <g stroke="#EDEFF4" stroke-width="2.4" stroke-linecap="round" fill="none" opacity=".9">
+              <path d="M160 92 C168 90 176 90 184 92"/><path d="M158 100 C167 99 176 100 184 103"/><path d="M156 108 C164 108 172 110 180 114"/>
+            </g>
+            <g><path d="M62 168 C60 148 68 136 82 136 C96 136 102 148 100 168 Z" fill="#F2A099"/><path d="M70 140 L70 156 M82 136 L82 154 M94 140 L94 156" stroke="#343B48" stroke-width="5" stroke-linecap="round"/></g>
+            <g><path d="M140 168 C138 148 146 136 160 136 C174 136 180 148 178 168 Z" fill="#F2A099"/><path d="M148 140 L148 156 M160 136 L160 154 M172 140 L172 156" stroke="#343B48" stroke-width="5" stroke-linecap="round"/></g>
+            <g><path d="M78 46 C74 24 96 8 122 10 C146 12 162 26 158 42 C156 50 146 54 132 54 C112 54 82 56 78 46 Z" fill="#D93B3B"/><path d="M116 10 C116 4 122 2 126 5 C129 7 128 12 124 13 Z" fill="#C22F2F"/></g>
+          </g></g>
+        </svg>
+      </div>
+
+      <div class="hero-window glass-elevated" id="heroWindow">
+        <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="win-sweep" id="winSweep" aria-hidden="true"></div>
+        <div class="freed-chip" id="freedChip">↑ 84.7 GB freed</div>
+        <div class="win-body">
+          <aside class="win-side" aria-hidden="true">
+            <div class="win-avatar">
+              <svg viewBox="0 0 40 40" width="34" height="34">
+                <path d="M12 33 C12 20 15 12 20 12 C25 12 28 20 28 33 Z" fill="#fff"/>
+                <ellipse cx="26.5" cy="18" rx="2.6" ry="2.2" fill="#F2A099"/>
+                <circle cx="22" cy="16.6" r="1.5" fill="#10131A"/>
+                <path d="M13.5 13.5 C13 9 17.5 6.5 21.5 7 C25 7.5 27.5 10 26.6 12.6 C26 14.4 22 14.8 19 14.6 C16.5 14.4 13.8 14.6 13.5 13.5 Z" fill="#D93B3B"/>
+              </svg>
+            </div>
+            <nav class="win-nav">
+              <span class="win-nav-item active"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="2"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="2"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="2"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="2"/></svg>My Mac</span>
+              <span class="win-nav-item"><svg viewBox="0 0 24 24"><path d="M21 8 L12 3 L3 8 L12 13 Z"/><path d="M3 8 V16 L12 21 L21 16 V8"/><path d="M12 13 V21"/></svg>Uninstall</span>
+              <span class="win-nav-item"><svg viewBox="0 0 24 24"><path d="M12 3 L13.8 9.2 L20 11 L13.8 12.8 L12 19 L10.2 12.8 L4 11 L10.2 9.2 Z"/><path d="M19 4 l.7 2.3 L22 7 l-2.3.7 L19 10 l-.7-2.3 L16 7 l2.3-.7 Z"/></svg>Cleanup</span>
+              <span class="win-nav-item"><svg viewBox="0 0 24 24"><path d="M4 15 A8 8 0 0 1 20 15"/><path d="M12 15 L16 9"/><circle cx="12" cy="15" r="1.4"/></svg>Performance</span>
+              <span class="win-nav-item"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6 V18 C5 19.6 8.1 20.8 12 20.8 C15.9 20.8 19 19.6 19 18 V6"/><path d="M5 12 C5 13.6 8.1 14.8 12 14.8 C15.9 14.8 19 13.6 19 12"/></svg>Storage</span>
+            </nav>
+          </aside>
+          <div class="win-main">
+            <div class="win-grid">
+              <div class="win-card score-card">
+                <h4>Health Score</h4>
+                <span class="score-num" id="scoreNum">49</span>
+                <span class="score-label"><i class="score-dot" id="scoreDot"></i><span id="scoreText">Needs attention</span></span>
+                <span class="score-sub">MacBook Air · macOS 26.5</span>
+              </div>
+              <div class="win-card">
+                <h4>Storage</h4>
+                <div class="ring-wrap">
+                  <div class="ring">
+                    <svg viewBox="0 0 64 64" width="64" height="64">
+                      <circle class="track" cx="32" cy="32" r="26" fill="none" stroke-width="7"/>
+                      <circle class="bar" id="ringStorage" cx="32" cy="32" r="26" fill="none" stroke="#fc3638" stroke-width="7" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="3.27"/>
+                    </svg>
+                  </div>
+                  <div><div class="ring-val" id="storVal">98%</div><div class="ring-cap" id="storCap">223.8 GB of<br>228.3 GB</div></div>
+                </div>
+              </div>
+              <div class="win-card">
+                <h4>Memory</h4>
+                <div class="ring-wrap">
+                  <div class="ring">
+                    <svg viewBox="0 0 64 64" width="64" height="64">
+                      <circle class="track" cx="32" cy="32" r="26" fill="none" stroke-width="7"/>
+                      <circle class="bar" id="ringRam" cx="32" cy="32" r="26" fill="none" stroke="#f5a524" stroke-width="7" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="35.94"/>
+                    </svg>
+                  </div>
+                  <div><div class="ring-val" id="ramVal">78%</div><div class="ring-cap" id="ramCap">12.4 GB of<br>16 GB</div></div>
+                </div>
+              </div>
+            </div>
+            <div class="win-grid" style="grid-template-columns:1.25fr 2fr">
+              <div class="win-card spark-card">
+                <h4>Processor &nbsp;<span class="cpu-pct" id="cpuPct">76%</span></h4>
+                <svg class="sparkline" viewBox="0 0 200 44" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="cpuFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#8c3ffc" stop-opacity=".35"/>
+                      <stop offset="1" stop-color="#8c3ffc" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <path class="area" id="cpuArea" d=""/>
+                  <path id="cpuLine" d=""/>
+                </svg>
+              </div>
+              <div class="win-card">
+                <h4>All Processes</h4>
+                <div class="proc-list" id="procList">
+                  <div class="proc-row"><span class="rank">1</span><span class="name">openclaw-gateway</span><span class="proc-bar"><i style="width:92%"></i></span><span>2.1%</span></div>
+                  <div class="proc-row"><span class="rank">2</span><span class="name">WindowServer</span><span class="proc-bar"><i style="width:38%"></i></span><span>0.7%</span></div>
+                  <div class="proc-row"><span class="rank">3</span><span class="name">Electron</span><span class="proc-bar"><i style="width:22%"></i></span><span>1.6%</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ STAT STRIP ============ -->
+<section class="strip" aria-label="Why Moleui">
+  <div class="strip-inner stagger" data-io>
+    <div class="strip-item glass"><b>Open source, MIT</b><span>Every line that touches your files is public on GitHub.</span></div>
+    <div class="strip-item glass"><b>Trash first, always</b><span>Deletions are recoverable. Nothing is hard-deleted behind your back.</span></div>
+    <div class="strip-item glass"><b>You approve everything</b><span>Every module previews first. Review the results before a single byte moves.</span></div>
+    <div class="strip-item glass"><b>Made for your Mac</b><span>Apple Silicon and Intel builds that feel at home on macOS.</span></div>
+  </div>
+</section>
+
+<!-- ============ SHARED JS (defined before sections so their scripts can use window.moleui) ============ -->
+<script>
+(function(){
+  "use strict";
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* shared helpers exposed for section scripts */
+  window.moleui = {
+    reduced: reduced,
+    count: function(el, from, to, dur, fmt){
+      fmt = fmt || function(v){ return Math.round(v); };
+      if(reduced){ el.textContent = fmt(to); return; }
+      var t0 = null;
+      function step(t){
+        if(!t0) t0 = t;
+        var p = Math.min((t - t0) / dur, 1);
+        p = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmt(from + (to - from) * p);
+        if(p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    },
+    onVisible: function(el, cb, threshold){
+      var o = new IntersectionObserver(function(es){
+        es.forEach(function(e){ if(e.isIntersecting){ cb(); o.unobserve(el); } });
+      }, {threshold: threshold || .4});
+      o.observe(el);
+    }
+  };
+
+  /* nav shadow on scroll */
+  var nav = document.getElementById("nav");
+  addEventListener("scroll", function(){ nav.classList.toggle("scrolled", scrollY > 24); }, {passive:true});
+
+  /* DOM-wide wiring that must wait for the full document */
+  addEventListener("DOMContentLoaded", function(){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){ e.target.classList.add("in-view"); io.unobserve(e.target); }
+      });
+    }, {threshold:.25});
+    document.querySelectorAll("[data-io]").forEach(function(el){ io.observe(el); });
+
+    var brew = document.getElementById("brewBox");
+    if(brew){
+      brew.addEventListener("click", function(){
+        var cmd = brew.querySelector("code").textContent;
+        (navigator.clipboard ? navigator.clipboard.writeText(cmd) : Promise.reject()).then(function(){
+          brew.classList.add("copied");
+          setTimeout(function(){ brew.classList.remove("copied"); }, 1600);
+        }).catch(function(){});
+      });
+    }
+  });
+
+  /* ---------- HERO NARRATIVE (hero DOM exists above this script) ---------- */
+  var C = 2 * Math.PI * 26; // ring circumference 163.36
+  function setRing(id, pct, color){
+    var r = document.getElementById(id);
+    r.style.strokeDashoffset = (C * (1 - pct / 100)).toFixed(2);
+    if(color) r.style.stroke = color;
+  }
+  function cpuPath(vals, close){
+    var w = 200, h = 44, n = vals.length - 1;
+    var d = vals.map(function(v, i){
+      return (i ? "L" : "M") + (i / n * w).toFixed(1) + " " + (h - v / 100 * (h - 4) - 2).toFixed(1);
+    }).join(" ");
+    return close ? d + " L" + w + " " + h + " L0 " + h + " Z" : d;
+  }
+  var busy   = [55,70,62,80,74,88,76,90,82,95,78,86,92,76];
+  var calm   = [30,24,28,20,26,18,22,16,20,14,18,12,16,14];
+  var line = document.getElementById("cpuLine"), area = document.getElementById("cpuArea");
+  line.setAttribute("d", cpuPath(busy)); area.setAttribute("d", cpuPath(busy, true));
+
+  var scoreNum = document.getElementById("scoreNum"),
+      scoreDot = document.getElementById("scoreDot"),
+      scoreText = document.getElementById("scoreText"),
+      cpuPct = document.getElementById("cpuPct"),
+      chip = document.getElementById("freedChip"),
+      sweep = document.getElementById("winSweep"),
+      stage = document.getElementById("heroStage");
+
+  function spawnDust(){
+    for(var i = 0; i < 14; i++){
+      var d = document.createElement("i");
+      d.className = "dust";
+      var s = 4 + Math.random() * 7;
+      d.style.width = d.style.height = s + "px";
+      d.style.left = (12 + Math.random() * 76) + "%";
+      d.style.setProperty("--dx", (Math.random() * 80 - 40) + "px");
+      d.style.animationDelay = (Math.random() * .9) + "s";
+      d.classList.add("fly");
+      stage.querySelector(".hero-window").appendChild(d);
+      setTimeout(function(el){ return function(){ el.remove(); }; }(d), 3600);
+    }
+  }
+
+  function setBefore(){
+    scoreNum.textContent = "49";
+    scoreNum.classList.remove("good"); scoreDot.classList.remove("good");
+    scoreText.textContent = "Needs attention";
+    cpuPct.textContent = "76%"; cpuPct.classList.remove("good");
+    setRing("ringStorage", 98, "#fc3638"); setRing("ringRam", 78, "#f5a524");
+    document.getElementById("storVal").textContent = "98%";
+    document.getElementById("storCap").innerHTML = "223.8 GB of<br>228.3 GB";
+    document.getElementById("ramVal").textContent = "78%";
+    line.setAttribute("d", cpuPath(busy)); area.setAttribute("d", cpuPath(busy, true));
+    chip.classList.remove("show");
+  }
+
+  function heal(){
+    sweep.classList.add("on");
+    spawnDust();
+    setTimeout(function(){
+      window.moleui.count(scoreNum, 49, 96, 1600);
+      window.moleui.count(cpuPct, 76, 18, 1600, function(v){ return Math.round(v) + "%"; });
+      window.moleui.count(document.getElementById("storVal"), 98, 61, 1600, function(v){ return Math.round(v) + "%"; });
+      window.moleui.count(document.getElementById("ramVal"), 78, 52, 1600, function(v){ return Math.round(v) + "%"; });
+      setRing("ringStorage", 61, "#10b981"); setRing("ringRam", 52, "#10b981");
+      line.setAttribute("d", cpuPath(calm)); area.setAttribute("d", cpuPath(calm, true));
+      setTimeout(function(){
+        scoreNum.classList.add("good"); scoreDot.classList.add("good");
+        scoreText.textContent = "Feeling great";
+        cpuPct.classList.add("good");
+        document.getElementById("storCap").innerHTML = "139.1 GB of<br>228.3 GB";
+        chip.classList.add("show");
+        sweep.classList.remove("on");
+      }, 1700);
+    }, 700);
+  }
+
+  if(reduced){
+    /* static healthy end-state for reduced motion */
+    scoreNum.textContent = "96"; scoreNum.classList.add("good");
+    scoreDot.classList.add("good"); scoreText.textContent = "Feeling great";
+    cpuPct.textContent = "18%"; cpuPct.classList.add("good");
+    setRing("ringStorage", 61, "#10b981"); setRing("ringRam", 52, "#10b981");
+    line.setAttribute("d", cpuPath(calm)); area.setAttribute("d", cpuPath(calm, true));
+  } else {
+    window.moleui.onVisible(stage, function(){
+      setTimeout(heal, 900);
+      setInterval(function(){ setBefore(); setTimeout(heal, 1200); }, 11000);
+    }, .35);
+  }
+})();
+</script>
+
+<section id="clean" class="feature" data-accent="clean">
+  <div class="feature-inner">
+    <div class="feature-copy" data-io>
+      <span class="eyebrow">Cleanup</span>
+      <h2>Junk out. Breathing room in.</h2>
+      <p class="section-sub">Moleui scans every cleanup area you can safely inspect, then shows you the junk it found. You review each category, keep what you want, and watch the reclaimed space add up.</p>
+      <div class="rows stagger" data-io>
+        <div class="row">
+          <span class="tile">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+          </span>
+          <div><b>System and user caches</b><span>Privileged system caches, logs, temporary files, and snapshots</span></div>
+        </div>
+        <div class="row">
+          <span class="tile">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9z"/></svg>
+          </span>
+          <div><b>Browser data</b><span>Browser caches, temporary browsing data, and web leftovers</span></div>
+        </div>
+        <div class="row">
+          <span class="tile">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 7 3 12 8 17"/><polyline points="16 7 21 12 16 17"/></svg>
+          </span>
+          <div><b>Developer junk</b><span>Package managers, build caches, simulators, and dev tools</span></div>
+        </div>
+        <div class="row">
+          <span class="tile">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><line x1="12" y1="13" x2="12" y2="21"/></svg>
+          </span>
+          <div><b>Project artifacts and installers</b><span>Old build output, DMGs, PKGs, and installer archives</span></div>
+        </div>
+      </div>
+      <p class="clean-assure">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        Review cleanup results before anything is removed
+      </p>
+    </div>
+
+    <div class="feature-scene clean-scene" data-io="scale" role="img" aria-label="Animated preview of the Moleui Cleanup window scanning junk categories, cleaning them, and reporting 12.8 gigabytes reclaimed, recoverable from Trash">
+      <div class="clean-particles" aria-hidden="true"></div>
+
+      <div class="clean-window" aria-hidden="true">
+        <div class="clean-titlebar">
+          <span class="clean-dots"><i></i><i></i><i></i></span>
+          <span class="clean-title">Cleanup</span>
+          <span class="clean-status" data-mode="idle">Ready</span>
+        </div>
+
+        <div class="clean-body">
+          <div class="clean-listwrap">
+            <ul class="clean-list">
+              <li class="clean-item">
+                <span class="clean-check"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.4 2.4 4.6-5"/></svg></span>
+                <span class="clean-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span>
+                <span class="clean-name">System Junk</span>
+                <span class="clean-size">4.2 GB</span>
+              </li>
+              <li class="clean-item">
+                <span class="clean-check"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.4 2.4 4.6-5"/></svg></span>
+                <span class="clean-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></span>
+                <span class="clean-name">App Caches</span>
+                <span class="clean-size">3.1 GB</span>
+              </li>
+              <li class="clean-item">
+                <span class="clean-check"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.4 2.4 4.6-5"/></svg></span>
+                <span class="clean-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9z"/></svg></span>
+                <span class="clean-name">Browser Data</span>
+                <span class="clean-size">1.8 GB</span>
+              </li>
+              <li class="clean-item">
+                <span class="clean-check"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.4 2.4 4.6-5"/></svg></span>
+                <span class="clean-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 7 3 12 8 17"/><polyline points="16 7 21 12 16 17"/></svg></span>
+                <span class="clean-name">Dev Junk</span>
+                <span class="clean-size">2.6 GB</span>
+              </li>
+              <li class="clean-item">
+                <span class="clean-check"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.4 2.4 4.6-5"/></svg></span>
+                <span class="clean-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="M8 9l4 4 4-4"/><path d="M3 17v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/></svg></span>
+                <span class="clean-name">Installer Files</span>
+                <span class="clean-size">1.1 GB</span>
+              </li>
+            </ul>
+            <span class="clean-scanline"></span>
+          </div>
+
+          <div class="clean-footer">
+            <div class="clean-footer-left">
+              <span class="clean-found">Ready to scan</span>
+              <span class="clean-progress"><i></i></span>
+            </div>
+            <span class="clean-btn">Clean</span>
+          </div>
+
+          <div class="clean-result">
+            <span class="clean-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4.2 4.2L19 7.5"/></svg>
+            </span>
+            <div class="clean-total"><span class="clean-total-num">12.8</span><span class="clean-total-unit">GB</span></div>
+            <div class="clean-total-label">reclaimed, recoverable from Trash</div>
+          </div>
+        </div>
+      </div>
+
+      <svg class="clean-sparkle" width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2c1 5.6 3.9 8.6 10 10-6.1 1.4-9 4.4-10 10-1-5.6-3.9-8.6-10-10 6.1-1.4 9-4.4 10-10z" fill="var(--clean)"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<style>
+  #clean .clean-assure {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+  }
+  #clean .clean-assure svg { flex: none; }
+
+  /* ---------- Scene ---------- */
+  #clean .clean-scene {
+    position: relative;
+    width: 100%;
+    max-width: 560px;
+    margin-inline: auto;
+  }
+
+  #clean .clean-particles {
+    position: absolute;
+    inset: -70px -16px 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 3;
+  }
+  #clean .clean-particle {
+    position: absolute;
+    display: block;
+    border-radius: var(--radius-full);
+    background: rgba(var(--clean-rgb), 0.55);
+    box-shadow: 0 0 6px rgba(var(--clean-rgb), 0.35);
+    animation: clean-float-up var(--dur, 1.4s) ease-out forwards;
+  }
+  @keyframes clean-float-up {
+    0%   { transform: translate(0, 0) scale(1); opacity: 0.9; }
+    100% { transform: translate(var(--dx, 0px), -92px) scale(0.35); opacity: 0; }
+  }
+
+  /* ---------- Window ---------- */
+  #clean .clean-window {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 448px;
+    border-radius: 20px;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(243, 248, 255, 0.92), rgba(255, 255, 255, 0.9));
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    box-shadow: var(--shadow-xl), 0 32px 80px -32px rgba(var(--clean-rgb), 0.28);
+    z-index: 1;
+  }
+
+  #clean .clean-titlebar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: none;
+    height: 42px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(2, 6, 23, 0.06);
+  }
+  #clean .clean-dots { display: flex; gap: 6px; }
+  #clean .clean-dots i {
+    width: 10px;
+    height: 10px;
+    border-radius: var(--radius-full);
+    background: #FF5F57;
+  }
+  #clean .clean-dots i:nth-child(2) { background: #FEBC2E; }
+  #clean .clean-dots i:nth-child(3) { background: #28C840; }
+  #clean .clean-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--heading);
+    letter-spacing: -0.01em;
+  }
+  #clean .clean-status {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: var(--radius-full);
+    background: rgba(2, 6, 23, 0.05);
+    color: var(--text-tertiary);
+    transition: background var(--dur-normal) var(--ease-smooth), color var(--dur-normal) var(--ease-smooth);
+  }
+  #clean .clean-status[data-mode="scan"] { background: rgba(var(--clean-rgb), 0.1); color: var(--clean); }
+  #clean .clean-status[data-mode="clean"] { background: rgba(var(--clean-rgb), 0.1); color: var(--clean); }
+  #clean .clean-status[data-mode="done"] { background: rgba(var(--success-rgb), 0.12); color: var(--success); }
+
+  #clean .clean-body {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ---------- Category list ---------- */
+  #clean .clean-listwrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 12px 14px 6px;
+  }
+  #clean .clean-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 100%;
+  }
+  #clean .clean-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: var(--radius-md);
+    background: rgba(var(--clean-rgb), 0.045);
+    border: 1px solid rgba(var(--clean-rgb), 0.06);
+    opacity: 0;
+    transform: translateX(-14px);
+    transition:
+      opacity 0.45s var(--ease-out-quint),
+      transform 0.45s var(--ease-out-quint),
+      filter 0.45s var(--ease-smooth);
+  }
+  #clean .clean-item.visible { opacity: 1; transform: translateX(0); }
+  #clean .clean-item.cleaned { opacity: 0.42; filter: saturate(0.4); }
+
+  #clean .clean-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    border: 1.5px solid rgba(var(--clean-rgb), 0.35);
+    background: rgba(255, 255, 255, 0.8);
+    transition: background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth);
+  }
+  #clean .clean-check svg { width: 10px; height: 10px; }
+  #clean .clean-check svg path {
+    stroke-dasharray: 12;
+    stroke-dashoffset: 12;
+    transition: stroke-dashoffset 0.28s var(--ease-out-expo) 0.06s;
+  }
+  #clean .clean-item.checked .clean-check {
+    background: var(--clean);
+    border-color: var(--clean);
+  }
+  #clean .clean-item.checked .clean-check svg path { stroke-dashoffset: 0; }
+
+  #clean .clean-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: rgba(var(--clean-rgb), 0.1);
+    color: var(--clean);
+  }
+  #clean .clean-ico svg { width: 13px; height: 13px; }
+
+  #clean .clean-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #clean .clean-size {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    transition: color var(--dur-normal) var(--ease-smooth);
+  }
+  #clean .clean-item.cleaned .clean-size {
+    text-decoration: line-through;
+    color: var(--text-tertiary);
+  }
+
+  /* ---------- Scan shimmer ---------- */
+  #clean .clean-scanline {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    top: 8px;
+    height: 2px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, transparent, rgba(var(--clean-rgb), 0.7), transparent);
+    box-shadow: 0 0 14px rgba(var(--clean-rgb), 0.5);
+    opacity: 0;
+    pointer-events: none;
+  }
+  #clean .clean-window.scanning .clean-scanline {
+    opacity: 1;
+    animation: clean-scan-sweep 1.35s linear infinite;
+  }
+  @keyframes clean-scan-sweep {
+    from { transform: translateY(0); }
+    to   { transform: translateY(292px); }
+  }
+
+  /* ---------- Footer ---------- */
+  #clean .clean-footer {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: none;
+    padding: 12px 16px 14px;
+    border-top: 1px solid rgba(2, 6, 23, 0.06);
+  }
+  #clean .clean-footer-left { flex: 1; min-width: 0; }
+  #clean .clean-found {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #clean .clean-found b {
+    font-weight: 800;
+    color: var(--heading);
+    font-variant-numeric: tabular-nums;
+  }
+  #clean .clean-progress {
+    display: block;
+    height: 4px;
+    margin-top: 7px;
+    border-radius: var(--radius-full);
+    background: rgba(2, 6, 23, 0.07);
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity var(--dur-normal) var(--ease-smooth);
+  }
+  #clean .clean-progress i {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(var(--clean-rgb), 0.8), var(--clean));
+    transition: width 2.5s var(--ease-smooth);
+  }
+  #clean .clean-window.cleaning .clean-progress { opacity: 1; }
+  #clean .clean-window.cleaning .clean-progress i { width: 100%; }
+
+  #clean .clean-btn {
+    flex: none;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #fff;
+    background: var(--clean);
+    padding: 7px 18px;
+    border-radius: var(--radius-full);
+    box-shadow: 0 4px 12px -3px rgba(var(--clean-rgb), 0.5);
+    opacity: 0.55;
+    transition: opacity var(--dur-normal) var(--ease-smooth), transform var(--dur-fast) var(--ease-smooth);
+  }
+  #clean .clean-window.cleaning .clean-btn,
+  #clean .clean-window.done .clean-btn { opacity: 1; }
+  #clean .clean-window.cleaning .clean-btn { transform: scale(0.96); }
+
+  /* ---------- Result ---------- */
+  #clean .clean-result {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    text-align: center;
+    padding: 24px;
+    background:
+      radial-gradient(60% 45% at 50% 28%, rgba(var(--success-rgb), 0.08), transparent 70%),
+      rgba(255, 255, 255, 0.88);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.45s var(--ease-smooth);
+  }
+  #clean .clean-window.done .clean-result { opacity: 1; }
+
+  #clean .clean-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 12px;
+    border-radius: var(--radius-full);
+    background: var(--success);
+    box-shadow: 0 10px 28px -8px rgba(var(--success-rgb), 0.6), 0 0 0 8px rgba(var(--success-rgb), 0.1);
+    transform: scale(0.2);
+    opacity: 0;
+    transition:
+      transform 0.7s var(--ease-spring) 0.15s,
+      opacity 0.25s var(--ease-smooth) 0.15s;
+  }
+  #clean .clean-badge svg { width: 26px; height: 26px; }
+  #clean .clean-badge svg path {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+    transition: stroke-dashoffset 0.4s var(--ease-out-expo) 0.5s;
+  }
+  #clean .clean-window.done .clean-badge { transform: scale(1); opacity: 1; }
+  #clean .clean-window.done .clean-badge svg path { stroke-dashoffset: 0; }
+
+  #clean .clean-total {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  #clean .clean-total-num {
+    font-size: 46px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    color: var(--heading);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  #clean .clean-total-unit {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--clean);
+  }
+  #clean .clean-total-label {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  /* ---------- Reset and static states ---------- */
+  #clean .clean-window.resetting .clean-item,
+  #clean .clean-window.resetting .clean-check,
+  #clean .clean-window.resetting .clean-check svg path,
+  #clean .clean-window.resetting .clean-progress i { transition: none; }
+  #clean .clean-window.resetting .clean-result { opacity: 0; }
+
+  #clean .clean-window.static .clean-item,
+  #clean .clean-window.static .clean-check,
+  #clean .clean-window.static .clean-check svg path,
+  #clean .clean-window.static .clean-progress,
+  #clean .clean-window.static .clean-progress i,
+  #clean .clean-window.static .clean-result,
+  #clean .clean-window.static .clean-badge,
+  #clean .clean-window.static .clean-badge svg path,
+  #clean .clean-window.static .clean-btn { transition: none; }
+
+  /* ---------- Ambient sparkle ---------- */
+  #clean .clean-sparkle {
+    position: absolute;
+    top: -13px;
+    right: 26px;
+    z-index: 4;
+    filter: drop-shadow(0 3px 8px rgba(var(--clean-rgb), 0.45));
+    animation: clean-sparkle-bob 2.5s ease-in-out infinite;
+  }
+  @keyframes clean-sparkle-bob {
+    0%, 100% { transform: translateY(0) scale(1); opacity: 0.92; }
+    50%      { transform: translateY(-9px) scale(1.1); opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #clean .clean-sparkle { animation: none; }
+    #clean .clean-window.scanning .clean-scanline { animation: none; opacity: 0; }
+  }
+
+  /* ---------- Mobile ---------- */
+  @media (max-width: 600px) {
+    #clean .clean-window { height: 408px; }
+    #clean .clean-item { min-height: 40px; padding: 0 10px; gap: 8px; }
+    #clean .clean-total-num { font-size: 38px; }
+    #clean .clean-sparkle { right: 10px; width: 22px; height: 22px; }
+    @keyframes clean-scan-sweep {
+      from { transform: translateY(0); }
+      to   { transform: translateY(252px); }
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    var root = document.getElementById("clean");
+    if (!root) return;
+
+    var scene = root.querySelector(".clean-scene");
+    var win = root.querySelector(".clean-window");
+    var rows = Array.prototype.slice.call(root.querySelectorAll(".clean-item"));
+    var status = root.querySelector(".clean-status");
+    var found = root.querySelector(".clean-found");
+    var num = root.querySelector(".clean-total-num");
+    var particles = root.querySelector(".clean-particles");
+    if (!scene || !win || !status || !found || !num || !particles || rows.length === 0) return;
+
+    var m = window.moleui || {};
+    var SIZES = [4.2, 3.1, 1.8, 2.6, 1.1];
+    var TOTAL = 12.8;
+    var timers = [];
+    var started = false;
+
+    function after(ms, fn) { timers.push(setTimeout(fn, ms)); }
+    function clearTimers() {
+      for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]);
+      timers = [];
+    }
+    function setStatus(text, mode) {
+      status.textContent = text;
+      status.setAttribute("data-mode", mode);
+    }
+    function setFound(gb) {
+      found.innerHTML = "Found <b>" + gb.toFixed(1) + " GB</b> of junk";
+    }
+
+    function spawnParticles(row) {
+      var pr = particles.getBoundingClientRect();
+      var rr = row.getBoundingClientRect();
+      if (!pr.width || !rr.width) return;
+      for (var i = 0; i < 5; i++) {
+        var d = document.createElement("i");
+        d.className = "clean-particle";
+        var size = 3 + Math.random() * 3;
+        d.style.width = size.toFixed(1) + "px";
+        d.style.height = size.toFixed(1) + "px";
+        d.style.left = (rr.left - pr.left + 20 + Math.random() * Math.max(rr.width - 40, 40)) + "px";
+        d.style.top = (rr.top - pr.top + rr.height * 0.5) + "px";
+        d.style.setProperty("--dx", (Math.random() * 34 - 17).toFixed(0) + "px");
+        d.style.setProperty("--dur", (1150 + Math.random() * 750).toFixed(0) + "ms");
+        d.addEventListener("animationend", function () { this.remove(); });
+        particles.appendChild(d);
+      }
+    }
+
+    function renderFinal() {
+      win.classList.add("static", "cleaning", "done");
+      for (var i = 0; i < rows.length; i++) {
+        rows[i].classList.add("visible", "checked", "cleaned");
+      }
+      setStatus("Complete", "done");
+      setFound(TOTAL);
+      num.textContent = TOTAL.toFixed(1);
+    }
+
+    function cycle() {
+      clearTimers();
+      win.classList.remove("resetting");
+      win.classList.add("scanning");
+      setStatus("Scanning", "scan");
+      found.textContent = "Scanning for junk…";
+      num.textContent = "0.0";
+
+      var cum = 0;
+      rows.forEach(function (row, i) {
+        after(300 + i * 380, function () { row.classList.add("visible"); });
+        after(580 + i * 380, function () {
+          row.classList.add("checked");
+          cum += SIZES[i];
+          setFound(cum);
+        });
+      });
+
+      after(2650, function () {
+        win.classList.remove("scanning");
+        win.classList.add("cleaning");
+        setStatus("Cleaning", "clean");
+      });
+
+      rows.forEach(function (row, i) {
+        after(2900 + i * 440, function () {
+          row.classList.add("cleaned");
+          spawnParticles(row);
+        });
+      });
+
+      after(5500, function () {
+        win.classList.add("done");
+        setStatus("Complete", "done");
+        if (typeof m.count === "function") {
+          m.count(num, 0, TOTAL, 1100, function (v) { return v.toFixed(1); });
+        } else {
+          num.textContent = TOTAL.toFixed(1);
+        }
+      });
+
+      after(8100, function () {
+        win.classList.add("resetting");
+        for (var i = 0; i < rows.length; i++) {
+          rows[i].classList.remove("visible", "checked", "cleaned");
+        }
+      });
+
+      after(8600, function () {
+        win.classList.remove("scanning", "cleaning", "done", "resetting");
+        setStatus("Ready", "idle");
+        found.textContent = "Ready to scan";
+      });
+
+      after(9000, cycle);
+    }
+
+    function start() {
+      if (started) return;
+      started = true;
+      cycle();
+    }
+
+    if (m.reduced) {
+      renderFinal();
+      return;
+    }
+
+    if (typeof m.onVisible === "function") {
+      m.onVisible(scene, start, 0.3);
+    } else {
+      start();
+    }
+  })();
+</script>
+
+<section id="optimize" class="feature flip" data-accent="optimize">
+  <div class="feature-inner">
+    <div class="feature-copy" data-io>
+      <span class="eyebrow">Optimize</span>
+      <h2>Faster. Like the day you unboxed it.</h2>
+      <p class="section-sub">Moleui checks the tune-up path first, so you see every optimization before it changes anything. Then it applies only the tweaks you approve, and tracks each pass as it finishes.</p>
+      <div class="rows stagger" data-io>
+        <div class="row">
+          <span class="tile"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h3M11 6h6M3 14h8M16 14h1"/><circle cx="8.5" cy="6" r="2.2"/><circle cx="13.5" cy="14" r="2.2"/></svg></span>
+          <div><b>System tuning</b><span>Tidy login items, launch agents, and background daemons</span></div>
+        </div>
+        <div class="row">
+          <span class="tile"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="10" cy="4.8" rx="6" ry="2.4"/><path d="M4 4.8v10.4c0 1.3 2.7 2.4 6 2.4s6-1.1 6-2.4V4.8"/><path d="M4 10c0 1.3 2.7 2.4 6 2.4s6-1.1 6-2.4"/></svg></span>
+          <div><b>Database repair</b><span>Rebuild and optimize system databases and indexes</span></div>
+        </div>
+        <div class="row">
+          <span class="tile"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="8" height="8" rx="1.6"/><path d="M8 6V3.2M12 6V3.2M8 16.8V14M12 16.8V14M6 8H3.2M6 12H3.2M16.8 8H14M16.8 12H14"/></svg></span>
+          <div><b>Memory management</b><span>Clear inactive memory and improve responsiveness</span></div>
+        </div>
+        <div class="row">
+          <span class="tile"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 0 1 11.2-4.5L16.5 7"/><path d="M16.5 3v4h-4"/><path d="M16.5 10a6.5 6.5 0 0 1-11.2 4.5L3.5 13"/><path d="M3.5 17v-4h4"/></svg></span>
+          <div><b>Cache refresh</b><span>Refresh DNS, Spotlight, and font caches for stability</span></div>
+        </div>
+      </div>
+      <p class="optimize-assure"><svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6.2" width="9" height="5.8" rx="1.6"/><path d="M4.6 6.2V4.6a2.4 2.4 0 0 1 4.8 0v1.6"/></svg> A preview runs before any optimization changes</p>
+    </div>
+
+    <div class="feature-scene optimize-scene" data-io="scale">
+      <div class="optimize-stage" aria-hidden="true">
+        <div class="optimize-glow"></div>
+
+        <div class="optimize-gauge-wrap">
+          <svg class="optimize-gauge" viewBox="0 0 260 192" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="optimize-gauge-grad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#8c3ffc"/>
+                <stop offset="1" stop-color="#fd2d86"/>
+              </linearGradient>
+            </defs>
+
+            <!-- track -->
+            <path class="gauge-track" d="M69.19 170.81 A86 86 0 1 1 190.81 170.81" fill="none" stroke-width="12" stroke-linecap="round"/>
+
+            <!-- ticks -->
+            <g class="gauge-ticks" stroke-linecap="round">
+              <line class="gt-major" x1="130" y1="33" x2="130" y2="44" transform="rotate(-135 130 110)"/>
+              <line class="gt-minor" x1="130" y1="38" x2="130" y2="44" transform="rotate(-112.5 130 110)"/>
+              <line class="gt-major" x1="130" y1="33" x2="130" y2="44" transform="rotate(-90 130 110)"/>
+              <line class="gt-minor" x1="130" y1="38" x2="130" y2="44" transform="rotate(-67.5 130 110)"/>
+              <line class="gt-major" x1="130" y1="33" x2="130" y2="44" transform="rotate(-45 130 110)"/>
+              <line class="gt-minor" x1="130" y1="38" x2="130" y2="44" transform="rotate(-22.5 130 110)"/>
+              <line class="gt-major" x1="130" y1="33" x2="130" y2="44" transform="rotate(0 130 110)"/>
+              <line class="gt-minor" x1="130" y1="38" x2="130" y2="44" transform="rotate(22.5 130 110)"/>
+              <line class="gt-major" x1="130" y1="33" x2="130" y2="44" transform="rotate(45 130 110)"/>
+              <line class="gt-minor" x1="130" y1="38" x2="130" y2="44" transform="rotate(67.5 130 110)"/>
+              <line class="gt-major" x1="130" y1="33" x2="130" y2="44" transform="rotate(90 130 110)"/>
+              <line class="gt-minor" x1="130" y1="38" x2="130" y2="44" transform="rotate(112.5 130 110)"/>
+              <line class="gt-major" x1="130" y1="33" x2="130" y2="44" transform="rotate(135 130 110)"/>
+            </g>
+
+            <!-- progress -->
+            <path class="gauge-progress" d="M69.19 170.81 A86 86 0 1 1 190.81 170.81" fill="none" stroke="url(#optimize-gauge-grad)" stroke-width="12" stroke-linecap="round" pathLength="100" stroke-dasharray="100" stroke-dashoffset="38"/>
+
+            <!-- needle -->
+            <g class="gauge-needle">
+              <path d="M130 47 L134.2 111 L125.8 111 Z"/>
+            </g>
+            <circle class="gauge-hub" cx="130" cy="110" r="7"/>
+            <circle class="gauge-hub-dot" cx="130" cy="110" r="2.4"/>
+          </svg>
+          <div class="gauge-readout">
+            <span class="gauge-num">62</span>
+            <span class="gauge-label">performance</span>
+          </div>
+        </div>
+
+        <div class="tune-card">
+          <div class="tune-head">
+            <span class="tune-title">Tune-up preview</span>
+            <span class="tune-pill">5 approved</span>
+          </div>
+          <div class="tune-rows">
+            <div class="tune-row">
+              <span class="tune-status">
+                <span class="tune-spinner"></span>
+                <svg class="tune-check" viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="9"/><path d="M6 10.4l2.7 2.7L14 7.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="tune-label">Login items reviewed</span>
+            </div>
+            <div class="tune-row">
+              <span class="tune-status">
+                <span class="tune-spinner"></span>
+                <svg class="tune-check" viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="9"/><path d="M6 10.4l2.7 2.7L14 7.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="tune-label">LaunchServices rebuilt</span>
+            </div>
+            <div class="tune-row">
+              <span class="tune-status">
+                <span class="tune-spinner"></span>
+                <svg class="tune-check" viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="9"/><path d="M6 10.4l2.7 2.7L14 7.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="tune-label">DNS cache refreshed</span>
+            </div>
+            <div class="tune-row">
+              <span class="tune-status">
+                <span class="tune-spinner"></span>
+                <svg class="tune-check" viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="9"/><path d="M6 10.4l2.7 2.7L14 7.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="tune-label">Font caches rebuilt</span>
+            </div>
+            <div class="tune-row">
+              <span class="tune-status">
+                <span class="tune-spinner"></span>
+                <svg class="tune-check" viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="9"/><path d="M6 10.4l2.7 2.7L14 7.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="tune-label">Inactive memory cleared</span>
+            </div>
+          </div>
+          <div class="tune-foot">
+            <span class="tune-foot-run">Applying approved tweaks&hellip;</span>
+            <span class="tune-foot-done"><svg viewBox="0 0 20 20" width="13" height="13"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M6 10.4l2.7 2.7L14 7.6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> Tune-up complete</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* ---------- copy side ---------- */
+  #optimize .optimize-assure {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+  }
+  #optimize .optimize-assure svg {
+    flex: 0 0 auto;
+    opacity: .85;
+  }
+
+  /* ---------- scene stage ---------- */
+  #optimize .optimize-scene {
+    width: 100%;
+  }
+  #optimize .optimize-stage {
+    --optimize-hairline: rgba(2, 6, 23, .06);
+    position: relative;
+    width: 100%;
+    max-width: 560px;
+    margin-inline: auto;
+    padding: 24px 26px 22px;
+    border-radius: var(--radius-3xl);
+    border: 1px solid rgba(var(--fa-rgb), .14);
+    background:
+      radial-gradient(120% 100% at 18% 0%, rgba(var(--fa-rgb), .16), transparent 55%),
+      radial-gradient(95% 85% at 92% 100%, rgba(253, 45, 134, .10), transparent 58%),
+      linear-gradient(180deg, rgba(var(--fa-rgb), .07), rgba(var(--fa-rgb), .03));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  /* breathing glow behind the gauge (the Optimize pulse-glow signature) */
+  #optimize .optimize-glow {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 250px;
+    height: 250px;
+    margin-left: -125px;
+    border-radius: var(--radius-full);
+    background: radial-gradient(circle, rgba(var(--fa-rgb), .30) 0%, rgba(var(--fa-rgb), .12) 42%, transparent 68%);
+    filter: blur(18px);
+    pointer-events: none;
+    animation: optimize-breathe 2s ease-in-out infinite;
+  }
+
+  /* ---------- gauge ---------- */
+  #optimize .optimize-gauge-wrap {
+    position: relative;
+    width: 224px;
+    margin-bottom: -8px;
+    z-index: 1;
+  }
+  #optimize .optimize-gauge {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    filter: drop-shadow(0 10px 26px rgba(var(--fa-rgb), .28));
+  }
+  #optimize .gauge-track {
+    stroke: rgba(var(--fa-rgb), .13);
+  }
+  #optimize .gauge-ticks .gt-minor {
+    stroke: rgba(2, 6, 23, .14);
+    stroke-width: 2;
+  }
+  #optimize .gauge-ticks .gt-major {
+    stroke: rgba(2, 6, 23, .28);
+    stroke-width: 2.5;
+  }
+  #optimize .gauge-progress {
+    transition: stroke-dashoffset .85s var(--ease-out-quint);
+  }
+  #optimize .gauge-needle {
+    transform-box: view-box;
+    transform-origin: 50% 57.3%; /* (130,110) in a 260x192 viewBox */
+    transform: rotate(32.4deg);  /* score 62 */
+    transition: transform .85s var(--ease-spring);
+  }
+  #optimize .gauge-needle path {
+    fill: #020617;
+  }
+  #optimize .gauge-hub {
+    fill: #ffffff;
+    stroke: #020617;
+    stroke-width: 2.5;
+  }
+  #optimize .gauge-hub-dot {
+    fill: #020617;
+  }
+  #optimize .gauge-readout {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    pointer-events: none;
+  }
+  #optimize .gauge-num {
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    color: #020617;
+    font-variant-numeric: tabular-nums;
+  }
+  #optimize .gauge-label {
+    margin-top: 5px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  #optimize .optimize-scene.is-done .gauge-num {
+    background: linear-gradient(90deg, #8c3ffc, #fd2d86);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* ---------- tune-up preview card ---------- */
+  #optimize .tune-card {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 380px;
+    margin-top: 14px;
+    padding: 14px 16px 10px;
+    border-radius: var(--radius-xl);
+    background: rgba(255, 255, 255, .9);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, .75);
+    box-shadow: var(--shadow-xl);
+  }
+  #optimize .tune-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  #optimize .tune-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #020617;
+  }
+  #optimize .tune-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--fa);
+    background: rgba(var(--fa-rgb), .12);
+    border: 1px solid rgba(var(--fa-rgb), .18);
+    padding: 2.5px 9px;
+    border-radius: var(--radius-full);
+  }
+  #optimize .tune-rows {
+    display: flex;
+    flex-direction: column;
+  }
+  #optimize .tune-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+    opacity: .68;
+    transition: opacity var(--dur-normal) var(--ease-smooth);
+  }
+  #optimize .tune-row.done {
+    opacity: 1;
+  }
+  #optimize .tune-row + .tune-row {
+    border-top: 1px solid var(--optimize-hairline);
+  }
+  #optimize .tune-status {
+    position: relative;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+  }
+  #optimize .tune-spinner {
+    position: absolute;
+    inset: 1px;
+    border-radius: var(--radius-full);
+    border: 2px solid rgba(var(--fa-rgb), .18);
+    border-top-color: var(--fa);
+    animation: optimize-spin 1s linear infinite;
+    transition: opacity var(--dur-fast) var(--ease-smooth);
+  }
+  #optimize .tune-row.done .tune-spinner {
+    opacity: 0;
+  }
+  #optimize .tune-check {
+    position: absolute;
+    inset: 0;
+    transform: scale(0);
+    transition: transform .5s var(--ease-spring);
+  }
+  #optimize .tune-check circle {
+    fill: var(--success);
+  }
+  #optimize .tune-row.done .tune-check {
+    transform: scale(1);
+  }
+  #optimize .tune-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  #optimize .tune-foot {
+    position: relative;
+    height: 20px;
+    margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px solid var(--optimize-hairline);
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  #optimize .tune-foot > span {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 7px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: opacity .35s var(--ease-smooth), transform .35s var(--ease-smooth);
+  }
+  #optimize .tune-foot-run {
+    color: var(--text-tertiary);
+  }
+  #optimize .tune-foot-done {
+    color: var(--success);
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  #optimize .optimize-scene.is-done .tune-foot-run {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  #optimize .optimize-scene.is-done .tune-foot-done {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* snap-reset helper: kill transitions only, spinners keep spinning */
+  #optimize .optimize-scene.no-anim,
+  #optimize .optimize-scene.no-anim * {
+    transition: none !important;
+  }
+
+  /* ---------- keyframes (globally namespaced) ---------- */
+  @keyframes optimize-breathe {
+    0%, 100% { opacity: .55; transform: scale(.94); }
+    50%      { opacity: 1;   transform: scale(1.06); }
+  }
+  @keyframes optimize-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 640px) {
+    #optimize .optimize-stage {
+      padding: 20px 16px 18px;
+    }
+    #optimize .optimize-gauge-wrap {
+      width: 196px;
+    }
+    #optimize .gauge-num {
+      font-size: 28px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #optimize .optimize-scene,
+    #optimize .optimize-scene *,
+    #optimize .optimize-scene *::before,
+    #optimize .optimize-scene *::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    var root = document.getElementById('optimize');
+    if (!root) return;
+
+    var scene = root.querySelector('.optimize-scene');
+    var needle = root.querySelector('.gauge-needle');
+    var arc = root.querySelector('.gauge-progress');
+    var num = root.querySelector('.gauge-num');
+    var rows = Array.prototype.slice.call(root.querySelectorAll('.tune-row'));
+    if (!scene || !needle || !arc || !num || !rows.length) return;
+
+    var mole = window.moleui || {};
+    var START = 62;
+    var FINAL = 98;
+    var steps = [70, 78, 85, 92, 98]; /* one bump per completed task */
+    var timers = [];
+
+    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+    function clearAll() {
+      for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]);
+      timers = [];
+    }
+
+    function angleFor(score) { return -135 + 270 * (score / 100); }
+
+    function setScore(score) {
+      needle.style.transform = 'rotate(' + angleFor(score) + 'deg)';
+      arc.style.strokeDashoffset = String(100 - score);
+    }
+
+    function countTo(from, to, dur) {
+      if (typeof mole.count === 'function') mole.count(num, from, to, dur);
+      else num.textContent = String(to);
+    }
+
+    function renderComplete() {
+      setScore(FINAL);
+      num.textContent = String(FINAL);
+      for (var i = 0; i < rows.length; i++) rows[i].classList.add('done');
+      scene.classList.add('is-done');
+    }
+
+    /* reduced motion: completed state, statically, no loop */
+    if (mole.reduced) {
+      renderComplete();
+      return;
+    }
+
+    var current = START;
+
+    function resetAndRun() {
+      clearAll();
+      scene.classList.add('no-anim');
+      scene.classList.remove('is-done');
+      for (var i = 0; i < rows.length; i++) rows[i].classList.remove('done');
+      current = START;
+      setScore(START);
+      num.textContent = String(START);
+      void scene.offsetWidth; /* flush so the snap back is not transitioned */
+      later(function () {
+        scene.classList.remove('no-anim');
+        run();
+      }, 80);
+    }
+
+    function run() {
+      rows.forEach(function (row, i) {
+        later(function () {
+          row.classList.add('done');
+          var next = steps[i];
+          countTo(current, next, 520);
+          setScore(next);
+          current = next;
+          if (i === rows.length - 1) {
+            later(function () { scene.classList.add('is-done'); }, 400);
+            later(resetAndRun, 3100); /* hold the complete state ~2.5s+ */
+          }
+        }, 650 + i * 700);
+      });
+    }
+
+    var started = false;
+    function start() {
+      if (started) return;
+      started = true;
+      resetAndRun();
+    }
+
+    if (typeof mole.onVisible === 'function') mole.onVisible(scene, start, 0.3);
+    else start();
+  })();
+</script>
+
+<section id="uninstall" class="feature" data-accent="uninstall">
+  <div class="feature-inner">
+    <div class="feature-copy" data-io>
+      <span class="eyebrow">Uninstall</span>
+      <h2>Delete the app. And everything it left behind.</h2>
+      <p class="section-sub">Dragging an app to the Trash leaves preferences, caches, launch agents, and logs scattered across your disk. Moleui finds every leftover, shows you the full list, and removes it all only after you confirm.</p>
+      <div class="rows stagger" data-io>
+        <div class="row">
+          <span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+          <div><b>Deep scan</b><span>Find all app-related files and folders</span></div>
+        </div>
+        <div class="row">
+          <span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1.1 14a2 2 0 0 1-2 1.8H8.1a2 2 0 0 1-2-1.8L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></span>
+          <div><b>Complete removal</b><span>Delete apps with all preferences, caches, and logs</span></div>
+        </div>
+        <div class="row">
+          <span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9.2 11.6l2 2 3.6-3.7"/></svg></span>
+          <div><b>Safe uninstall</b><span>Protected system files remain untouched</span></div>
+        </div>
+      </div>
+      <p class="uninstall-assure"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg> Nothing will be removed without your permission</p>
+    </div>
+
+    <div class="feature-scene uninstall-scene" data-io="scale">
+      <div class="u-panel glass-elevated" aria-hidden="true">
+        <div class="u-bar"><i></i><i></i><i></i><span>Moleui Uninstall</span></div>
+        <div class="u-stage">
+          <div class="u-halo u-halo-red"></div>
+          <div class="u-halo u-halo-green"></div>
+          <div class="u-path"></div>
+
+          <svg class="u-ring" viewBox="0 0 240 240">
+            <circle class="u-ring-track" cx="120" cy="120" r="112"/>
+            <circle class="u-ring-fg" cx="120" cy="120" r="112"/>
+          </svg>
+
+          <div class="u-orbit">
+            <div class="u-spoke" style="--a: 0deg"><div class="u-unspin"><div class="u-hold">
+              <div class="u-chip">
+                <span class="u-chip-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h4.5"/></svg></span>
+                <span class="u-chip-tx"><b>Preferences.plist</b><i>82 KB</i></span>
+              </div>
+            </div></div></div>
+            <div class="u-spoke" style="--a: 72deg"><div class="u-unspin"><div class="u-hold">
+              <div class="u-chip">
+                <span class="u-chip-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A1.5 1.5 0 0 1 5 5h4l2 2.5h8A1.5 1.5 0 0 1 20.5 9v9a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18z"/></svg></span>
+                <span class="u-chip-tx"><b>Caches</b><i>412 MB</i></span>
+              </div>
+            </div></div></div>
+            <div class="u-spoke" style="--a: 144deg"><div class="u-unspin"><div class="u-hold">
+              <div class="u-chip">
+                <span class="u-chip-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/></svg></span>
+                <span class="u-chip-tx"><b>LaunchAgent</b><i>4 KB</i></span>
+              </div>
+            </div></div></div>
+            <div class="u-spoke" style="--a: 216deg"><div class="u-unspin"><div class="u-hold">
+              <div class="u-chip">
+                <span class="u-chip-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h4.5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg></span>
+                <span class="u-chip-tx"><b>Logs</b><i>96 MB</i></span>
+              </div>
+            </div></div></div>
+            <div class="u-spoke" style="--a: 288deg"><div class="u-unspin"><div class="u-hold">
+              <div class="u-chip">
+                <span class="u-chip-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A1.5 1.5 0 0 1 5 5h4l2 2.5h8A1.5 1.5 0 0 1 20.5 9v9a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 11h17"/></svg></span>
+                <span class="u-chip-tx"><b>App Support</b><i>240 MB</i></span>
+              </div>
+            </div></div></div>
+          </div>
+
+          <div class="u-orb">
+            <div class="u-orb-tint"></div>
+            <div class="u-app">
+              <svg class="u-app-icon" width="56" height="56" viewBox="0 0 56 56">
+                <defs>
+                  <linearGradient id="uninstall-appg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#aeb9cc"/>
+                    <stop offset="1" stop-color="#7e8ba3"/>
+                  </linearGradient>
+                </defs>
+                <rect x="2" y="2" width="52" height="52" rx="13" fill="url(#uninstall-appg)"/>
+                <rect x="2.5" y="2.5" width="51" height="51" rx="12.5" fill="none" stroke="rgba(255,255,255,.4)"/>
+                <circle cx="28" cy="24" r="9" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3"/>
+                <path d="M18 41h20" stroke="rgba(255,255,255,.65)" stroke-width="3" stroke-linecap="round"/>
+              </svg>
+              <span class="u-app-name">OldApp.app</span>
+              <span class="u-app-size">1.2 GB</span>
+            </div>
+            <div class="u-done">
+              <span class="u-check"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg></span>
+              <b>Removed completely</b>
+              <span class="u-done-sub">Everything went to the Trash, recoverable</span>
+              <span class="u-freed">1.9 GB freed</span>
+            </div>
+          </div>
+
+          <div class="u-status"><span class="u-dot"></span><span class="u-status-text">Scanning for leftovers</span></div>
+          <div class="u-dust"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  #uninstall {
+    --u-orb: 200px;
+    --u-orbit-r: 168px;
+    --u-panel-h: 470px;
+    --u-halo-d: calc(var(--u-orb) + 120px);
+  }
+
+  /* ---- scene frame ---- */
+  #uninstall .uninstall-scene { display: flex; justify-content: center; width: 100%; }
+  #uninstall .u-panel {
+    position: relative;
+    width: 100%;
+    max-width: 560px;
+    height: var(--u-panel-h);
+    border-radius: var(--radius-3xl);
+    box-shadow: var(--shadow-xl);
+    overflow: hidden;
+  }
+  #uninstall .u-bar {
+    position: absolute; top: 0; left: 0; right: 0; height: 38px;
+    display: flex; align-items: center; gap: 7px; padding: 0 16px;
+    border-bottom: 1px solid rgba(2, 6, 23, .06);
+    z-index: 7;
+  }
+  #uninstall .u-bar i { width: 9px; height: 9px; border-radius: 50%; }
+  #uninstall .u-bar i:nth-child(1) { background: #fc5f57; }
+  #uninstall .u-bar i:nth-child(2) { background: #febc2e; }
+  #uninstall .u-bar i:nth-child(3) { background: #28c840; }
+  #uninstall .u-bar span { margin-left: 8px; font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+
+  #uninstall .u-stage {
+    position: absolute; top: 38px; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center;
+    background-image:
+      radial-gradient(circle at 50% 46%, rgba(var(--fa-rgb), .05), rgba(var(--fa-rgb), 0) 62%),
+      radial-gradient(rgba(2, 6, 23, .04) 1px, rgba(2, 6, 23, 0) 1.3px);
+    background-size: auto, 22px 22px;
+    transition: opacity .36s var(--ease-smooth);
+  }
+  #uninstall .u-stage.is-fading { opacity: 0; }
+
+  /* ---- halo ---- */
+  #uninstall .u-halo {
+    position: absolute; left: 50%; top: 50%;
+    width: var(--u-halo-d); height: var(--u-halo-d);
+    margin-left: calc(var(--u-halo-d) / -2); margin-top: calc(var(--u-halo-d) / -2);
+    border-radius: 50%; z-index: 0; filter: blur(6px);
+    transition: opacity .8s var(--ease-smooth);
+    animation: uninstall-breathe 3.4s ease-in-out infinite;
+  }
+  #uninstall .u-halo-red { background: radial-gradient(circle, rgba(var(--fa-rgb), .30) 0%, rgba(var(--fa-rgb), .12) 42%, rgba(var(--fa-rgb), 0) 68%); }
+  #uninstall .u-halo-green { background: radial-gradient(circle, rgba(var(--success-rgb), .30) 0%, rgba(var(--success-rgb), .12) 42%, rgba(var(--success-rgb), 0) 68%); opacity: 0; }
+  #uninstall .is-done .u-halo-red { opacity: 0; }
+  #uninstall .is-done .u-halo-green { opacity: 1; }
+  @keyframes uninstall-breathe {
+    0%, 100% { transform: scale(.96); }
+    50% { transform: scale(1.06); }
+  }
+
+  /* ---- orbit path guide ---- */
+  #uninstall .u-path {
+    position: absolute; left: 50%; top: 50%;
+    width: calc(var(--u-orbit-r) * 2); height: calc(var(--u-orbit-r) * 2);
+    margin-left: calc(var(--u-orbit-r) * -1); margin-top: calc(var(--u-orbit-r) * -1);
+    border-radius: 50%;
+    border: 1.5px dashed rgba(var(--fa-rgb), .16);
+    z-index: 1;
+    transition: border-color .8s var(--ease-smooth);
+  }
+  #uninstall .is-done .u-path { border-color: rgba(var(--success-rgb), .2); }
+
+  /* ---- scan ring ---- */
+  #uninstall .u-ring {
+    position: absolute; left: 50%; top: 50%;
+    width: calc(var(--u-orb) + 28px); height: calc(var(--u-orb) + 28px);
+    margin-left: calc((var(--u-orb) + 28px) / -2); margin-top: calc((var(--u-orb) + 28px) / -2);
+    transform: rotate(-90deg);
+    z-index: 2;
+    transition: opacity .45s var(--ease-smooth);
+  }
+  #uninstall .is-removing .u-ring { opacity: 0; }
+  #uninstall .u-ring-track { fill: none; stroke: rgba(var(--fa-rgb), .12); stroke-width: 3; }
+  #uninstall .u-ring-fg {
+    fill: none; stroke: rgba(var(--fa-rgb), .75); stroke-width: 3; stroke-linecap: round;
+    stroke-dasharray: 704; stroke-dashoffset: 704;
+    transition: stroke-dashoffset 2.9s var(--ease-smooth);
+  }
+
+  /* ---- orbiting chips ---- */
+  #uninstall .u-orbit {
+    position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+    z-index: 4;
+    animation: uninstall-orbit 18s linear infinite;
+    will-change: transform;
+  }
+  @keyframes uninstall-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes uninstall-unspin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+  #uninstall .u-spoke {
+    position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+    transform: rotate(var(--a)) translateY(calc(var(--u-orbit-r) * -1)) rotate(calc(var(--a) * -1));
+  }
+  #uninstall .u-unspin {
+    transform-origin: 0 0;
+    animation: uninstall-unspin 18s linear infinite;
+    will-change: transform;
+  }
+  #uninstall .u-hold { transform: translate(-50%, -50%); }
+  #uninstall .u-chip {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px 7px 8px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .78);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, .65);
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    transform: scale(.35);
+    transition: transform .6s var(--ease-spring), opacity .3s var(--ease-smooth);
+  }
+  #uninstall .u-chip.is-in { opacity: 1; transform: scale(1); }
+  #uninstall .u-chip.is-out { animation: uninstall-chipout .7s var(--ease-smooth) forwards; }
+  @keyframes uninstall-chipout {
+    0%   { opacity: 1; filter: blur(0); transform: translate(0, 0) scale(1); }
+    10%  { transform: translate(-2px, 1px) scale(1); }
+    20%  { transform: translate(2px, -1px) scale(1); }
+    30%  { transform: translate(-2px, 0) scale(1); }
+    42%  { opacity: 1; transform: translate(2px, 1px) scale(1); }
+    100% { opacity: 0; filter: blur(5px); transform: translate(0, -14px) scale(.86); }
+  }
+  #uninstall .u-chip-ic {
+    flex-shrink: 0;
+    width: 22px; height: 22px; border-radius: 7px;
+    background: rgba(var(--fa-rgb), .1); color: var(--fa);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #uninstall .u-chip-tx { display: flex; flex-direction: column; line-height: 1.2; }
+  #uninstall .u-chip-tx b { font-size: 11px; font-weight: 700; color: var(--heading); white-space: nowrap; }
+  #uninstall .u-chip-tx i { font-style: normal; font-size: 10px; font-weight: 600; color: var(--text-tertiary); white-space: nowrap; }
+
+  /* ---- orb ---- */
+  #uninstall .u-orb {
+    position: relative; z-index: 3;
+    width: var(--u-orb); height: var(--u-orb);
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, .5);
+    background:
+      radial-gradient(circle at 32% 26%, rgba(255, 255, 255, .95), rgba(255, 255, 255, .4) 34%, rgba(255, 255, 255, .12) 62%),
+      radial-gradient(circle at 68% 82%, rgba(var(--fa-rgb), .10), rgba(var(--fa-rgb), 0) 55%),
+      radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .5), rgba(255, 255, 255, .24));
+    box-shadow:
+      inset 0 1px 10px rgba(255, 255, 255, .9),
+      inset 0 -14px 28px rgba(var(--fa-rgb), .10),
+      inset 0 0 0 1px rgba(255, 255, 255, .25),
+      0 24px 48px -18px rgba(var(--fa-rgb), .35);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #uninstall .u-orb::before {
+    content: ""; position: absolute; inset: 5px; border-radius: 50%;
+    border: 1.5px solid transparent; border-top-color: rgba(255, 255, 255, .85);
+    transform: rotate(-24deg);
+  }
+  #uninstall .u-orb::after {
+    content: ""; position: absolute; inset: 10px; border-radius: 50%;
+    border: 1px solid transparent; border-bottom-color: rgba(255, 255, 255, .4);
+    transform: rotate(14deg);
+  }
+  #uninstall .u-orb-tint {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .7), rgba(var(--success-rgb), .10) 55%, rgba(var(--success-rgb), .16));
+    opacity: 0;
+    transition: opacity .7s var(--ease-smooth);
+  }
+  #uninstall .is-done .u-orb-tint { opacity: 1; }
+
+  /* ---- app inside orb ---- */
+  #uninstall .u-app {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+  #uninstall .u-app-icon { filter: drop-shadow(0 8px 14px rgba(2, 6, 23, .18)); margin-bottom: 5px; }
+  #uninstall .u-app-name { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: var(--heading); }
+  #uninstall .u-app-size { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+  #uninstall .u-app.is-erased {
+    -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 42%, #000 58%, #000 100%);
+    -webkit-mask-size: 250% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-image: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 42%, #000 58%, #000 100%);
+    mask-size: 250% 100%;
+    mask-repeat: no-repeat;
+    animation: uninstall-appwipe .85s var(--ease-smooth) forwards;
+  }
+  @keyframes uninstall-appwipe {
+    from { -webkit-mask-position: 100% 0; mask-position: 100% 0; opacity: 1; filter: blur(0); }
+    to   { -webkit-mask-position: 0% 0;   mask-position: 0% 0;   opacity: 0; filter: blur(6px); }
+  }
+
+  /* ---- done state ---- */
+  #uninstall .u-done {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 7px; padding: 0 20px; text-align: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity .45s var(--ease-smooth) .1s;
+  }
+  #uninstall .is-done .u-done { opacity: 1; }
+  #uninstall .u-check {
+    width: 46px; height: 46px; border-radius: 50%;
+    background: rgba(var(--success-rgb), .14);
+    border: 1px solid rgba(var(--success-rgb), .3);
+    color: var(--success);
+    display: flex; align-items: center; justify-content: center;
+    transform: scale(.3);
+    transition: transform .7s var(--ease-spring) .18s;
+  }
+  #uninstall .is-done .u-check { transform: scale(1); }
+  #uninstall .u-done b {
+    font-size: 14px; font-weight: 800; letter-spacing: -0.01em; color: var(--heading);
+    transform: translateY(8px); opacity: 0;
+    transition: transform .5s var(--ease-out-expo) .3s, opacity .5s var(--ease-out-expo) .3s;
+  }
+  #uninstall .u-done-sub {
+    font-size: 11px; line-height: 1.4; color: var(--text-tertiary); max-width: 150px;
+    transform: translateY(8px); opacity: 0;
+    transition: transform .5s var(--ease-out-expo) .4s, opacity .5s var(--ease-out-expo) .4s;
+  }
+  #uninstall .u-freed {
+    margin-top: 3px; font-size: 11px; font-weight: 700; color: var(--success);
+    background: rgba(var(--success-rgb), .12);
+    padding: 4px 11px; border-radius: var(--radius-full);
+    transform: translateY(8px); opacity: 0;
+    transition: transform .5s var(--ease-out-expo) .5s, opacity .5s var(--ease-out-expo) .5s;
+  }
+  #uninstall .is-done .u-done b,
+  #uninstall .is-done .u-done-sub,
+  #uninstall .is-done .u-freed { transform: translateY(0); opacity: 1; }
+
+  /* ---- status pill ---- */
+  #uninstall .u-status {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 13px; border-radius: var(--radius-full);
+    background: var(--surface-elevated);
+    border: 1px solid rgba(255, 255, 255, .6);
+    box-shadow: var(--shadow-sm);
+    font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+    white-space: nowrap; z-index: 5;
+    transition: opacity var(--dur-normal) var(--ease-smooth);
+  }
+  #uninstall .is-done .u-status { opacity: 0; }
+  #uninstall .u-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--fa);
+    animation: uninstall-pulse 1.3s ease-in-out infinite;
+  }
+  @keyframes uninstall-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(.65); opacity: .55; }
+  }
+
+  /* ---- dust motes ---- */
+  #uninstall .u-dust { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+  #uninstall .u-mote {
+    position: absolute; width: 4px; height: 4px; border-radius: 50%;
+    opacity: 0;
+    animation: uninstall-dust .8s ease-out forwards;
+  }
+  @keyframes uninstall-dust {
+    0%   { opacity: 0; transform: translate(0, 0) scale(1); }
+    15%  { opacity: .9; }
+    100% { opacity: 0; transform: translate(var(--dx, 0px), -30px) scale(.4); }
+  }
+
+  /* ---- reduced motion: static DONE state ---- */
+  #uninstall .u-stage.is-reduced .u-ring,
+  #uninstall .u-stage.is-reduced .u-status,
+  #uninstall .u-stage.is-reduced .u-app { display: none; }
+  #uninstall .u-stage.is-reduced .u-orbit,
+  #uninstall .u-stage.is-reduced .u-unspin,
+  #uninstall .u-stage.is-reduced .u-halo { animation: none; }
+  @media (prefers-reduced-motion: reduce) {
+    #uninstall .u-orbit,
+    #uninstall .u-unspin,
+    #uninstall .u-halo,
+    #uninstall .u-dot { animation: none !important; }
+  }
+
+  /* ---- small screens ---- */
+  @media (max-width: 640px) {
+    #uninstall { --u-orb: 160px; --u-orbit-r: 110px; --u-panel-h: 390px; --u-halo-d: calc(var(--u-orb) + 90px); }
+    #uninstall .u-chip { gap: 6px; padding: 5px 9px 5px 6px; border-radius: 11px; }
+    #uninstall .u-chip-ic { width: 19px; height: 19px; border-radius: 6px; }
+    #uninstall .u-chip-tx b { font-size: 10px; }
+    #uninstall .u-chip-tx i { font-size: 9px; }
+    #uninstall .u-app-icon { width: 46px; height: 46px; }
+    #uninstall .u-app-name { font-size: 12px; }
+    #uninstall .u-done-sub { max-width: 130px; }
+    #uninstall .u-status { bottom: 12px; font-size: 11px; }
+  }
+</style>
+
+<script>
+  (function () {
+    var root = document.getElementById('uninstall');
+    if (!root) return;
+    var M = window.moleui || {};
+
+    var stage = root.querySelector('.u-stage');
+    var chips = Array.prototype.slice.call(root.querySelectorAll('.u-chip'));
+    var ring = root.querySelector('.u-ring-fg');
+    var app = root.querySelector('.u-app');
+    var statusText = root.querySelector('.u-status-text');
+    var freed = root.querySelector('.u-freed');
+    var dust = root.querySelector('.u-dust');
+    if (!stage || !ring || !app || !statusText || !freed || !dust) return;
+
+    var RING_C = 704;
+    var timers = [];
+
+    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+    function clearTimers() {
+      for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]);
+      timers = [];
+    }
+    function fmtFreed(v) { return v.toFixed(1) + ' GB freed'; }
+    function setStatus(t) { statusText.textContent = t; }
+
+    if (M.reduced) {
+      stage.classList.add('is-reduced');
+      stage.classList.add('is-done');
+      freed.textContent = fmtFreed(1.9);
+      return;
+    }
+
+    function spawnDust(chip) {
+      var sr = stage.getBoundingClientRect();
+      var cr = chip.getBoundingClientRect();
+      var cx = cr.left - sr.left + cr.width / 2;
+      var cy = cr.top - sr.top + cr.height / 2;
+      var n = 3 + (Math.random() < 0.5 ? 0 : 1);
+      for (var i = 0; i < n; i++) {
+        var m = document.createElement('span');
+        m.className = 'u-mote';
+        m.style.left = (cx + (Math.random() - 0.5) * cr.width * 0.7).toFixed(1) + 'px';
+        m.style.top = (cy + (Math.random() - 0.5) * 12).toFixed(1) + 'px';
+        m.style.setProperty('--dx', ((Math.random() - 0.5) * 28).toFixed(1) + 'px');
+        m.style.background = i % 2 ? 'rgba(var(--fa-rgb), .45)' : 'rgba(2, 6, 23, .22)';
+        m.style.animationDelay = Math.round(Math.random() * 150) + 'ms';
+        m.style.animationDuration = Math.round(620 + Math.random() * 360) + 'ms';
+        dust.appendChild(m);
+        later((function (el) {
+          return function () { if (el.parentNode) el.parentNode.removeChild(el); };
+        })(m), 1500);
+      }
+    }
+
+    function resetScene() {
+      stage.classList.remove('is-done');
+      stage.classList.remove('is-removing');
+      for (var i = 0; i < chips.length; i++) {
+        chips[i].classList.remove('is-in');
+        chips[i].classList.remove('is-out');
+      }
+      app.classList.remove('is-erased');
+      ring.style.transition = 'none';
+      ring.style.strokeDashoffset = RING_C;
+      freed.textContent = fmtFreed(0);
+      setStatus('Scanning for leftovers');
+      void stage.offsetWidth;
+      ring.style.transition = '';
+    }
+
+    function cycle() {
+      clearTimers();
+      resetScene();
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { stage.classList.remove('is-fading'); });
+      });
+
+      /* SCAN: ring fills while chips pop in and the counter climbs */
+      later(function () { ring.style.strokeDashoffset = 0; }, 250);
+      chips.forEach(function (c, i) {
+        later(function () {
+          c.classList.add('is-in');
+          var n = i + 1;
+          setStatus(n + (n === 1 ? ' leftover found' : ' leftovers found'));
+        }, 480 + i * 480);
+      });
+
+      /* REMOVE: chips dissolve one by one with rising dust */
+      later(function () {
+        stage.classList.add('is-removing');
+        setStatus('Removing leftovers');
+      }, 3400);
+      chips.forEach(function (c, i) {
+        later(function () {
+          c.classList.add('is-out');
+          later(function () { spawnDust(c); }, 140);
+        }, 3720 + i * 640);
+      });
+      later(function () { app.classList.add('is-erased'); }, 7050);
+
+      /* DONE: green empty state, spring check, freed count-up */
+      later(function () {
+        stage.classList.add('is-done');
+        if (typeof M.count === 'function') M.count(freed, 0, 1.9, 900, fmtFreed);
+        else freed.textContent = fmtFreed(1.9);
+      }, 8000);
+
+      /* hold, fade, loop */
+      later(function () { stage.classList.add('is-fading'); }, 10800);
+      later(cycle, 11200);
+    }
+
+    if (typeof M.onVisible === 'function') M.onVisible(stage, cycle);
+    else cycle();
+  })();
+</script>
+
+<section id="analyze" class="feature flip" data-accent="analyze">
+  <div class="feature-inner">
+    <div class="feature-copy" data-io>
+      <span class="eyebrow">Storage</span>
+      <h2>See where every gigabyte went.</h2>
+      <p class="section-sub">Scan your entire disk, home folder, or Downloads and get an interactive map of what is taking space. Sort by size or last access, surface the biggest files, and reveal anything in Finder.</p>
+      <div class="rows stagger" data-io>
+        <div class="row">
+          <span class="tile">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M10.5 3v18"/><path d="M10.5 12H21"/><path d="M16 12v9"/></svg>
+          </span>
+          <div><b>Disk usage map</b><span>Interactive visualization of storage usage</span></div>
+        </div>
+        <div class="row">
+          <span class="tile">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>
+          </span>
+          <div><b>Large files</b><span>Quickly identify space-hogging files</span></div>
+        </div>
+        <div class="row">
+          <span class="tile">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+          </span>
+          <div><b>Category breakdown</b><span>See storage by file type and category</span></div>
+        </div>
+      </div>
+      <p class="analyze-assure">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        Analysis only reads your storage layout
+      </p>
+    </div>
+
+    <div class="feature-scene analyze-scene" data-io="scale">
+      <div class="analyze-win" aria-label="Analyze storage app window">
+        <div class="awin-bar">
+          <span class="awin-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="awin-title">Analyze storage</span>
+        </div>
+        <div class="awin-body">
+
+          <div class="adisk">
+            <div class="adisk-head"><span>Macintosh HD</span><span class="adisk-cap">494 GB</span></div>
+            <div class="adisk-bar">
+              <span class="adisk-seg" style="--w:26%; --i:0; background:#0ea5e9"></span>
+              <span class="adisk-seg" style="--w:18%; --i:1; background:#a855f7"></span>
+              <span class="adisk-seg" style="--w:22%; --i:2; background:#ec4899"></span>
+              <span class="adisk-seg" style="--w:14%; --i:3; background:#f59e0b"></span>
+              <span class="adisk-seg" style="--w:20%; --i:4; background:#22c55e"></span>
+              <span class="adisk-shine" aria-hidden="true"></span>
+            </div>
+            <div class="adisk-legend">
+              <span><i style="background:#0ea5e9"></i>Apps</span>
+              <span><i style="background:#a855f7"></i>System</span>
+              <span><i style="background:#ec4899"></i>Photos</span>
+              <span><i style="background:#f59e0b"></i>Projects</span>
+              <span><i style="background:#22c55e"></i>Free</span>
+            </div>
+            <div class="ast" role="status">
+              <span class="ast-scan"><span class="ast-spin" aria-hidden="true"></span>Scanning /Users/you</span>
+              <span class="ast-done">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>
+                228 GB scanned,&nbsp;<b class="ast-items">41,204</b>&nbsp;items
+              </span>
+            </div>
+          </div>
+
+          <div class="atm">
+            <div class="atm-head">
+              <span class="atm-cap">Storage map</span>
+              <span class="atm-sort"><em class="on">Size</em><em>Last access</em></span>
+            </div>
+            <div class="atm-grid">
+              <div class="atm-cell" style="--c:14,165,233; --i:0; grid-column:1/6;  grid-row:1/3"><div class="atm-fill"><b>Applications</b><span>84.2 GB</span></div></div>
+              <div class="atm-cell" style="--c:236,72,153; --i:1; grid-column:6/10; grid-row:1/3"><div class="atm-fill"><b>Photos</b><span>62.1 GB</span></div></div>
+              <div class="atm-cell" style="--c:168,85,247; --i:2; grid-column:10/13;grid-row:1/3"><div class="atm-fill"><b>System</b><span>41.8 GB</span></div></div>
+              <div class="atm-cell" style="--c:245,158,11; --i:3; grid-column:1/5;  grid-row:3/5"><div class="atm-fill"><b>node_modules</b><span>21.4 GB</span></div></div>
+              <div class="atm-cell" style="--c:34,197,94;  --i:4; grid-column:5/8;  grid-row:3/5"><div class="atm-fill"><b>Downloads</b><span>18.7 GB</span></div></div>
+              <div class="atm-cell" style="--c:100,116,139;--i:5; grid-column:8/11; grid-row:3/5"><div class="atm-fill"><b>Movies</b><span>12.3 GB</span></div></div>
+              <div class="atm-cell" style="--c:14,165,233; --i:6; grid-column:11/13;grid-row:3/4"><div class="atm-fill"></div></div>
+              <div class="atm-cell" style="--c:245,158,11; --i:7; grid-column:11/12;grid-row:4/5"><div class="atm-fill"></div></div>
+              <div class="atm-cell" style="--c:236,72,153; --i:8; grid-column:12/13;grid-row:4/5"><div class="atm-fill"></div></div>
+            </div>
+          </div>
+
+          <div class="afiles">
+            <div class="afiles-head">Largest files</div>
+            <div class="afile" style="--i:0; --w:100%">
+              <span class="afile-ico">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+              </span>
+              <div class="afile-mid"><span class="afile-name">Xcode_16.4.xip</span><span class="afile-bar"><i></i></span></div>
+              <span class="afile-size">3.6 GB</span>
+            </div>
+            <div class="afile" style="--i:1; --w:81%">
+              <span class="afile-ico">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M17.5 12h.01"/><path d="M6 12h.01"/></svg>
+              </span>
+              <div class="afile-mid"><span class="afile-name">old-backup.sparsebundle</span><span class="afile-bar"><i></i></span></div>
+              <span class="afile-size">2.9 GB</span>
+            </div>
+            <div class="afile" style="--i:2; --w:61%">
+              <span class="afile-ico">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="M10 9.2l5 2.8-5 2.8z"/></svg>
+              </span>
+              <div class="afile-mid"><span class="afile-name">render_final_v7.mov</span><span class="afile-bar"><i></i></span></div>
+              <span class="afile-size">2.2 GB</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* ---- copy side extras ---- */
+  #analyze .analyze-assure {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 20px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+  }
+  #analyze .analyze-assure svg { flex: none; opacity: .85; }
+
+  /* ---- scene ---- */
+  #analyze .analyze-scene { position: relative; }
+  #analyze .analyze-scene::before {
+    content: "";
+    position: absolute;
+    inset: 6% 5%;
+    background: radial-gradient(62% 58% at 50% 38%, rgba(var(--fa-rgb), .17), transparent 72%);
+    filter: blur(34px);
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  #analyze .analyze-win {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 560px;
+    margin-inline: auto;
+    border-radius: 20px;
+    background: var(--surface-elevated);
+    -webkit-backdrop-filter: blur(22px) saturate(1.5);
+    backdrop-filter: blur(22px) saturate(1.5);
+    border: 1px solid rgba(2, 6, 23, .07);
+    box-shadow: var(--shadow-xl), inset 0 0 0 1px rgba(255, 255, 255, .55);
+    overflow: hidden;
+  }
+
+  /* title bar */
+  #analyze .awin-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 38px;
+    border-bottom: 1px solid rgba(2, 6, 23, .06);
+    background: rgba(255, 255, 255, .45);
+  }
+  #analyze .awin-dots {
+    position: absolute;
+    left: 14px;
+    display: flex;
+    gap: 7px;
+  }
+  #analyze .awin-dots i {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 .5px rgba(2, 6, 23, .12);
+  }
+  #analyze .awin-dots i:nth-child(1) { background: #FF5F57; }
+  #analyze .awin-dots i:nth-child(2) { background: #FEBC2E; }
+  #analyze .awin-dots i:nth-child(3) { background: #28C840; }
+  #analyze .awin-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-secondary);
+  }
+
+  #analyze .awin-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 15px 17px 17px;
+  }
+
+  /* ---- disk usage bar ---- */
+  #analyze .adisk-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--heading);
+    margin-bottom: 7px;
+  }
+  #analyze .adisk-cap {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
+  #analyze .adisk-bar {
+    position: relative;
+    display: flex;
+    height: 12px;
+    border-radius: var(--radius-full);
+    background: rgba(2, 6, 23, .06);
+    overflow: hidden;
+  }
+  #analyze .adisk-seg {
+    width: 0;
+    height: 100%;
+    border-right: 2px solid rgba(255, 255, 255, .9);
+    transition: width 1s var(--ease-out-quint);
+    transition-delay: calc(var(--i) * 110ms);
+    box-sizing: border-box;
+  }
+  #analyze .adisk-seg:last-of-type { border-right: none; }
+  #analyze .analyze-win.s-bar .adisk-seg { width: var(--w); }
+
+  /* signature disk-usage-flow shimmer */
+  #analyze .adisk-shine {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 45%;
+    height: 100%;
+    background: linear-gradient(105deg, transparent 10%, rgba(255, 255, 255, .6) 50%, transparent 90%);
+    animation: analyze-flow 1.65s linear infinite;
+    transition: opacity .45s ease;
+    pointer-events: none;
+  }
+  #analyze .analyze-win.s-done .adisk-shine {
+    opacity: 0;
+    animation-play-state: paused;
+  }
+  @keyframes analyze-flow {
+    from { transform: translateX(-110%); }
+    to   { transform: translateX(260%); }
+  }
+
+  #analyze .adisk-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 12px;
+    margin-top: 8px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+  }
+  #analyze .adisk-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  #analyze .adisk-legend i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: none;
+  }
+
+  /* scan status line */
+  #analyze .ast {
+    display: grid;
+    margin-top: 7px;
+    min-height: 16px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+  #analyze .ast > span {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: opacity .35s ease;
+    white-space: nowrap;
+  }
+  #analyze .ast-scan { font-variant-numeric: tabular-nums; }
+  #analyze .ast-done {
+    opacity: 0;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  #analyze .ast-items { font-weight: 700; color: var(--heading); }
+  #analyze .analyze-win.s-done .ast-scan { opacity: 0; }
+  #analyze .analyze-win.s-done .ast-done { opacity: 1; transition-delay: .15s; }
+  #analyze .ast-spin {
+    width: 11px;
+    height: 11px;
+    flex: none;
+    border-radius: 50%;
+    border: 1.5px solid rgba(2, 6, 23, .14);
+    border-top-color: rgba(2, 6, 23, .55);
+    animation: analyze-spin .8s linear infinite;
+  }
+  #analyze .analyze-win.s-done .ast-spin { animation: none; }
+  @keyframes analyze-spin { to { transform: rotate(360deg); } }
+
+  /* ---- treemap ---- */
+  #analyze .atm-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 7px;
+  }
+  #analyze .atm-cap {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--heading);
+  }
+  #analyze .atm-sort {
+    display: inline-flex;
+    gap: 3px;
+    padding: 2px;
+    border-radius: var(--radius-full);
+    background: rgba(2, 6, 23, .05);
+  }
+  #analyze .atm-sort em {
+    font-style: normal;
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+  }
+  #analyze .atm-sort em.on {
+    background: #fff;
+    color: rgb(var(--fa-rgb));
+    box-shadow: var(--shadow-sm);
+  }
+
+  #analyze .atm-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    grid-template-rows: repeat(4, 42px);
+    gap: 6px;
+  }
+  #analyze .atm-cell {
+    opacity: 0;
+    transform: scale(.72);
+    transition:
+      opacity .5s ease calc(var(--i) * 70ms),
+      transform .8s var(--ease-out-expo) calc(var(--i) * 70ms);
+    min-width: 0;
+  }
+  #analyze .analyze-win.s-map .atm-cell {
+    opacity: 1;
+    transform: none;
+  }
+  #analyze .analyze-win.s-done .atm-cell {
+    transition: transform .25s var(--ease-smooth) 0s;
+  }
+  #analyze .analyze-win.s-done .atm-cell:hover { transform: translateY(-3px); }
+
+  #analyze .atm-fill {
+    width: 100%;
+    height: 100%;
+    padding: 7px 9px;
+    border-radius: 9px;
+    background: rgba(var(--c), .13);
+    border: 1px solid rgba(var(--c), .3);
+    color: rgb(var(--c));
+    color: color-mix(in srgb, rgb(var(--c)) 68%, #020617);
+    overflow: hidden;
+    transition: box-shadow .25s var(--ease-smooth), background .25s var(--ease-smooth);
+  }
+  #analyze .atm-cell:hover .atm-fill {
+    background: rgba(var(--c), .18);
+    box-shadow: 0 12px 24px -10px rgba(var(--c), .5);
+  }
+  #analyze .atm-fill b {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #analyze .atm-fill span {
+    display: block;
+    font-size: 9.5px;
+    font-weight: 500;
+    opacity: .72;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  #analyze .analyze-win.s-done .atm-fill {
+    animation: analyze-float 5.2s ease-in-out infinite;
+    animation-delay: calc(var(--i) * -760ms);
+  }
+  @keyframes analyze-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-2.5px); }
+  }
+
+  /* ---- largest files ---- */
+  #analyze .afiles-head {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--heading);
+    margin-bottom: 6px;
+    opacity: 0;
+    transition: opacity .4s ease;
+  }
+  #analyze .analyze-win.s-files .afiles-head { opacity: 1; }
+  #analyze .afile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+    opacity: 0;
+    transform: translateX(-12px);
+    transition:
+      opacity .45s ease calc(var(--i) * 150ms + 80ms),
+      transform .6s var(--ease-out-expo) calc(var(--i) * 150ms + 80ms);
+  }
+  #analyze .analyze-win.s-files .afile {
+    opacity: 1;
+    transform: none;
+  }
+  #analyze .afile-ico {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    border-radius: 7px;
+    background: rgba(var(--fa-rgb), .1);
+    color: rgb(var(--fa-rgb));
+  }
+  #analyze .afile-mid { flex: 1; min-width: 0; }
+  #analyze .afile-name {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+  }
+  #analyze .afile-bar {
+    display: block;
+    height: 3px;
+    border-radius: var(--radius-full);
+    background: rgba(2, 6, 23, .06);
+    overflow: hidden;
+  }
+  #analyze .afile-bar i {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, rgb(var(--fa-rgb)), rgba(var(--fa-rgb), .65));
+    transition: width .9s var(--ease-out-quint) calc(var(--i) * 150ms + 260ms);
+  }
+  #analyze .analyze-win.s-files .afile-bar i { width: var(--w); }
+  #analyze .afile-size {
+    flex: none;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- static / reduced-motion fallback ---- */
+  #analyze .analyze-win.s-static *,
+  #analyze .analyze-win.s-static *::before,
+  #analyze .analyze-win.s-static *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  #analyze .analyze-win.s-static .adisk-shine { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    #analyze .adisk-shine { animation: none; opacity: 0; }
+    #analyze .analyze-win.s-done .atm-fill { animation: none; }
+    #analyze .ast-spin { animation: none; }
+  }
+
+  /* ---- small screens ---- */
+  @media (max-width: 520px) {
+    #analyze .awin-body { padding: 13px 13px 15px; gap: 12px; }
+    #analyze .atm-grid { grid-template-rows: repeat(4, 36px); gap: 5px; }
+    #analyze .atm-fill { padding: 5px 7px; }
+    #analyze .atm-fill b { font-size: 9.5px; }
+    #analyze .atm-fill span { font-size: 8.5px; }
+    #analyze .atm-sort { display: none; }
+    #analyze .afile-name { font-size: 11.5px; }
+  }
+</style>
+
+<script>
+  (function () {
+    var root = document.getElementById("analyze");
+    if (!root) return;
+    var win = root.querySelector(".analyze-win");
+    if (!win) return;
+    var itemsEl = root.querySelector(".ast-items");
+    var m = window.moleui || {};
+    var timers = [];
+
+    function completeStatic() {
+      win.classList.add("s-static", "s-bar", "s-map", "s-files", "s-done");
+      if (itemsEl) itemsEl.textContent = "41,204";
+    }
+
+    if (m.reduced || typeof m.onVisible !== "function") {
+      completeStatic();
+      return;
+    }
+
+    m.onVisible(win, function () {
+      /* one-shot scan narrative */
+      win.classList.add("s-bar");
+      timers.push(setTimeout(function () {
+        win.classList.add("s-map");
+      }, 550));
+      timers.push(setTimeout(function () {
+        win.classList.add("s-files");
+      }, 1500));
+      timers.push(setTimeout(function () {
+        win.classList.add("s-done");
+        if (itemsEl && typeof m.count === "function") {
+          m.count(itemsEl, 0, 41204, 850, function (v) {
+            return Math.round(v).toLocaleString("en-US");
+          });
+        } else if (itemsEl) {
+          itemsEl.textContent = "41,204";
+        }
+      }, 2600));
+    }, 0.3);
+  })();
+</script>
+
+<section id="mymac" class="feature" data-accent="mymac">
+  <div class="feature-inner">
+    <div class="feature-copy" data-io>
+      <span class="eyebrow">My Mac</span>
+      <h2>Know exactly what your Mac is doing.</h2>
+      <p class="section-sub">Live CPU, GPU, memory, storage, network, and battery, plus a health score, uptime, and temperature, all on one glassy dashboard. Full control starts with full visibility.</p>
+      <div class="rows stagger" data-io>
+        <div class="row">
+          <span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
+          <div><b>Live vitals</b><span>Processor, GPU, memory, storage, network, and battery at a glance</span></div>
+        </div>
+        <div class="row">
+          <span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg></span>
+          <div><b>Apps and processes</b><span>Activity grouped by app, searchable by name, PID, or command</span></div>
+        </div>
+        <div class="row">
+          <span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+          <div><b>One-click actions</b><span>Terminate, force quit, or reveal any process in Finder</span></div>
+        </div>
+        <div class="row">
+          <span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.19"/><path d="M15 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3.19"/><line x1="23" y1="13" x2="23" y2="11"/><polyline points="11 6 7 12 13 12 9 18"/></svg></span>
+          <div><b>Battery forecasts</b><span>Charging and drain predictions that end at full or empty</span></div>
+        </div>
+      </div>
+      <p class="mymac-free"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>Free for everyone. No subscription needed.</p>
+    </div>
+    <div class="feature-scene mymac-scene" data-io="scale">
+      <div class="mm-panel" role="img" aria-label="Live system dashboard showing CPU, memory, network, battery, and running processes">
+        <div class="mm-top">
+          <span class="mm-traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="mm-app-title">My Mac</span>
+          <span class="mm-chips">
+            <span class="mm-chip">Uptime 12d 4h</span>
+            <span class="mm-chip mm-chip-temp">42&deg;C</span>
+          </span>
+        </div>
+        <div class="mm-health">
+          <div class="mm-health-badge"><span class="mm-health-num">92</span></div>
+          <div class="mm-health-meta"><b>Health Score</b><span>Everything looks great</span></div>
+          <div class="mm-storage"><b>418 GB free</b><span>Storage, 1 TB total</span></div>
+        </div>
+        <div class="mm-grid">
+          <div class="mm-card">
+            <div class="mm-card-head"><span class="mm-label">CPU</span><span class="mm-gpu">GPU 9%</span><span class="mm-value mm-cpu-val">18%</span></div>
+            <div class="mm-spark">
+              <svg viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                  <linearGradient id="mymac-cpugrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.28"/>
+                    <stop offset="1" stop-color="#8b5cf6" stop-opacity="0.02"/>
+                  </linearGradient>
+                </defs>
+                <path class="mm-cpu-area" fill="url(#mymac-cpugrad)" d=""/>
+                <path class="mm-cpu-line" fill="none" stroke="#8b5cf6" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" d=""/>
+              </svg>
+            </div>
+          </div>
+          <div class="mm-card">
+            <div class="mm-card-head"><span class="mm-label">Memory</span><span class="mm-pill">Normal</span></div>
+            <div class="mm-mem-body">
+              <div class="mm-donut">
+                <svg viewBox="0 0 56 56" width="56" height="56" aria-hidden="true">
+                  <circle cx="28" cy="28" r="24" fill="none" stroke="rgba(16,185,129,0.16)" stroke-width="6"/>
+                  <circle class="mm-ring-fg" cx="28" cy="28" r="24" fill="none" stroke="#10b981" stroke-width="6" stroke-linecap="round" stroke-dasharray="150.8" stroke-dashoffset="64.9" transform="rotate(-90 28 28)"/>
+                </svg>
+                <span class="mm-donut-pct">57%</span>
+              </div>
+              <div class="mm-mem-meta"><b class="mm-mem-gb">9.1 GB</b><span>of 16 GB</span></div>
+            </div>
+          </div>
+          <div class="mm-card">
+            <div class="mm-card-head">
+              <span class="mm-label">Network</span>
+              <span class="mm-net-reads"><span class="mm-net-down">&#8595; 12.4 MB/s</span><span class="mm-net-up">&#8593; 3.2 MB/s</span></span>
+            </div>
+            <div class="mm-spark">
+              <svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+                <path class="mm-net-dline" fill="none" stroke="#3b82f6" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" d=""/>
+                <path class="mm-net-uline" fill="none" stroke="#22c55e" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" opacity="0.9" d=""/>
+              </svg>
+            </div>
+          </div>
+          <div class="mm-card">
+            <div class="mm-card-head">
+              <span class="mm-label">Battery</span>
+              <span class="mm-value mm-batt-val"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>87%</span>
+            </div>
+            <div class="mm-batt-track"><div class="mm-batt-fill"></div></div>
+            <span class="mm-batt-cap">5:12 remaining, 83 cycles</span>
+          </div>
+        </div>
+        <div class="mm-procs">
+          <div class="mm-proc-head"><span>Apps and Processes</span><span></span><span class="mm-th-r">CPU</span><span class="mm-th-r">MEM</span></div>
+          <div class="mm-proc-list">
+            <div class="mm-proc">
+              <div class="mm-proc-id"><span class="mm-rank">1</span><div class="mm-proc-name"><b>Xcode</b><span>PID 3417</span></div></div>
+              <div class="mm-bar"><i style="width:85%"></i></div>
+              <span class="mm-cpu-pct">14.2%</span>
+              <span class="mm-mem-pct">8.4%</span>
+            </div>
+            <div class="mm-proc">
+              <div class="mm-proc-id"><span class="mm-rank">2</span><div class="mm-proc-name"><b>Safari</b><span>PID 612</span></div></div>
+              <div class="mm-bar"><i style="width:41%"></i></div>
+              <span class="mm-cpu-pct">6.8%</span>
+              <span class="mm-mem-pct">5.1%</span>
+            </div>
+            <div class="mm-proc">
+              <div class="mm-proc-id"><span class="mm-rank">3</span><div class="mm-proc-name"><b>Figma</b><span>PID 8890</span></div></div>
+              <div class="mm-bar"><i style="width:25%"></i></div>
+              <span class="mm-cpu-pct">4.1%</span>
+              <span class="mm-mem-pct">3.6%</span>
+            </div>
+            <div class="mm-proc">
+              <div class="mm-proc-id"><span class="mm-rank">4</span><div class="mm-proc-name"><b>Spotify</b><span>PID 2044</span></div></div>
+              <div class="mm-bar"><i style="width:11%"></i></div>
+              <span class="mm-cpu-pct">1.9%</span>
+              <span class="mm-mem-pct">2.2%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<style>
+  #mymac {
+    --mm-line: rgba(2, 6, 23, 0.06);
+    --mm-line-soft: rgba(2, 6, 23, 0.04);
+  }
+
+  /* ---- Free badge (copy column) ---- */
+  #mymac .mymac-free {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 20px;
+    padding: 8px 15px;
+    border-radius: var(--radius-full);
+    background: rgba(var(--mymac-rgb), 0.12);
+    color: var(--mymac);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  #mymac .mymac-free svg { flex: none; }
+
+  /* ---- Scene shell ---- */
+  #mymac .mymac-scene { display: flex; justify-content: center; width: 100%; }
+  #mymac .mm-panel {
+    width: 100%;
+    max-width: 580px;
+    padding: 14px 16px 16px;
+    border-radius: var(--radius-xl);
+    background: var(--surface-elevated);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    box-shadow: var(--shadow-xl), 0 0 90px rgba(var(--fa-rgb), 0.13);
+    position: relative;
+  }
+
+  /* ---- Top bar ---- */
+  #mymac .mm-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #mymac .mm-traffic { display: inline-flex; gap: 5px; }
+  #mymac .mm-traffic i { width: 8px; height: 8px; border-radius: 50%; }
+  #mymac .mm-traffic i:nth-child(1) { background: #fe5f57; }
+  #mymac .mm-traffic i:nth-child(2) { background: #febc2e; }
+  #mymac .mm-traffic i:nth-child(3) { background: #28c840; }
+  #mymac .mm-app-title { font-size: 13px; font-weight: 800; color: var(--heading); letter-spacing: -0.01em; }
+  #mymac .mm-chips { display: inline-flex; gap: 6px; margin-left: auto; }
+  #mymac .mm-chip {
+    font-size: 11px; font-weight: 700; padding: 3px 9px;
+    border-radius: var(--radius-full);
+    background: rgba(2, 6, 23, 0.05); color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  #mymac .mm-chip-temp { background: rgba(var(--fa-rgb), 0.1); color: var(--fa); }
+
+  /* ---- Health score row ---- */
+  #mymac .mm-health { display: flex; align-items: center; gap: 12px; margin: 12px 2px; }
+  #mymac .mm-health-badge {
+    width: 54px; height: 54px; flex: none;
+    display: grid; place-items: center;
+    border-radius: var(--radius-md);
+    background: rgba(var(--fa-rgb), 0.12);
+    animation: mymac-heartbeat 3s var(--ease-smooth) infinite;
+    will-change: transform;
+  }
+  #mymac .mm-health-num {
+    font-size: 24px; font-weight: 900; color: var(--fa);
+    letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+  }
+  #mymac .mm-health-meta b { display: block; font-size: 13px; font-weight: 800; color: var(--heading); line-height: 1.25; }
+  #mymac .mm-health-meta span { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+  #mymac .mm-storage { margin-left: auto; text-align: right; }
+  #mymac .mm-storage b { display: block; font-size: 13px; font-weight: 800; color: var(--heading); line-height: 1.25; font-variant-numeric: tabular-nums; }
+  #mymac .mm-storage span { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+
+  /* ---- Metric cards ---- */
+  #mymac .mm-grid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 10px; }
+  #mymac .mm-card {
+    background: #fff;
+    border: 1px solid var(--mm-line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 7px;
+    min-height: 98px;
+    min-width: 0;
+  }
+  #mymac .mm-card-head { display: flex; align-items: baseline; gap: 8px; }
+  #mymac .mm-label {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-tertiary);
+  }
+  #mymac .mm-value {
+    margin-left: auto;
+    font-size: 17px; font-weight: 800; color: var(--heading);
+    letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  #mymac .mm-gpu { font-size: 10px; font-weight: 700; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  #mymac .mm-pill {
+    margin-left: auto;
+    font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
+    color: var(--fa); background: rgba(var(--fa-rgb), 0.12);
+    padding: 2px 8px; border-radius: var(--radius-full);
+  }
+  #mymac .mm-spark { flex: 1; min-height: 30px; }
+  #mymac .mm-spark svg { width: 100%; height: 100%; display: block; }
+
+  /* Memory donut */
+  #mymac .mm-mem-body { display: flex; align-items: center; gap: 12px; flex: 1; }
+  #mymac .mm-donut { position: relative; width: 56px; height: 56px; flex: none; }
+  #mymac .mm-donut-pct {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 12px; font-weight: 800; color: var(--heading);
+    font-variant-numeric: tabular-nums;
+  }
+  #mymac .mm-ring-fg { transition: stroke-dashoffset 0.9s var(--ease-out-quint); }
+  #mymac .mm-mem-meta b { display: block; font-size: 15px; font-weight: 800; color: var(--heading); line-height: 1.2; font-variant-numeric: tabular-nums; }
+  #mymac .mm-mem-meta span { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+
+  /* Network readouts */
+  #mymac .mm-net-reads { margin-left: auto; display: inline-flex; gap: 8px; }
+  #mymac .mm-net-down { font-size: 11px; font-weight: 800; color: #3b82f6; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #mymac .mm-net-up { font-size: 11px; font-weight: 800; color: #22c55e; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* Battery */
+  #mymac .mm-batt-val svg { flex: none; }
+  #mymac .mm-batt-track {
+    height: 10px; border-radius: var(--radius-full);
+    background: rgba(2, 6, 23, 0.07); overflow: hidden;
+  }
+  #mymac .mm-batt-fill {
+    position: relative; height: 100%; width: 87%;
+    border-radius: inherit; overflow: hidden;
+    background: linear-gradient(90deg, #10b981, #34d399);
+  }
+  #mymac .mm-batt-fill::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.55) 50%, transparent 75%);
+    transform: translateX(-130%);
+    animation: mymac-charge 2.8s var(--ease-smooth) infinite;
+  }
+  #mymac .mm-batt-cap { font-size: 11px; font-weight: 600; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+  /* ---- Process list ---- */
+  #mymac .mm-procs {
+    margin-top: 10px;
+    background: #fff;
+    border: 1px solid var(--mm-line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 10px 12px 4px;
+  }
+  #mymac .mm-proc-head,
+  #mymac .mm-proc {
+    display: grid;
+    grid-template-columns: 1fr 64px 44px 40px;
+    gap: 10px;
+    align-items: center;
+  }
+  #mymac .mm-proc-head {
+    padding: 0 2px 7px;
+    border-bottom: 1px solid var(--mm-line-soft);
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-tertiary);
+  }
+  #mymac .mm-th-r { text-align: right; }
+  #mymac .mm-proc {
+    padding: 7px 2px;
+    border-bottom: 1px solid var(--mm-line-soft);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    transition: background-color 0.45s var(--ease-smooth);
+    will-change: transform;
+  }
+  #mymac .mm-proc:last-child { border-bottom: none; }
+  #mymac .mm-proc.mm-rise { background: rgba(var(--fa-rgb), 0.07); }
+  #mymac .mm-proc-id { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #mymac .mm-rank {
+    width: 18px; height: 18px; flex: none;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: rgba(var(--fa-rgb), 0.12); color: var(--fa);
+    font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
+  }
+  #mymac .mm-proc-name { min-width: 0; }
+  #mymac .mm-proc-name b {
+    display: block; font-size: 12px; font-weight: 700; color: var(--heading);
+    line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #mymac .mm-proc-name span { font-size: 10px; font-weight: 600; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  #mymac .mm-bar {
+    height: 6px; border-radius: var(--radius-full);
+    background: rgba(2, 6, 23, 0.06); overflow: hidden;
+  }
+  #mymac .mm-bar i {
+    display: block; height: 100%; border-radius: inherit;
+    background: linear-gradient(90deg, var(--fa), #34d399);
+    transition: width 0.7s var(--ease-out-quint);
+  }
+  #mymac .mm-cpu-pct { font-size: 11px; font-weight: 800; color: var(--heading); text-align: right; font-variant-numeric: tabular-nums; }
+  #mymac .mm-mem-pct { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ---- Keyframes (global names, mymac- prefixed) ---- */
+  @keyframes mymac-heartbeat {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    10%      { transform: scale(1.04); box-shadow: 0 0 18px 2px rgba(16, 185, 129, 0.22); }
+    18%      { transform: scale(1); box-shadow: 0 0 8px 1px rgba(16, 185, 129, 0.1); }
+    28%      { transform: scale(1.06); box-shadow: 0 0 26px 6px rgba(16, 185, 129, 0.25); }
+    48%      { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+  @keyframes mymac-charge {
+    0%   { transform: translateX(-130%); }
+    55%  { transform: translateX(130%); }
+    100% { transform: translateX(130%); }
+  }
+
+  /* ---- Reduced motion: static snapshot ---- */
+  @media (prefers-reduced-motion: reduce) {
+    #mymac .mm-health-badge { animation: none; }
+    #mymac .mm-batt-fill::after { animation: none; opacity: 0; }
+    #mymac .mm-ring-fg { transition: none; }
+    #mymac .mm-bar i { transition: none; }
+    #mymac .mm-proc { transition: none; }
+  }
+
+  /* ---- Small screens ---- */
+  @media (max-width: 480px) {
+    #mymac .mm-panel { padding: 12px 12px 14px; }
+    #mymac .mm-grid { gap: 8px; }
+    #mymac .mm-card { padding: 9px 10px; min-height: 92px; }
+    #mymac .mm-proc-head,
+    #mymac .mm-proc { grid-template-columns: 1fr 48px 42px 36px; gap: 8px; }
+    #mymac .mm-storage span { display: none; }
+    #mymac .mm-mem-body { gap: 9px; }
+  }
+</style>
+<script>
+  (function () {
+    var root = document.getElementById("mymac");
+    if (!root) return;
+    var scene = root.querySelector(".mymac-scene");
+    var m = window.moleui || {};
+    var reduced = !!m.reduced;
+
+    function $(sel) { return root.querySelector(sel); }
+    function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+    var cpuArea = $(".mm-cpu-area");
+    var cpuLine = $(".mm-cpu-line");
+    var cpuValEl = $(".mm-cpu-val");
+    var dLine = $(".mm-net-dline");
+    var uLine = $(".mm-net-uline");
+    var netDownEl = $(".mm-net-down");
+    var netUpEl = $(".mm-net-up");
+    var ringFg = $(".mm-ring-fg");
+    var donutPct = $(".mm-donut-pct");
+    var memGb = $(".mm-mem-gb");
+    var healthNum = $(".mm-health-num");
+    var procList = $(".mm-proc-list");
+    if (!cpuArea || !procList) return;
+
+    /* ---------- CPU sparkline: continuous scrolling wave ---------- */
+    function cpuWave(t) {
+      var v = 0.42 +
+        0.20 * Math.sin(t * 0.9) +
+        0.13 * Math.sin(t * 2.17 + 1.3) +
+        0.09 * Math.sin(t * 4.1 + 0.7) +
+        0.05 * Math.sin(t * 7.3 + 2.1);
+      return clamp(v, 0.08, 0.92);
+    }
+    function buildCpu(tw) {
+      var W = 100, H = 32, N = 36, d = "", i, x, y;
+      for (i = 0; i <= N; i++) {
+        x = (i * W / N).toFixed(1);
+        y = ((1 - cpuWave(tw - (N - i) * 0.22)) * H).toFixed(1);
+        d += (i ? "L" : "M") + x + " " + y + " ";
+      }
+      cpuLine.setAttribute("d", d);
+      cpuArea.setAttribute("d", d + "L" + W + " " + H + " L0 " + H + " Z");
+    }
+
+    /* ---------- Network: spiky dual buffers with bursts ---------- */
+    var NSAMP = 36;
+    var down = [], up = [], burstD = 0, burstU = 0, i0;
+    for (i0 = 0; i0 < NSAMP; i0++) { down.push(0); up.push(0); }
+    function pushNet() {
+      if (Math.random() < 0.055) burstD = 0.8 + Math.random() * 0.2;
+      if (Math.random() < 0.045) burstU = 0.65 + Math.random() * 0.25;
+      var d = clamp(0.08 + Math.random() * 0.18 + burstD * (0.5 + Math.random() * 0.5), 0, 1);
+      var u = clamp(0.05 + Math.random() * 0.12 + burstU * (0.4 + Math.random() * 0.5), 0, 1);
+      burstD *= 0.55;
+      burstU *= 0.55;
+      down.push(d); down.shift();
+      up.push(u); up.shift();
+    }
+    function netPath(arr) {
+      var W = 100, H = 30, d = "", i, x, y;
+      for (i = 0; i < NSAMP; i++) {
+        x = (i * W / (NSAMP - 1)).toFixed(1);
+        y = (H - 2 - arr[i] * (H - 5)).toFixed(1);
+        d += (i ? "L" : "M") + x + " " + y + " ";
+      }
+      return d;
+    }
+    function drawNet() {
+      dLine.setAttribute("d", netPath(down));
+      uLine.setAttribute("d", netPath(up));
+    }
+    function setNetText() {
+      netDownEl.textContent = "↓ " + (down[NSAMP - 1] * 22 + 0.6).toFixed(1) + " MB/s";
+      netUpEl.textContent = "↑ " + (up[NSAMP - 1] * 9 + 0.3).toFixed(1) + " MB/s";
+    }
+
+    /* ---------- Memory donut ---------- */
+    var RING_C = 150.8;
+    function setMem(p) {
+      ringFg.style.strokeDashoffset = (RING_C * (1 - p / 100)).toFixed(1);
+      donutPct.textContent = Math.round(p) + "%";
+      memGb.textContent = (16 * p / 100).toFixed(1) + " GB";
+    }
+
+    /* ---------- Process list ---------- */
+    var bases = [14.2, 6.8, 4.1, 1.9];
+    var mems = [8.4, 5.1, 3.6, 2.2];
+    var arr = [];
+    var procEls = procList.querySelectorAll(".mm-proc");
+    var pi;
+    for (pi = 0; pi < procEls.length; pi++) {
+      arr.push({
+        el: procEls[pi],
+        rankEl: procEls[pi].querySelector(".mm-rank"),
+        barEl: procEls[pi].querySelector(".mm-bar i"),
+        cpuEl: procEls[pi].querySelector(".mm-cpu-pct"),
+        memEl: procEls[pi].querySelector(".mm-mem-pct"),
+        base: bases[pi],
+        cpu: bases[pi],
+        baseMem: mems[pi],
+        mem: mems[pi]
+      });
+    }
+    var swapping = false;
+    function renderProc(r) {
+      r.cpuEl.textContent = r.cpu.toFixed(1) + "%";
+      r.barEl.style.width = Math.min(100, r.cpu * 6) + "%";
+      r.memEl.textContent = r.mem.toFixed(1) + "%";
+    }
+    function updateRanks() {
+      for (var i = 0; i < arr.length; i++) arr[i].rankEl.textContent = i + 1;
+    }
+    function setFlip(el, dy) {
+      el.style.transition = "none";
+      el.style.transform = "translateY(" + dy + "px)";
+      void el.offsetHeight;
+      el.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+      el.style.transform = "";
+    }
+    function flipSwap(j) {
+      swapping = true;
+      var A = arr[j], B = arr[j + 1];
+      var ta = A.el.getBoundingClientRect().top;
+      var tb = B.el.getBoundingClientRect().top;
+      procList.insertBefore(B.el, A.el);
+      arr[j] = B;
+      arr[j + 1] = A;
+      setFlip(A.el, ta - A.el.getBoundingClientRect().top);
+      setFlip(B.el, tb - B.el.getBoundingClientRect().top);
+      B.el.classList.add("mm-rise");
+      updateRanks();
+      setTimeout(function () {
+        B.el.classList.remove("mm-rise");
+        swapping = false;
+      }, 620);
+    }
+    function resolveInversion() {
+      if (swapping) return;
+      for (var j = 0; j < arr.length - 1; j++) {
+        if (arr[j].cpu < arr[j + 1].cpu - 0.05) { flipSwap(j); return; }
+      }
+    }
+    function jitterProcs() {
+      for (var i = 0; i < arr.length; i++) {
+        var r = arr[i];
+        r.cpu = clamp(r.cpu + (r.base - r.cpu) * 0.3 + (Math.random() - 0.5) * 2.0, 0.6, 26);
+        r.mem = clamp(r.mem + (Math.random() - 0.5) * 0.3, r.baseMem - 0.8, r.baseMem + 0.8);
+        renderProc(r);
+      }
+    }
+    function boostRandom() {
+      var j = Math.floor(Math.random() * (arr.length - 1));
+      arr[j + 1].cpu = arr[j].cpu + 0.4 + Math.random() * 1.6;
+      renderProc(arr[j + 1]);
+    }
+
+    /* ---------- Initial static draw (also the reduced-motion snapshot) ---------- */
+    var tw = 5.7;
+    buildCpu(tw);
+    for (i0 = 0; i0 < NSAMP; i0++) pushNet();
+    drawNet();
+    setNetText();
+    if (reduced) return;
+
+    /* ---------- Ambient loop ---------- */
+    var running = false, started = false, rafId = 0, last = 0;
+    var cpuTarget = 18, cpuDisp = 18, cpuJit = 0;
+    var accCpu = 0, accPush = 0, accNetTxt = 0, accMem = 0, accJit = 0, accBoost = 0;
+
+    function frame(now) {
+      if (!running) return;
+      var dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+
+      tw += dt * 0.85;
+      buildCpu(tw);
+
+      accCpu += dt;
+      if (accCpu > 1.9 + cpuJit) {
+        accCpu = 0;
+        cpuJit = Math.random() * 0.8;
+        cpuTarget = clamp(cpuTarget + (Math.random() - 0.5) * 16, 8, 34);
+      }
+      cpuDisp += (cpuTarget - cpuDisp) * Math.min(1, dt * 2.2);
+      cpuValEl.textContent = Math.round(cpuDisp) + "%";
+
+      accPush += dt;
+      if (accPush > 0.14) { accPush = 0; pushNet(); drawNet(); }
+      accNetTxt += dt;
+      if (accNetTxt > 0.9) { accNetTxt = 0; setNetText(); }
+
+      accMem += dt;
+      if (accMem > 3.4) { accMem = 0; setMem(54 + Math.random() * 8); }
+
+      accJit += dt;
+      if (accJit > 1.7) { accJit = 0; jitterProcs(); resolveInversion(); }
+      accBoost += dt;
+      if (accBoost > 3.9) { accBoost = 0; boostRandom(); resolveInversion(); }
+
+      rafId = requestAnimationFrame(frame);
+    }
+    function start() {
+      if (running) return;
+      running = true;
+      last = performance.now();
+      rafId = requestAnimationFrame(frame);
+    }
+    function stop() {
+      running = false;
+      cancelAnimationFrame(rafId);
+    }
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) stop();
+      else if (started) start();
+    });
+
+    function boot() {
+      if (started) return;
+      started = true;
+      if (m.count && healthNum) {
+        m.count(healthNum, 0, 92, 1400, function (v) { return String(Math.round(v)); });
+      }
+      start();
+    }
+    if (m.onVisible && scene) m.onVisible(scene, boot, 0.3);
+    else boot();
+  })();
+</script>
+
+<section id="safety">
+  <div class="safety-inner">
+
+    <header class="safety-head">
+      <span class="eyebrow" data-io>Safety by design</span>
+      <h2 data-io>Clean without fear.</h2>
+      <p class="section-sub safety-sub" data-io>Most cleaners ask you to trust them. Moleui is built so you do not have to: it previews first, deletes to the Trash, refuses to touch protected paths, and logs everything it does.</p>
+    </header>
+
+    <div class="safety-scene" data-io="scale">
+
+      <div class="safety-shield-wrap">
+        <div class="safety-shield-stage">
+          <div class="safety-orbit-ring" aria-hidden="true"></div>
+
+          <div class="safety-core">
+            <div class="safety-glow" aria-hidden="true"></div>
+            <svg class="safety-shield" viewBox="0 0 200 224" width="190" height="213" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shield illustration representing protected paths">
+              <defs>
+                <linearGradient id="safetyGradStroke" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#8c3ffc"/>
+                  <stop offset="1" stop-color="#fd2d86"/>
+                </linearGradient>
+                <linearGradient id="safetyGradFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="rgba(255,255,255,0.92)"/>
+                  <stop offset="1" stop-color="rgba(255,255,255,0.42)"/>
+                </linearGradient>
+                <linearGradient id="safetyGradHighlight" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="rgba(255,255,255,0.85)"/>
+                  <stop offset="1" stop-color="rgba(255,255,255,0)"/>
+                </linearGradient>
+              </defs>
+              <path d="M100 10 L172 40 V106 C172 156 142 192 100 212 C58 192 28 156 28 106 V40 Z"
+                    fill="url(#safetyGradFill)" stroke="url(#safetyGradStroke)" stroke-width="3" stroke-linejoin="round"/>
+              <path d="M100 26 L156 50 V104 C156 144 132 174 100 190 C68 174 44 144 44 104 V50 Z"
+                    fill="rgba(140,63,252,0.05)" stroke="rgba(140,63,252,0.22)" stroke-width="1.5" stroke-linejoin="round"/>
+              <ellipse cx="100" cy="47" rx="50" ry="16" fill="url(#safetyGradHighlight)" opacity="0.65"/>
+              <path d="M74 108 L93 127 L128 90" stroke="url(#safetyGradStroke)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+
+          <div class="safety-orbit" aria-hidden="false">
+            <div class="safety-chip" style="--a: 0deg"><div class="safety-chip-spin"><span class="safety-chip-pill">/System</span></div></div>
+            <div class="safety-chip" style="--a: 51.4deg"><div class="safety-chip-spin"><span class="safety-chip-pill">/usr</span></div></div>
+            <div class="safety-chip" style="--a: 102.9deg"><div class="safety-chip-spin"><span class="safety-chip-pill">Keychains</span></div></div>
+            <div class="safety-chip" style="--a: 154.3deg"><div class="safety-chip-spin"><span class="safety-chip-pill">Credentials</span></div></div>
+            <div class="safety-chip" style="--a: 205.7deg"><div class="safety-chip-spin"><span class="safety-chip-pill">Browser history</span></div></div>
+            <div class="safety-chip" style="--a: 257.1deg"><div class="safety-chip-spin"><span class="safety-chip-pill">Time Machine</span></div></div>
+            <div class="safety-chip" style="--a: 308.6deg"><div class="safety-chip-spin"><span class="safety-chip-pill">AI tools</span></div></div>
+          </div>
+
+          <div class="safety-fx" aria-hidden="true"></div>
+        </div>
+        <p class="safety-caption">Delete requests that touch protected paths never get through.</p>
+      </div>
+
+      <div class="safety-vignette">
+        <div class="safety-trash-stage" aria-hidden="true">
+
+          <svg class="safety-arrow" viewBox="0 0 260 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path class="safety-arrow-path" pathLength="1" d="M146 186 C 208 158, 210 76, 152 54"
+                  stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="1"/>
+            <path class="safety-arrow-head" d="M163 49 L151 54 L160 64"
+                  stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+
+          <div class="safety-file-pos">
+            <div class="safety-file">
+              <span class="safety-file-icon">
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5.2 2.5h5.6l4 4v9c0 .8-.7 1.5-1.5 1.5H5.2c-.8 0-1.5-.7-1.5-1.5v-11.5c0-.8.7-1.5 1.5-1.5Z"/>
+                  <path d="M10.8 2.5V7h4"/>
+                </svg>
+              </span>
+              <span class="safety-file-meta"><strong>cache.db</strong><em>214 MB</em></span>
+            </div>
+            <span class="safety-restored">Restored</span>
+          </div>
+
+          <svg class="safety-trash" viewBox="0 0 120 132" width="112" height="123" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g class="safety-lid">
+              <path d="M48 20v-3.6c0-3 2.4-5.4 5.4-5.4h13.2c3 0 5.4 2.4 5.4 5.4V20" stroke="rgba(90,100,115,0.55)" stroke-width="2.5"/>
+              <rect x="20" y="20" width="80" height="9" rx="4.5" fill="rgba(255,255,255,0.7)" stroke="rgba(90,100,115,0.55)" stroke-width="2.5"/>
+            </g>
+            <g>
+              <path d="M28 36h64l-5 80c-.3 4-3.6 7-7.6 7H40.6c-4 0-7.3-3-7.6-7Z"
+                    fill="rgba(255,255,255,0.65)" stroke="rgba(90,100,115,0.55)" stroke-width="2.5" stroke-linejoin="round"/>
+              <path d="M45 46l1.6 66M60 46v66M75 46l-1.6 66" stroke="rgba(90,100,115,0.3)" stroke-width="2"/>
+            </g>
+          </svg>
+
+          <span class="safety-tag">Recoverable</span>
+        </div>
+        <p class="safety-caption">Everything else goes to the Trash, where you can take it back.</p>
+      </div>
+
+    </div>
+
+    <p class="safety-quote" data-io>When uncertainty exists, Moleui refuses, skips, or asks, rather than widening what it deletes.</p>
+
+    <div class="safety-grid stagger" data-io>
+      <div class="safety-pillar">
+        <div class="safety-pillar-card glass">
+          <span class="safety-tile safety-tile-violet">
+            <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="8.6" cy="8.6" r="5.1"/>
+              <path d="M12.4 12.4 17 17"/>
+            </svg>
+          </span>
+          <h3>Preview first</h3>
+          <p>Every module runs a dry scan and shows you the full list before anything changes. You approve, it acts.</p>
+        </div>
+      </div>
+      <div class="safety-pillar">
+        <div class="safety-pillar-card glass">
+          <span class="safety-tile safety-tile-green">
+            <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6.2h9.6"/>
+              <path d="M6.4 6.2V5.2c0-.6.4-1 1-1h2.8c.6 0 1 .4 1 1v1"/>
+              <path d="M5.2 6.2l.7 9.2c.1.8.7 1.4 1.5 1.4h2.8c.8 0 1.4-.6 1.5-1.4l.7-9.2"/>
+              <path d="M15.8 12.6c1.4-1.8 1.2-4.2-.4-6"/>
+              <path d="M14.2 7.6l1.1-1.2 1.3 1.1"/>
+            </svg>
+          </span>
+          <h3>Trash, not oblivion</h3>
+          <p>Deletions route to the macOS Trash instead of permanent removal. Change your mind? Put it back.</p>
+        </div>
+      </div>
+      <div class="safety-pillar">
+        <div class="safety-pillar-card glass">
+          <span class="safety-tile safety-tile-blue">
+            <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 2.6 15.9 5v4.4c0 3.8-2.5 6.5-5.9 7.9-3.4-1.4-5.9-4.1-5.9-7.9V5Z"/>
+              <path d="M7.5 9.9l1.8 1.8 3.3-3.4"/>
+            </svg>
+          </span>
+          <h3>Protected paths</h3>
+          <p>System roots, keychains, credentials, browser history, and even your AI tools are off limits, always, even with admin rights.</p>
+        </div>
+      </div>
+      <div class="safety-pillar">
+        <div class="safety-pillar-card glass">
+          <span class="safety-tile safety-tile-amber">
+            <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6.2 3h8.2c.9 0 1.6.7 1.6 1.6v10.3c0 1.2-1 2.1-2.1 2.1H6.1C5 17 4 16.1 4 14.9V5.1C4 3.9 5 3 6.2 3Z"/>
+              <path d="M7.2 7.2h5.6M7.2 10.2h5.6M7.2 13.2h3.4"/>
+            </svg>
+          </span>
+          <h3>Everything on the record</h3>
+          <p>File-removing operations are logged locally to an operations log you can read any time.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="safety-note" data-io>Open source under MIT. Every line that touches your files is <a href="https://github.com/stwgabriel/moleui" target="_blank" rel="noopener">public on GitHub</a>.</p>
+
+  </div>
+</section>
+
+<style>
+  #safety {
+    padding: 7.5rem 1.5rem;
+    --safety-orbit-r: 168px;
+  }
+  #safety .safety-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+
+  /* ---------- Header ---------- */
+  #safety .safety-head {
+    text-align: center;
+    max-width: 760px;
+    margin: 0 auto 3.5rem;
+  }
+  #safety .safety-head h2 {
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    line-height: 1.05;
+    margin: 1.1rem 0 1.1rem;
+  }
+  #safety .safety-sub {
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+  }
+
+  /* ---------- Scene layout ---------- */
+  #safety .safety-scene {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr;
+    align-items: center;
+    gap: 2rem;
+  }
+  #safety .safety-caption {
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--text-tertiary);
+    margin: 0.75rem auto 0;
+    max-width: 320px;
+  }
+
+  /* ---------- Shield stage ---------- */
+  #safety .safety-shield-stage {
+    position: relative;
+    height: 430px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: var(--radius-2xl);
+  }
+  #safety .safety-core {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #safety .safety-glow {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 330px;
+    height: 330px;
+    transform: translate(-50%, -50%);
+    border-radius: var(--radius-full);
+    background: radial-gradient(closest-side, rgba(var(--accent-rgb), 0.28), rgba(var(--accent-2-rgb), 0.1) 55%, transparent 75%);
+    opacity: 0.75;
+    pointer-events: none;
+  }
+  #safety.safety-animate .safety-glow {
+    animation: safety-breathe 4s var(--ease-smooth) infinite alternate;
+  }
+  #safety .safety-shield {
+    position: relative;
+    display: block;
+    filter: drop-shadow(0 18px 40px rgba(var(--accent-rgb), 0.22));
+  }
+  #safety .safety-orbit-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: calc(var(--safety-orbit-r) * 2);
+    height: calc(var(--safety-orbit-r) * 2);
+    transform: translate(-50%, -50%);
+    border: 1px dashed rgba(var(--accent-rgb), 0.18);
+    border-radius: var(--radius-full);
+    pointer-events: none;
+  }
+
+  /* ---------- Orbiting chips ---------- */
+  #safety .safety-orbit {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+  #safety.safety-animate .safety-orbit {
+    animation: safety-orbit 24s linear infinite;
+  }
+  #safety .safety-chip {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0;
+    height: 0;
+    transform: rotate(var(--a)) translateX(var(--safety-orbit-r));
+  }
+  #safety .safety-chip-spin {
+    width: 0;
+    height: 0;
+    transform-origin: 0 0;
+  }
+  #safety.safety-animate .safety-chip-spin {
+    animation: safety-orbit-rev 24s linear infinite;
+  }
+  #safety .safety-chip-pill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: rotate(calc(-1 * var(--a))) translate(-50%, -50%);
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--text-secondary);
+    background: var(--surface-elevated);
+    border: 1px solid rgba(var(--accent-rgb), 0.16);
+    border-radius: var(--radius-full);
+    padding: 0.32em 0.85em;
+    box-shadow: var(--shadow-sm);
+  }
+  #safety .safety-chip-pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--success);
+    flex: none;
+  }
+
+  /* ---------- Projectile FX layer ---------- */
+  #safety .safety-fx {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
+  #safety .safety-dot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: var(--radius-full);
+    background: var(--danger);
+    box-shadow: 0 0 12px rgba(var(--danger-rgb), 0.55);
+    opacity: 0;
+  }
+  #safety .safety-ripple {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 2px solid rgba(var(--accent-rgb), 0.55);
+    border-radius: var(--radius-full);
+    transform: translate(-50%, -50%);
+  }
+  #safety .safety-blocked {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--danger);
+    background: rgba(var(--danger-rgb), 0.1);
+    border: 1px solid rgba(var(--danger-rgb), 0.22);
+    border-radius: var(--radius-full);
+    padding: 0.25em 0.75em;
+    opacity: 0;
+  }
+
+  /* ---------- Trash vignette ---------- */
+  #safety .safety-trash-stage {
+    position: relative;
+    width: 260px;
+    height: 300px;
+    margin: 0 auto;
+  }
+  #safety .safety-trash {
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    display: block;
+  }
+  #safety .safety-lid {
+    transform-box: fill-box;
+    transform-origin: left center;
+  }
+  #safety.safety-animate .safety-lid {
+    animation: safety-lid 7s var(--ease-smooth) infinite;
+  }
+  #safety .safety-file-pos {
+    position: absolute;
+    left: 50%;
+    top: 28px;
+    transform: translateX(-50%);
+    z-index: 2;
+  }
+  #safety .safety-file {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--surface-elevated);
+    border: 1px solid rgba(var(--accent-rgb), 0.14);
+    border-radius: var(--radius-md);
+    padding: 0.55rem 0.9rem;
+    box-shadow: var(--shadow-md);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  #safety.safety-animate .safety-file {
+    animation: safety-file 7s var(--ease-smooth) infinite;
+  }
+  #safety .safety-file-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: var(--radius-sm);
+    background: rgba(var(--accent-rgb), 0.12);
+  }
+  #safety .safety-file-meta {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+  #safety .safety-file-meta strong {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--heading);
+  }
+  #safety .safety-file-meta em {
+    font-style: normal;
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+  }
+  #safety .safety-tag {
+    position: absolute;
+    left: calc(50% + 40px);
+    top: 158px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--success);
+    background: rgba(var(--success-rgb), 0.12);
+    border: 1px solid rgba(var(--success-rgb), 0.25);
+    border-radius: var(--radius-full);
+    padding: 0.28em 0.8em;
+    opacity: 0;
+    z-index: 3;
+  }
+  #safety.safety-animate .safety-tag {
+    animation: safety-tag 7s var(--ease-smooth) infinite;
+  }
+  #safety .safety-restored {
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 14px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--success);
+    background: rgba(var(--success-rgb), 0.12);
+    border: 1px solid rgba(var(--success-rgb), 0.25);
+    border-radius: var(--radius-full);
+    padding: 0.28em 0.8em;
+    opacity: 0;
+  }
+  #safety.safety-animate .safety-restored {
+    animation: safety-restored 7s var(--ease-smooth) infinite;
+  }
+  #safety .safety-arrow {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+  #safety .safety-arrow-path {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  #safety .safety-arrow-head {
+    opacity: 0;
+  }
+  #safety.safety-animate .safety-arrow-path {
+    animation: safety-arrow-draw 7s linear infinite;
+  }
+  #safety.safety-animate .safety-arrow-head {
+    animation: safety-arrow-head 7s linear infinite;
+  }
+
+  /* ---------- Pull quote ---------- */
+  #safety .safety-quote {
+    text-align: center;
+    font-size: clamp(1.15rem, 2vw, 1.45rem);
+    font-style: italic;
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    max-width: 720px;
+    margin: 4rem auto 4rem;
+  }
+
+  /* ---------- Pillar cards ---------- */
+  #safety .safety-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+  }
+  #safety .safety-pillar-card {
+    height: 100%;
+    padding: 1.6rem 1.4rem;
+    border-radius: var(--radius-xl);
+    transition: transform var(--dur-normal) var(--ease-out-expo), box-shadow var(--dur-normal) var(--ease-out-expo);
+  }
+  #safety .safety-pillar-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+  }
+  #safety .safety-tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+  }
+  #safety .safety-tile-violet { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
+  #safety .safety-tile-green  { background: rgba(var(--success-rgb), 0.12); color: var(--success); }
+  #safety .safety-tile-blue   { background: rgba(var(--clean-rgb), 0.12); color: var(--clean); }
+  #safety .safety-tile-amber  { background: rgba(var(--warning-rgb), 0.12); color: var(--warning); }
+  #safety .safety-pillar-card h3 {
+    font-size: 1.02rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--heading);
+    margin: 0 0 0.5rem;
+  }
+  #safety .safety-pillar-card p {
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    margin: 0;
+  }
+
+  /* ---------- Open-source note ---------- */
+  #safety .safety-note {
+    text-align: center;
+    font-size: 0.88rem;
+    color: var(--text-tertiary);
+    margin: 3rem auto 0;
+  }
+  #safety .safety-note a {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(var(--accent-rgb), 0.35);
+    transition: border-color var(--dur-fast) var(--ease-smooth);
+  }
+  #safety .safety-note a:hover {
+    border-bottom-color: var(--accent);
+  }
+
+  /* ---------- Keyframes ---------- */
+  @keyframes safety-breathe {
+    from { transform: translate(-50%, -50%) scale(1); opacity: 0.65; }
+    to   { transform: translate(-50%, -50%) scale(1.12); opacity: 1; }
+  }
+  @keyframes safety-orbit {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes safety-orbit-rev {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(-360deg); }
+  }
+  @keyframes safety-file {
+    0%        { transform: translate(-120px, -6px) rotate(-3deg); opacity: 0; }
+    9%        { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    17%       { transform: translate(0, 0); opacity: 1; }
+    24%       { transform: translate(0, 64px) scale(0.78); opacity: 1; }
+    30%, 60%  { transform: translate(0, 128px) scale(0.4); opacity: 0; }
+    64%       { transform: translate(26px, 96px) scale(0.55) rotate(4deg); opacity: 0.6; }
+    72%       { transform: translate(8px, -6px) scale(1.02) rotate(0deg); opacity: 1; }
+    76%, 90%  { transform: translate(0, 0) scale(1); opacity: 1; }
+    100%      { transform: translate(-120px, -6px) rotate(-3deg); opacity: 0; }
+  }
+  @keyframes safety-lid {
+    0%, 10%   { transform: rotate(0deg); }
+    15%, 30%  { transform: rotate(-46deg); }
+    35%, 58%  { transform: rotate(0deg); }
+    63%, 76%  { transform: rotate(-46deg); }
+    82%, 100% { transform: rotate(0deg); }
+  }
+  @keyframes safety-tag {
+    0%, 36%   { opacity: 0; transform: scale(0.4) translateY(6px); animation-timing-function: var(--ease-spring); }
+    44%       { opacity: 1; transform: scale(1.1) translateY(0); }
+    48%, 58%  { opacity: 1; transform: scale(1) translateY(0); }
+    66%, 100% { opacity: 0; transform: scale(0.9) translateY(0); }
+  }
+  @keyframes safety-restored {
+    0%, 66%   { opacity: 0; transform: scale(0.5); animation-timing-function: var(--ease-spring); }
+    73%       { opacity: 1; transform: scale(1.06); }
+    77%, 88%  { opacity: 1; transform: scale(1); }
+    94%, 100% { opacity: 0; transform: scale(0.9); }
+  }
+  @keyframes safety-arrow-draw {
+    0%, 58%   { stroke-dashoffset: 1; opacity: 0; }
+    60%       { stroke-dashoffset: 1; opacity: 1; }
+    70%, 80%  { stroke-dashoffset: 0; opacity: 1; }
+    88%, 100% { stroke-dashoffset: 0; opacity: 0; }
+  }
+  @keyframes safety-arrow-head {
+    0%, 66%   { opacity: 0; }
+    70%, 80%  { opacity: 1; }
+    88%, 100% { opacity: 0; }
+  }
+
+  /* ---------- Reduced motion: static composition ---------- */
+  #safety.safety-reduced .safety-fx,
+  #safety.safety-reduced .safety-orbit-ring,
+  #safety.safety-reduced .safety-arrow,
+  #safety.safety-reduced .safety-restored {
+    display: none;
+  }
+  #safety.safety-reduced .safety-glow,
+  #safety.safety-reduced .safety-orbit,
+  #safety.safety-reduced .safety-chip-spin,
+  #safety.safety-reduced .safety-lid,
+  #safety.safety-reduced .safety-file,
+  #safety.safety-reduced .safety-tag {
+    animation: none;
+  }
+  #safety.safety-reduced .safety-shield-stage {
+    height: auto;
+    flex-direction: column;
+    gap: 1.75rem;
+    padding: 1.5rem 0 0.5rem;
+    overflow: visible;
+  }
+  #safety.safety-reduced .safety-orbit {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.55rem;
+    max-width: 480px;
+  }
+  #safety.safety-reduced .safety-chip {
+    position: static;
+    width: auto;
+    height: auto;
+    transform: none;
+  }
+  #safety.safety-reduced .safety-chip-spin {
+    width: auto;
+    height: auto;
+  }
+  #safety.safety-reduced .safety-chip-pill {
+    position: static;
+    transform: none;
+  }
+  #safety.safety-reduced .safety-tag {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 940px) {
+    #safety .safety-scene {
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+    #safety .safety-shield-stage {
+      height: 390px;
+    }
+  }
+  @media (max-width: 640px) {
+    #safety {
+      padding: 5.5rem 1.25rem;
+      --safety-orbit-r: 102px;
+    }
+    #safety .safety-shield {
+      width: 148px;
+      height: 166px;
+    }
+    #safety .safety-glow {
+      width: 250px;
+      height: 250px;
+    }
+    #safety .safety-shield-stage {
+      height: 330px;
+    }
+    #safety .safety-chip-pill {
+      font-size: 0.62rem;
+      padding: 0.26em 0.65em;
+    }
+    #safety .safety-quote {
+      margin: 3rem auto 3rem;
+    }
+  }
+  @media (max-width: 980px) {
+    #safety .safety-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 560px) {
+    #safety .safety-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    var root = document.getElementById("safety");
+    if (!root) return;
+    var ui = window.moleui || {};
+
+    if (ui.reduced) {
+      root.classList.add("safety-reduced");
+      return;
+    }
+
+    var stage = root.querySelector(".safety-shield-stage");
+    var fx = root.querySelector(".safety-fx");
+    var shield = root.querySelector(".safety-shield");
+    if (!stage || !fx || !shield) return;
+
+    var inView = true;
+    var started = false;
+
+    if ("IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        inView = entries[0].isIntersecting;
+      }, { threshold: 0.05 });
+      io.observe(root);
+    }
+
+    function spawnAttempt() {
+      if (!inView || document.hidden) return;
+      var el = document.createElement("div");
+      if (typeof el.animate !== "function") return;
+
+      var w = stage.clientWidth;
+      var h = stage.clientHeight;
+      var cx = w / 2;
+      var cy = h / 2;
+      var hitR = shield.getBoundingClientRect().height / 2 + 6;
+      var startR = Math.max(cx, cy) + 30;
+      var ang = Math.random() * Math.PI * 2;
+      var cos = Math.cos(ang);
+      var sin = Math.sin(ang);
+      var sx = cx + cos * startR;
+      var sy = cy + sin * startR;
+      var hx = cx + cos * hitR;
+      var hy = cy + sin * hitR;
+
+      var dot = el;
+      dot.className = "safety-dot";
+      fx.appendChild(dot);
+
+      function at(x, y, extra) {
+        return "translate(" + x + "px," + y + "px) translate(-50%,-50%) " + (extra || "");
+      }
+
+      var flight = dot.animate([
+        { transform: at(sx, sy, "scale(0.5)"), opacity: 0 },
+        { opacity: 1, offset: 0.25 },
+        { transform: at(hx, hy, "scale(1)"), opacity: 1 }
+      ], { duration: 680, easing: "cubic-bezier(.55,0,.85,.45)", fill: "forwards" });
+
+      flight.onfinish = function () {
+        var bx = cx + cos * (hitR + 26);
+        var by = cy + sin * (hitR + 26);
+        dot.animate([
+          { transform: at(hx, hy, "scale(1)"), opacity: 1 },
+          { transform: at(bx, by, "scale(0.35)"), opacity: 0 }
+        ], { duration: 480, easing: "cubic-bezier(.16,1,.3,1)", fill: "forwards" })
+          .onfinish = function () { dot.remove(); };
+
+        var ripple = document.createElement("div");
+        ripple.className = "safety-ripple";
+        ripple.style.left = hx + "px";
+        ripple.style.top = hy + "px";
+        fx.appendChild(ripple);
+        ripple.animate([
+          { transform: "translate(-50%,-50%) scale(0.4)", opacity: 0.9 },
+          { transform: "translate(-50%,-50%) scale(3.2)", opacity: 0 }
+        ], { duration: 750, easing: "cubic-bezier(.16,1,.3,1)", fill: "forwards" })
+          .onfinish = function () { ripple.remove(); };
+
+        var label = document.createElement("div");
+        label.className = "safety-blocked";
+        label.textContent = "Blocked";
+        var lx = Math.min(Math.max(hx + cos * 46, 44), w - 44);
+        var ly = Math.min(Math.max(hy + sin * 46, 20), h - 20);
+        label.style.left = lx + "px";
+        label.style.top = ly + "px";
+        fx.appendChild(label);
+        label.animate([
+          { opacity: 0, transform: "translate(-50%,-50%) scale(0.6)" },
+          { opacity: 1, transform: "translate(-50%,-50%) scale(1.05)", offset: 0.22 },
+          { opacity: 1, transform: "translate(-50%,-50%) scale(1)", offset: 0.4 },
+          { opacity: 1, transform: "translate(-50%,-50%) scale(1)", offset: 0.72 },
+          { opacity: 0, transform: "translate(-50%,-50%) scale(0.95)" }
+        ], { duration: 1100, easing: "ease-out", fill: "forwards" })
+          .onfinish = function () { label.remove(); };
+      };
+    }
+
+    function start() {
+      if (started) return;
+      started = true;
+      root.classList.add("safety-animate");
+      setTimeout(spawnAttempt, 900);
+      setInterval(spawnAttempt, 3000);
+    }
+
+    if (typeof ui.onVisible === "function") {
+      ui.onVisible(stage, start, 0.3);
+    } else {
+      start();
+    }
+  })();
+</script>
+
+
+<!-- ============ DOWNLOAD / FINAL CTA ============ -->
+<section class="download" id="download">
+  <div class="download-inner glass-elevated" data-io="scale">
+    <div class="dl-mole" aria-hidden="true">
+      <svg viewBox="0 0 240 200" width="132">
+        <defs><clipPath id="gclip2"><rect x="0" y="0" width="240" height="168"/></clipPath></defs>
+        <g clip-path="url(#gclip2)"><g class="dl-mole-body">
+          <path d="M52 168 C52 96 76 44 120 44 C164 44 188 96 188 168 Z" fill="#343B48"/>
+          <path d="M74 92 C74 52 94 30 120 30 C150 30 172 56 178 84 C181 98 182 112 182 126 L74 126 Z" fill="#343B48"/>
+          <path d="M158 62 C170 58 182 62 188 72 C193 80 191 90 182 92 C170 94 158 86 154 76 C152 70 154 64 158 62 Z" fill="#343B48"/>
+          <ellipse cx="186" cy="76" rx="12" ry="10" fill="#F2A099"/>
+          <circle cx="146" cy="66" r="8.5" fill="#10131A"/><circle cx="149" cy="63" r="3" fill="#FFFFFF"/>
+          <g stroke="#EDEFF4" stroke-width="2.4" stroke-linecap="round" fill="none" opacity=".9">
+            <path d="M160 92 C168 90 176 90 184 92"/><path d="M158 100 C167 99 176 100 184 103"/><path d="M156 108 C164 108 172 110 180 114"/>
+          </g>
+          <g><path d="M62 168 C60 148 68 136 82 136 C96 136 102 148 100 168 Z" fill="#F2A099"/><path d="M70 140 L70 156 M82 136 L82 154 M94 140 L94 156" stroke="#343B48" stroke-width="5" stroke-linecap="round"/></g>
+          <g><path d="M140 168 C138 148 146 136 160 136 C174 136 180 148 178 168 Z" fill="#F2A099"/><path d="M148 140 L148 156 M160 136 L160 154 M172 140 L172 156" stroke="#343B48" stroke-width="5" stroke-linecap="round"/></g>
+          <g><path d="M78 46 C74 24 96 8 122 10 C146 12 162 26 158 42 C156 50 146 54 132 54 C112 54 82 56 78 46 Z" fill="#D93B3B"/><path d="M116 10 C116 4 122 2 126 5 C129 7 128 12 124 13 Z" fill="#C22F2F"/></g>
+        </g></g>
+      </svg>
+    </div>
+    <h2>Give your Mac room to breathe.</h2>
+    <p class="section-sub">Download Moleui, watch your Mac's vitals for free, and unlock the full cleanup toolkit with Moleui Pro when you are ready.</p>
+    <div class="dl-ctas">
+      <a class="btn btn-primary" href="https://github.com/stwgabriel/moleui/releases" target="_blank" rel="noopener"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M4 21h16"/></svg> Download for macOS</a>
+      <button class="brew-box glass" id="brewBox" type="button" title="Copy Homebrew command">
+        <code>brew install --cask stwgabriel/tap/moleui</code>
+        <span class="brew-copy" id="brewCopy"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>
+      </button>
+    </div>
+    <p class="dl-note">Free to download. My Mac monitoring is free forever. Every release ships with SHA256 checksums.</p>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="footer">
+  <div class="footer-inner">
+    <span class="footer-brand">
+      <span class="brand-avatar" style="width:30px;height:30px">
+        <svg viewBox="0 0 40 40" width="24" height="24" aria-hidden="true">
+          <path d="M12 33 C12 20 15 12 20 12 C25 12 28 20 28 33 Z" fill="#fff"/>
+          <ellipse cx="26.5" cy="18" rx="2.6" ry="2.2" fill="#F2A099"/>
+          <circle cx="22" cy="16.6" r="1.5" fill="#10131A"/>
+          <path d="M13.5 13.5 C13 9 17.5 6.5 21.5 7 C25 7.5 27.5 10 26.6 12.6 C26 14.4 22 14.8 19 14.6 C16.5 14.4 13.8 14.6 13.5 13.5 Z" fill="#D93B3B"/>
+        </svg>
+      </span>
+      Moleui
+    </span>
+    <span class="footer-tag">Cleaning, uninstalling, optimizing, analyzing, and monitoring your Mac. Safely.</span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="https://github.com/stwgabriel/moleui" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/stwgabriel/moleui/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/stwgabriel/moleui/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+    </nav>
+  </div>
+</footer>
+
+<style>
+/* download + footer (kept with their markup for readability) */
+.download{padding:7rem 1.5rem 5rem}
+.download-inner{max-width:880px;margin-inline:auto;text-align:center;border-radius:var(--radius-3xl);padding:4rem 2.5rem 3.4rem;position:relative}
+.download-inner h2{font-size:clamp(2rem,4.5vw,3.2rem);margin:1.1rem 0 1rem}
+.download-inner .section-sub{margin-inline:auto;margin-bottom:2rem}
+.dl-mole{display:flex;justify-content:center}
+.dl-mole-body{transform-origin:50% 90%;animation:dl-sway 6s ease-in-out infinite}
+@keyframes dl-sway{0%,100%{transform:rotate(0)}30%{transform:rotate(-2.2deg)}65%{transform:rotate(1.8deg)}}
+.dl-ctas{display:flex;gap:.9rem;justify-content:center;align-items:stretch;flex-wrap:wrap}
+.brew-box{display:inline-flex;align-items:center;gap:.8rem;padding:.8rem 1.15rem;border-radius:var(--radius-full);transition:transform var(--dur-fast) var(--ease-smooth),box-shadow var(--dur-normal) var(--ease-smooth)}
+.brew-box:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.brew-box code{font-family:var(--mono);font-size:.86rem;font-weight:600;color:var(--text-primary)}
+.brew-copy{color:var(--text-tertiary);display:grid;place-items:center}
+.brew-box.copied .brew-copy{color:var(--success)}
+.dl-note{margin-top:1.4rem;font-size:.85rem;font-weight:600;color:var(--text-tertiary)}
+.footer{padding:2.5rem 1.5rem 3rem}
+.footer-inner{max-width:1060px;margin-inline:auto;display:flex;align-items:center;gap:1.4rem;flex-wrap:wrap;justify-content:space-between}
+.footer-brand{display:flex;align-items:center;gap:.55rem;font-weight:900;letter-spacing:-.02em;color:var(--heading)}
+.footer-tag{font-size:.85rem;color:var(--text-tertiary);font-weight:500;flex:1;min-width:240px}
+.footer-links{display:flex;gap:1.2rem}
+.footer-links a{font-size:.9rem;font-weight:600;color:var(--text-secondary);transition:color var(--dur-fast) var(--ease-smooth)}
+.footer-links a:hover{color:var(--accent)}
+</style>
+
+
+</body>
+</html>

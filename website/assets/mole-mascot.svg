@@ -1,0 +1,47 @@
+<svg viewBox="0 0 240 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Moleui mascot: a mole wearing a red beret peeking out of the ground">
+  <defs>
+    <clipPath id="ground-clip">
+      <rect x="0" y="0" width="240" height="168" />
+    </clipPath>
+  </defs>
+  <!-- mole body (clipped so it can 'peek' from the ground line) -->
+  <g clip-path="url(#ground-clip)">
+    <g class="mole-body">
+      <!-- torso mound -->
+      <path d="M52 168 C52 96 76 44 120 44 C164 44 188 96 188 168 Z" fill="#343B48"/>
+      <!-- head -->
+      <path d="M74 92 C74 52 94 30 120 30 C150 30 172 56 178 84 C181 98 182 112 182 126 L74 126 Z" fill="#343B48"/>
+      <!-- snout -->
+      <path d="M158 62 C170 58 182 62 188 72 C193 80 191 90 182 92 C170 94 158 86 154 76 C152 70 154 64 158 62 Z" fill="#343B48"/>
+      <!-- nose -->
+      <ellipse cx="186" cy="76" rx="12" ry="10" fill="#F2A099"/>
+      <!-- eye -->
+      <circle cx="146" cy="66" r="8.5" fill="#10131A"/>
+      <circle cx="149" cy="63" r="3" fill="#FFFFFF"/>
+      <!-- whiskers -->
+      <g stroke="#EDEFF4" stroke-width="2.4" stroke-linecap="round" fill="none" opacity="0.9">
+        <path d="M160 92 C168 90 176 90 184 92"/>
+        <path d="M158 100 C167 99 176 100 184 103"/>
+        <path d="M156 108 C164 108 172 110 180 114"/>
+      </g>
+      <!-- left paw -->
+      <g class="paw paw-left">
+        <path d="M62 168 C60 148 68 136 82 136 C96 136 102 148 100 168 Z" fill="#F2A099"/>
+        <path d="M70 140 L70 156 M82 136 L82 154 M94 140 L94 156" stroke="#343B48" stroke-width="5" stroke-linecap="round"/>
+      </g>
+      <!-- right paw -->
+      <g class="paw paw-right">
+        <path d="M140 168 C138 148 146 136 160 136 C174 136 180 148 178 168 Z" fill="#F2A099"/>
+        <path d="M148 140 L148 156 M160 136 L160 154 M172 140 L172 156" stroke="#343B48" stroke-width="5" stroke-linecap="round"/>
+      </g>
+      <!-- beret -->
+      <g class="beret">
+        <path d="M78 46 C74 24 96 8 122 10 C146 12 162 26 158 42 C156 50 146 54 132 54 C112 54 82 56 78 46 Z" fill="#D93B3B"/>
+        <path d="M116 10 C116 4 122 2 126 5 C129 7 128 12 124 13 Z" fill="#C22F2F"/>
+      </g>
+    </g>
+  </g>
+  <!-- ground line -->
+  <path d="M30 168 L210 168" stroke="#343B48" stroke-width="0" />
+  <path d="M52 168 C52 164 60 162 70 162 L170 162 C180 162 188 164 188 168 Z" fill="#343B48"/>
+</svg>
