@@ -265,7 +265,7 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
 /* ============================================================
    STAT STRIP (dark chips)
    ============================================================ */
-.strip{max-width:1060px;margin:0 auto;padding:0 1.5rem 2rem;position:relative;z-index:2}
+.strip{max-width:1060px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:2}
 .strip-inner{display:grid;grid-template-columns:repeat(4,1fr);gap:.9rem}
 .strip-item{padding:1.25rem 1.4rem;border-radius:var(--radius-xl);display:flex;flex-direction:column;gap:.3rem;transition:transform var(--dur-normal) var(--ease-smooth),box-shadow var(--dur-normal) var(--ease-smooth)}
 .strip-item:hover{transform:translateY(-4px);box-shadow:0 18px 44px rgba(3,4,18,.6)}
@@ -277,7 +277,13 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
 /* ============================================================
    SHARED FEATURE-SECTION LAYOUT (cosmic re-skin, same contract)
    ============================================================ */
-.feature{position:relative;padding:7.5rem 1.5rem;overflow:hidden;
+/* Each feature is its own WORLD: a distinct color panel floating in open
+   starfield, so sections read as separate chapters instead of one long flow. */
+.feature{position:relative;padding:6rem 4.5rem;overflow:hidden;
+  width:min(1240px,calc(100% - 2rem));margin:0 auto;
+  border-radius:44px;
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 40px 120px rgba(3,4,18,.55), inset 0 1px 0 rgba(255,255,255,.10);
   /* dark-theme token overrides for fragment copy */
   --heading:var(--cosmo-heading);
   --text-secondary:var(--cosmo-body);
@@ -285,6 +291,24 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   --text-primary:#ddd9f5;
   --surface-hover:rgba(255,255,255,.06);
 }
+.feature[data-accent="clean"]{background:linear-gradient(160deg,#071c3f 0%,#0d3a7d 52%,#2b2a8f 100%)}
+.feature[data-accent="optimize"]{background:linear-gradient(160deg,#190b3d 0%,#3a1a80 55%,#5a2ba0 100%)}
+.feature[data-accent="uninstall"]{background:linear-gradient(160deg,#33101f 0%,#7a1f33 55%,#a04432 100%)}
+.feature[data-accent="analyze"]{background:linear-gradient(160deg,#2c0a30 0%,#701a5e 55%,#98266f 100%)}
+.feature[data-accent="mymac"]{background:linear-gradient(160deg,#04291f 0%,#0b5c46 55%,#0f7a58 100%)}
+@media (max-width:760px){.feature{padding:3.6rem 1.4rem;border-radius:28px;width:calc(100% - 1.2rem)}}
+
+/* big translucent chapter number, injected by JS */
+.chapter-num{position:absolute;top:.6rem;right:2.2rem;font-size:clamp(4.5rem,9vw,8.5rem);font-weight:900;letter-spacing:-.05em;line-height:1;color:rgba(255,255,255,.07);pointer-events:none;user-select:none}
+
+/* the hop: open starfield gap between worlds with a traveling comet dot */
+.hop{position:relative;height:24vh;min-height:170px;width:2px;margin:0 auto;
+  background:repeating-linear-gradient(180deg,rgba(201,164,255,.38) 0 4px,transparent 4px 15px)}
+.hop::after{content:"";position:absolute;left:50%;top:0;width:10px;height:10px;margin-left:-5px;border-radius:50%;
+  background:#c9a4ff;box-shadow:0 0 18px 5px rgba(140,63,252,.55);
+  animation:hop-fall 3.4s ease-in-out infinite}
+@keyframes hop-fall{0%{top:0;opacity:0}14%{opacity:1}86%{opacity:1}100%{top:calc(100% - 10px);opacity:0}}
+@media (prefers-reduced-motion:reduce){.hop::after{display:none}}
 .feature-inner{max-width:1120px;margin-inline:auto;display:grid;grid-template-columns:1fr 1.1fr;gap:4.5rem;align-items:center}
 .feature.flip .feature-inner{grid-template-columns:1.1fr 1fr}
 .feature.flip .feature-copy{order:2}
@@ -311,6 +335,12 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   background:radial-gradient(760px 520px at var(--wash-x,80%) 30%,rgba(var(--fa-rgb),.13),transparent 65%);
 }
 .feature.flip[data-accent]::before{--wash-x:20%}
+/* safety section gets the same world-panel treatment (its layout is fragment-owned) */
+#safety{position:relative;overflow:hidden;width:min(1240px,calc(100% - 2rem));margin:0 auto;
+  border-radius:44px;border:1px solid rgba(255,255,255,.14);
+  background:linear-gradient(160deg,#0d1030 0%,#1b1f52 60%,#2a2a6e 100%);
+  box-shadow:0 40px 120px rgba(3,4,18,.55), inset 0 1px 0 rgba(255,255,255,.10)}
+@media (max-width:760px){#safety{border-radius:28px;width:calc(100% - 1.2rem)}}
 .feature .eyebrow{color:var(--fa);background:rgba(var(--fa-rgb),.13);border-color:rgba(var(--fa-rgb),.32)}
 .feature .row .tile{background:rgba(var(--fa-rgb),.14);color:var(--fa)}
 .feature .row .tile svg{stroke:var(--fa)}
@@ -559,6 +589,7 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   </div>
 </section>
 
+<div class="hop" aria-hidden="true"></div>
 <section id="clean" class="feature" data-accent="clean">
   <div class="feature-inner">
     <div class="feature-copy" data-io>
@@ -1234,6 +1265,7 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   })();
 </script>
 
+<div class="hop" aria-hidden="true"></div>
 <section id="optimize" class="feature flip" data-accent="optimize">
   <div class="feature-inner">
     <div class="feature-copy" data-io>
@@ -1794,6 +1826,7 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   })();
 </script>
 
+<div class="hop" aria-hidden="true"></div>
 <section id="uninstall" class="feature" data-accent="uninstall">
   <div class="feature-inner">
     <div class="feature-copy" data-io>
@@ -2353,6 +2386,7 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   })();
 </script>
 
+<div class="hop" aria-hidden="true"></div>
 <section id="analyze" class="feature flip" data-accent="analyze">
   <div class="feature-inner">
     <div class="feature-copy" data-io>
@@ -2903,6 +2937,7 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   })();
 </script>
 
+<div class="hop" aria-hidden="true"></div>
 <section id="mymac" class="feature" data-accent="mymac">
   <div class="feature-inner">
     <div class="feature-copy" data-io>
@@ -3513,6 +3548,7 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   })();
 </script>
 
+<div class="hop" aria-hidden="true"></div>
 <section id="safety">
   <div class="safety-inner">
 
@@ -4318,6 +4354,7 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
   })();
 </script>
 
+<div class="hop" aria-hidden="true"></div>
 
 <!-- ============ FINALE: THE DAWN FIELD ============ -->
 <section class="finale" id="download">
@@ -4596,8 +4633,15 @@ h1,h2,h3{color:var(--cosmo-heading);font-weight:900;letter-spacing:-.03em;line-h
     }
   };
 
-  /* collect scenes for parallax + add constellation dots per feature */
-  document.querySelectorAll(".feature").forEach(function(f){
+  /* collect scenes for parallax + constellation dots + chapter numbers */
+  var chapters = document.querySelectorAll(".feature, #safety");
+  chapters.forEach(function(f, idx){
+    var num = document.createElement("span");
+    num.className = "chapter-num";
+    num.setAttribute("aria-hidden", "true");
+    num.textContent = "0" + (idx + 1);
+    f.appendChild(num);
+    if(!f.classList.contains("feature")) return;
     var scene = f.querySelector(".feature-scene");
     if(scene) scenes.push(scene);
     if(reduced) return;

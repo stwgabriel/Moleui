@@ -1,6 +1,6 @@
 # Moleui Landing Page
 
-A fully animated, single-file marketing landing page for Moleui Desktop. Version 2 is a cinematic scroll journey: it opens in deep space (parallax starfield canvas, brand-colored nebulas, shooting stars, an astronaut mole), floats the app's feature scenes through the cosmos as glowing glass windows, and descends into a dawn field (sunrise, drifting clouds, fireflies, the mole on his molehill) for the closing "you can breathe" download moment.
+A fully animated, single-file marketing landing page for Moleui Desktop. Version 3 is a cinematic scroll journey with hard chapter breaks: it opens in deep space (parallax starfield canvas, brand-colored nebulas, shooting stars, an astronaut mole), then presents each feature as its own "world", a rounded full-bleed color panel in that feature's hue (blue, purple, red, pink, green, indigo) floating in open starfield, numbered 01 to 06 and connected by dotted hop trails with a traveling comet dot. The journey ends descending into a dawn field (sunrise, drifting clouds, fireflies, the mole on his molehill) for the closing "you can breathe" download moment.
 
 Built with the app's own design system: DM Sans, purple `#8c3ffc` and pink `#fd2d86` accents, glassmorphism, and the per-feature color wheel (My Mac green, Cleanup blue, Optimize purple, Uninstall red, Storage pink).
 
@@ -10,7 +10,8 @@ Built with the app's own design system: DM Sans, purple `#8c3ffc` and pink `#fd2
 - `index.template.html` - v2 skeleton: cosmos backdrop layers, starfield canvas, nav, space hero, stat strip, dawn-field finale (healing dashboard demo, FAQ, download CTA, footer), and the shared reveal/counter/parallax JS framework.
 - `sections/*.html` - one fragment per feature section (clean, optimize, uninstall, analyze, mymac, safety). Each contains its own scoped `<style>` and `<script>`.
 - `build.py` - assembles `index.html` by replacing `<!-- @@SECTION:name@@ -->` markers in the template with fragment contents.
-- `v1.html` / `v1.template.html` - the archived first version (light glassmorphism, no cosmos).
+- `v1.html` / `v1.template.html` - archived first version (light glassmorphism, no cosmos).
+- `v2.html` / `v2.template.html` - archived second version (cosmic journey, continuous flow without chapter panels).
 - `assets/mole-mascot.svg` - the mole mascot source.
 
 ## Editing
