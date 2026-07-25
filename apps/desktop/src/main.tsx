@@ -5,6 +5,7 @@ import { ConvexProviderWithClerk } from 'convex/react-clerk';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { initTheme } from '@/hooks/useTheme';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { MissingClientConfig } from '@/components/auth/MissingClientConfig';
 import {
@@ -14,6 +15,10 @@ import {
   convexUrl,
   hasClientConfig,
 } from '@/lib/clientConfig';
+
+// Apply the persisted theme before React renders so the window never flashes
+// the wrong scheme.
+initTheme();
 
 const convex = hasClientConfig() ? new ConvexReactClient(convexUrl!) : null;
 

@@ -65,6 +65,20 @@ describe('SettingsWindow', () => {
         enable: vi.fn(),
         disable: vi.fn(),
       },
+      theme: {
+        get: vi.fn().mockResolvedValue({ theme: 'system' }),
+        set: vi.fn().mockResolvedValue({ ok: true, theme: 'system' }),
+      },
+      appIcon: {
+        list: vi.fn().mockResolvedValue({
+          icons: [
+            { id: 'classic', label: 'Classic Purple', preview: 'assets/base/molui-purple.png' },
+            { id: 'midnight', label: 'Midnight', preview: 'assets/base/molui-midnight.png' },
+          ],
+        }),
+        get: vi.fn().mockResolvedValue({ icon: 'classic' }),
+        set: vi.fn().mockResolvedValue({ ok: true, icon: 'midnight', appliesOnQuit: true }),
+      },
     } as unknown as typeof window.moleDesktop;
   });
 
@@ -99,6 +113,49 @@ describe('SettingsWindow', () => {
     await waitFor(() => {
       expect(window.moleDesktop.getBackgroundSystems).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('switches the theme from the appearance section and persists the choice', () => {
+    render(<SettingsWindow />);
+
+    const group = screen.getByRole('radiogroup', { name: /theme/i });
+    const dark = within(group).getByRole('radio', { name: /dark/i });
+    const light = within(group).getByRole('radio', { name: /light/i });
+    const system = within(group).getByRole('radio', { name: /system/i });
+
+    fireEvent.click(dark);
+    expect(dark).toHaveAttribute('aria-checked', 'true');
+    expect(document.documentElement).toHaveClass('dark');
+    expect(localStorage.getItem('mole-theme')).toBe('dark');
+    expect(window.moleDesktop.theme?.set).toHaveBeenCalledWith('dark');
+
+    fireEvent.click(light);
+    expect(light).toHaveAttribute('aria-checked', 'true');
+    expect(document.documentElement).not.toHaveClass('dark');
+    expect(localStorage.getItem('mole-theme')).toBe('light');
+
+    // jsdom has no matchMedia, so "system" resolves to light here; the point is
+    // the preference itself round-trips and the dark class clears.
+    fireEvent.click(system);
+    expect(system).toHaveAttribute('aria-checked', 'true');
+    expect(document.documentElement).not.toHaveClass('dark');
+    expect(localStorage.getItem('mole-theme')).toBe('system');
+  });
+
+  it('switches the app icon and surfaces the applies-on-quit notice', async () => {
+    render(<SettingsWindow />);
+
+    const group = await screen.findByRole('radiogroup', { name: /app icon/i });
+    expect(within(group).getByRole('radio', { name: /classic purple/i })).toHaveAttribute('aria-checked', 'true');
+
+    const midnight = within(group).getByRole('radio', { name: /midnight/i });
+    fireEvent.click(midnight);
+
+    await waitFor(() => {
+      expect(window.moleDesktop.appIcon?.set).toHaveBeenCalledWith('midnight');
+    });
+    expect(midnight).toHaveAttribute('aria-checked', 'true');
+    expect(await screen.findByText(/after you quit/i)).toBeInTheDocument();
   });
 
   it('opens checkout from the subscription panel inside the app window', async () => {

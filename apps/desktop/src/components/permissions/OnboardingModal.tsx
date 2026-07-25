@@ -13,8 +13,8 @@ interface OnboardingModalProps {
 
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
-const PERM_CARD = 'rounded-2xl border border-slate-200/70 bg-white/70 p-4';
-const PERM_ACTION = 'inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-white';
+const PERM_CARD = 'rounded-2xl border border-slate-200/70 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/55';
+const PERM_ACTION = 'inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-white dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-white/10';
 
 export function OnboardingModal({ fullDiskAccess, loading, onOpenFda, onRequestFiles, onRecheck, onDone }: OnboardingModalProps) {
   return (
@@ -31,7 +31,7 @@ export function OnboardingModal({ fullDiskAccess, loading, onOpenFda, onRequestF
         role="dialog"
         aria-modal="true"
         aria-label="Set up permissions"
-        className="relative w-full max-w-md overflow-hidden rounded-[1.75rem] border border-white/70 bg-white/85 p-7 shadow-[0_40px_120px_rgba(83,76,148,0.28)] backdrop-blur-2xl"
+        className="relative w-full max-w-md overflow-hidden rounded-[1.75rem] border border-white/70 bg-white/85 p-7 shadow-[0_40px_120px_rgba(83,76,148,0.28)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/65 dark:shadow-[0_40px_120px_rgba(0,0,0,0.55)]"
         initial={{ opacity: 0, y: 18, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.35, ease: EASE }}
@@ -42,10 +42,10 @@ export function OnboardingModal({ fullDiskAccess, loading, onOpenFda, onRequestF
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-[0_14px_34px_rgba(124,58,237,0.4)]">
             <Sparkles className="h-6 w-6" />
           </div>
-          <h2 className="mt-4 text-[1.5rem] font-black leading-tight tracking-[-0.03em] text-slate-950">
+          <h2 className="mt-4 text-[1.5rem] font-black leading-tight tracking-[-0.03em] text-slate-950 dark:text-slate-100">
             Let&apos;s get Mole ready
           </h2>
-          <p className="mt-1.5 text-sm font-medium leading-relaxed text-slate-500">
+          <p className="mt-1.5 text-sm font-medium leading-relaxed text-slate-500 dark:text-slate-400">
             To scan and clean your Mac, Mole needs a couple of macOS permissions. You only do this once, and you stay in control.
           </p>
 
@@ -53,12 +53,12 @@ export function OnboardingModal({ fullDiskAccess, loading, onOpenFda, onRequestF
             <div className={PERM_CARD}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300">
                     <HardDrive className="h-[18px] w-[18px]" />
                   </span>
                   <div className="min-w-0">
-                    <div className="text-sm font-bold text-slate-900">Full Disk Access</div>
-                    <p className="mt-0.5 text-xs font-medium leading-relaxed text-slate-500">
+                    <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Full Disk Access</div>
+                    <p className="mt-0.5 text-xs font-medium leading-relaxed text-slate-500 dark:text-slate-400">
                       So we can find junk in protected spots. Flip Mole on in System Settings.
                     </p>
                   </div>
@@ -74,12 +74,12 @@ export function OnboardingModal({ fullDiskAccess, loading, onOpenFda, onRequestF
 
             <div className={PERM_CARD}>
               <div className="flex items-start gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300">
                   <FolderOpen className="h-[18px] w-[18px]" />
                 </span>
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-slate-900">Files &amp; Folders</div>
-                  <p className="mt-0.5 text-xs font-medium leading-relaxed text-slate-500">
+                  <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Files &amp; Folders</div>
+                  <p className="mt-0.5 text-xs font-medium leading-relaxed text-slate-500 dark:text-slate-400">
                     So we can tidy your Desktop, Documents, and Downloads. macOS will ask, just tap Allow.
                   </p>
                 </div>
@@ -93,7 +93,7 @@ export function OnboardingModal({ fullDiskAccess, loading, onOpenFda, onRequestF
           <div className="mt-6 flex items-center justify-between gap-3">
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 transition hover:text-slate-800"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 transition hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
               onClick={onRecheck}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Re-check
@@ -106,7 +106,7 @@ export function OnboardingModal({ fullDiskAccess, loading, onOpenFda, onRequestF
               Continue <ArrowRight className="h-4 w-4" />
             </button>
           </div>
-          <p className="relative mt-3 text-center text-[11px] font-medium text-slate-400">
+          <p className="relative mt-3 text-center text-[11px] font-medium text-slate-400 dark:text-slate-500">
             You can change these anytime in Settings &rarr; Permissions.
           </p>
         </div>

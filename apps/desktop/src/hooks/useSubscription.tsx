@@ -22,11 +22,11 @@ function subscriptionStatus(entitlement: { status?: unknown } | undefined) {
 }
 
 function billingApi() {
-  if (!window.moleDesktop.billing) {
+  if (!window.moleDesktop?.billing) {
     throw new Error('Billing is not available in this window');
   }
 
-  return window.moleDesktop.billing;
+  return window.moleDesktop?.billing;
 }
 
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
@@ -48,7 +48,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   // packaged build it must never apply, even if the flag lingered in localStorage.
   useEffect(() => {
     let cancelled = false;
-    window.moleDesktop.getRuntimeInfo?.()
+    window.moleDesktop?.getRuntimeInfo?.()
       .then((info) => {
         if (cancelled || !info?.packaged) return;
         localStorage.removeItem(DEVELOPER_UNLOCK_KEY);
@@ -66,8 +66,8 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       setIsDeveloperUnlocked(true);
     };
 
-    window.moleDesktop.developer?.onUnlockApp(unlock);
-    return () => window.moleDesktop.developer?.removeListeners();
+    window.moleDesktop?.developer?.onUnlockApp(unlock);
+    return () => window.moleDesktop?.developer?.removeListeners();
   }, []);
 
   useEffect(() => {
@@ -108,7 +108,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     const currentUser = user;
 
     async function sync() {
-      const detectedCountry = await window.moleDesktop.billing?.detectCountry().catch(() => ({ country: 'US' }));
+      const detectedCountry = await window.moleDesktop?.billing?.detectCountry().catch(() => ({ country: 'US' }));
       if (cancelled) return;
 
       const nextCountry = detectedCountry?.country || 'US';
@@ -135,8 +135,8 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onClosed = () => setBillingRefreshKey((key) => key + 1);
-    window.moleDesktop.billing?.onClosed(onClosed);
-    return () => window.moleDesktop.billing?.removeListeners();
+    window.moleDesktop?.billing?.onClosed(onClosed);
+    return () => window.moleDesktop?.billing?.removeListeners();
   }, []);
 
   const value = useMemo<SubscriptionContextValue>(() => ({

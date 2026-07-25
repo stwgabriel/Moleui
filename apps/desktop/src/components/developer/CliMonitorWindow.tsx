@@ -17,11 +17,11 @@ function formatDuration(ms?: number) {
 }
 
 function eventTone(type: CliMonitorEvent['type'], ok?: boolean) {
-  if (type === 'stderr' || type === 'error' || ok === false) return 'text-rose-500 bg-rose-50 ring-rose-100';
-  if (type === 'close' || ok === true) return 'text-emerald-600 bg-emerald-50 ring-emerald-100';
-  if (type === 'cancel') return 'text-amber-600 bg-amber-50 ring-amber-100';
-  if (type === 'stdout') return 'text-blue-600 bg-blue-50 ring-blue-100';
-  return 'text-violet-600 bg-violet-50 ring-violet-100';
+  if (type === 'stderr' || type === 'error' || ok === false) return 'text-rose-500 bg-rose-50 ring-rose-100 dark:text-rose-300 dark:bg-rose-500/15 dark:ring-rose-500/25';
+  if (type === 'close' || ok === true) return 'text-emerald-600 bg-emerald-50 ring-emerald-100 dark:text-emerald-300 dark:bg-emerald-500/15 dark:ring-emerald-500/25';
+  if (type === 'cancel') return 'text-amber-600 bg-amber-50 ring-amber-100 dark:text-amber-300 dark:bg-amber-500/15 dark:ring-amber-500/25';
+  if (type === 'stdout') return 'text-blue-600 bg-blue-50 ring-blue-100 dark:text-blue-300 dark:bg-blue-500/15 dark:ring-blue-500/25';
+  return 'text-violet-600 bg-violet-50 ring-violet-100 dark:text-violet-300 dark:bg-violet-500/15 dark:ring-violet-500/25';
 }
 
 function EventIcon({ event }: { event: CliMonitorEvent }) {

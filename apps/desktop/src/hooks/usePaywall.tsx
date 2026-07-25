@@ -48,11 +48,11 @@ export function PaywallProvider({ children }: { children: ReactNode }) {
     <PaywallContext.Provider value={value}>
       {children}
       {showBanner && (
-        <aside className="fixed bottom-5 right-5 z-40 w-[min(calc(100vw-2rem),22rem)] overflow-hidden rounded-[1.7rem] border border-white/60 bg-white/45 p-4 text-slate-950 shadow-[0_24px_80px_rgba(76,29,149,0.24),inset_0_1px_0_rgba(255,255,255,0.9),inset_0_-18px_44px_rgba(124,58,237,0.1)] backdrop-blur-2xl">
+        <aside className="fixed bottom-5 right-5 z-40 w-[min(calc(100vw-2rem),22rem)] overflow-hidden rounded-[1.7rem] border border-white/60 bg-white/45 p-4 text-slate-950 shadow-[0_24px_80px_rgba(76,29,149,0.24),inset_0_1px_0_rgba(255,255,255,0.9),inset_0_-18px_44px_rgba(124,58,237,0.1)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-100 dark:shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-18px_44px_rgba(124,58,237,0.12)]">
           <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-violet-400/30 blur-2xl" />
           <div className="pointer-events-none absolute -bottom-12 left-6 h-24 w-24 rounded-full bg-fuchsia-300/24 blur-2xl" />
           <div className="relative flex items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/70 bg-white/55 text-violet-700 shadow-[8px_8px_24px_rgba(76,29,149,0.16),-8px_-8px_24px_rgba(255,255,255,0.75),inset_0_1px_0_rgba(255,255,255,0.9)]">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/70 bg-white/55 text-violet-700 shadow-[8px_8px_24px_rgba(76,29,149,0.16),-8px_-8px_24px_rgba(255,255,255,0.75),inset_0_1px_0_rgba(255,255,255,0.9)] dark:border-white/10 dark:bg-slate-900/60 dark:text-violet-300 dark:shadow-[8px_8px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.1)]">
               <LockKeyhole className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -71,24 +71,24 @@ export function PaywallProvider({ children }: { children: ReactNode }) {
       )}
       {modalFeature && !subscription.isSubscribed && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/24 p-6 backdrop-blur-sm">
-          <section className="relative w-full max-w-md rounded-[1.75rem] border border-white/70 bg-white/82 p-6 text-center text-slate-950 shadow-[0_28px_90px_rgba(15,23,42,0.18)] backdrop-blur-2xl">
+          <section className="relative w-full max-w-md rounded-[1.75rem] border border-white/70 bg-white/82 p-6 text-center text-slate-950 shadow-[0_28px_90px_rgba(15,23,42,0.18)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/65 dark:text-slate-100 dark:shadow-[0_28px_90px_rgba(0,0,0,0.55)]">
             <button
               type="button"
               onClick={() => setModalFeature(null)}
-              className="absolute right-4 top-4 rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              className="absolute right-4 top-4 rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
               aria-label="Close subscription prompt"
             >
               <X className="h-4 w-4" />
             </button>
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
               <LockKeyhole className="h-7 w-7" />
             </div>
             <h2 className="mt-5 text-2xl font-black tracking-[-0.04em]">Subscription required</h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">
               {modalFeature} requires Moleui Pro.
             </p>
             {checkoutError && (
-              <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+              <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300">
                 {checkoutError}
               </p>
             )}
@@ -96,7 +96,7 @@ export function PaywallProvider({ children }: { children: ReactNode }) {
               <Button onClick={subscribe} disabled={isStartingCheckout} className="flex-1 rounded-full bg-violet-600 hover:bg-violet-700">
                 {isStartingCheckout ? 'Opening checkout...' : 'Subscribe'}
               </Button>
-              <Button variant="secondary" onClick={() => setModalFeature(null)} className="rounded-full bg-white/70">
+              <Button variant="secondary" onClick={() => setModalFeature(null)} className="rounded-full bg-white/70 dark:bg-white/10">
                 Not now
               </Button>
             </div>

@@ -9,9 +9,9 @@ interface PermissionsBannerProps {
 // system-level cleanup is enabled, nudging the user to grant it.
 export function PermissionsBanner({ onOpen, onDismiss }: PermissionsBannerProps) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/85 px-4 py-2.5 shadow-[0_10px_30px_rgba(245,158,11,0.12)] backdrop-blur-xl">
-      <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600" />
-      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-amber-800">
+    <div className="flex items-center gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/85 px-4 py-2.5 shadow-[0_10px_30px_rgba(245,158,11,0.12)] backdrop-blur-xl dark:border-amber-500/25 dark:bg-amber-500/10">
+      <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-amber-800 dark:text-amber-200">
         Full Disk Access is off, so Mole can&apos;t clean everything.
       </p>
       <button
@@ -25,7 +25,7 @@ export function PermissionsBanner({ onOpen, onDismiss }: PermissionsBannerProps)
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="shrink-0 rounded-full p-1 text-amber-700/70 transition hover:bg-amber-100 hover:text-amber-900"
+        className="shrink-0 rounded-full p-1 text-amber-700/70 transition hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300/70 dark:hover:bg-amber-500/15 dark:hover:text-amber-100"
       >
         <X className="h-4 w-4" />
       </button>

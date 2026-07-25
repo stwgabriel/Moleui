@@ -25,7 +25,7 @@ const AnalyzePage = lazy(() => import('@/pages/AnalyzePage').then((module) => ({
 function PageLoadingFallback() {
   return (
     <div className="flex h-full items-center justify-center" role="status" aria-label="Loading page">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-violet-300/30 border-t-violet-600" />
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-violet-300/30 border-t-violet-600 dark:border-violet-500/25 dark:border-t-violet-400" />
     </div>
   );
 }
@@ -148,7 +148,7 @@ function MainApp() {
       <div className="window-drag-region" aria-hidden="true" />
       <div className="relative h-screen overflow-hidden">
         <div
-          className="flex h-full w-full overflow-hidden rounded-[1rem] border border-white/55 bg-white/[0.22] shadow-[0_30px_90px_rgba(109,93,252,0.16),inset_0_1px_1px_rgba(255,255,255,0.78)] backdrop-blur-[28px] transition-opacity duration-300"
+          className="flex h-full w-full overflow-hidden rounded-[1rem] border border-white/55 bg-white/[0.22] shadow-[0_30px_90px_rgba(109,93,252,0.16),inset_0_1px_1px_rgba(255,255,255,0.78)] backdrop-blur-[28px] transition-opacity duration-300 dark:border-white/10 dark:bg-slate-950/[0.35] dark:shadow-[0_30px_90px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.08)]"
         >
           <Sidebar
             currentPage={currentPage}

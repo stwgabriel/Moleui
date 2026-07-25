@@ -57,6 +57,15 @@ export interface AppIconRequest {
   source?: string;
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+export interface AppIconOption {
+  id: string;
+  label: string;
+  /** Renderer-relative path of the flattened preview image. */
+  preview: string;
+}
+
 export type PermissionStatus = 'granted' | 'denied' | 'unknown';
 export type PermissionPane = 'fullDiskAccess' | 'filesAndFolders' | 'automation' | 'privacy';
 
@@ -86,6 +95,15 @@ export interface MoleDesktopAPI {
     openPortal: (url: string) => Promise<{ ok: boolean; message?: string }>;
     onClosed: (callback: () => void) => void;
     removeListeners: () => void;
+  };
+  theme?: {
+    get: () => Promise<{ theme: ThemePreference }>;
+    set: (theme: ThemePreference) => Promise<{ ok: boolean; theme: ThemePreference }>;
+  };
+  appIcon?: {
+    list: () => Promise<{ icons: AppIconOption[] }>;
+    get: () => Promise<{ icon: string }>;
+    set: (icon: string) => Promise<{ ok: boolean; icon?: string; appliesOnQuit?: boolean; message?: string }>;
   };
   openSettingsWindow?: () => Promise<{ ok: boolean; message?: string }>;
   openDeveloperWindow?: () => Promise<{ ok: boolean; message?: string }>;

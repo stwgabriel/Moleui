@@ -87,6 +87,15 @@ contextBridge.exposeInMainWorld("moleDesktop", {
       ipcRenderer.removeAllListeners("mole:billing:closed");
     },
   },
+  theme: {
+    get: () => ipcRenderer.invoke("mole:theme:get"),
+    set: (theme) => ipcRenderer.invoke("mole:theme:set", theme),
+  },
+  appIcon: {
+    list: () => ipcRenderer.invoke("mole:appIcon:list"),
+    get: () => ipcRenderer.invoke("mole:appIcon:get"),
+    set: (icon) => ipcRenderer.invoke("mole:appIcon:set", icon),
+  },
   openSettingsWindow: () => ipcRenderer.invoke("mole:settings:open"),
   openDeveloperWindow: () => ipcRenderer.invoke("mole:developer:open"),
   getSettingsProfile: () => ipcRenderer.invoke("mole:settings:profile"),

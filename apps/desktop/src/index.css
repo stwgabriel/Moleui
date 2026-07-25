@@ -70,11 +70,54 @@
 }
 
 /* ============================================================
+   DARK MODE — token overrides
+   The `dark` class is applied to <html> by initTheme()/useTheme
+   (src/hooks/useTheme.ts). Utilities read the same --color-* vars,
+   so overriding them here re-skins every token-driven surface.
+   ============================================================ */
+
+.dark {
+  /* Track color for inline-style donut charts (e.g. CleanPage storage ring). */
+  --donut-track: rgba(255, 255, 255, 0.1);
+  /* Inline SVG/recharts chrome that can't use Tailwind classes. */
+  --chart-label: #cbd5e1;
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  /* AnalyzePage disk-usage bar: free-space segment reads as a light band on dark. */
+  --disk-free-fill: rgba(255, 255, 255, 0.12);
+  --disk-free-swatch: rgba(148, 163, 184, 0.35);
+
+  --color-bg-primary: #12121b;
+  --color-bg-secondary: #191430;
+  --color-bg-glass: rgba(18, 18, 27, 0.72);
+  --color-surface: rgba(26, 27, 41, 0.78);
+  --color-surface-elevated: rgba(32, 33, 49, 0.92);
+  --color-surface-hover: rgba(88, 74, 140, 0.38);
+  --color-text-primary: #eceef6;
+  --color-text-secondary: #a2a9ba;
+  --color-text-tertiary: #767087;
+  --color-accent-primary: #a06bff;
+  --color-accent-primary-hover: #b285ff;
+  --color-accent-secondary: #ff5c9e;
+  --color-status: #eceef6;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.34), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.42), 0 4px 8px rgba(0, 0, 0, 0.34);
+  --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-2xl: 0 32px 80px rgba(0, 0, 0, 0.56), 0 12px 32px rgba(0, 0, 0, 0.46);
+  --shadow-accent: 0 8px 24px rgba(160, 107, 255, 0.32), 0 4px 8px rgba(255, 92, 158, 0.14);
+}
+
+/* ============================================================
    BASE STYLES
    ============================================================ */
 
 :root {
   color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
 }
 
 *,
@@ -142,6 +185,23 @@ body {
     0 20px 60px rgba(109, 93, 252, 0.14),
     0 8px 24px rgba(239, 35, 60, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* In dark mode the white rims and inset highlights of the glass panels would
+   glow; swap them for faint light borders over the dark surfaces. */
+.dark .glass-surface {
+  border-color: color-mix(in srgb, var(--color-accent-primary) 24%, rgba(255, 255, 255, 0.09));
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.dark .glass-elevated {
+  border-color: color-mix(in srgb, var(--color-accent-secondary) 20%, rgba(255, 255, 255, 0.1));
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 8px 24px rgba(160, 107, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
 }
 
 /* ============================================================
@@ -249,6 +309,10 @@ body {
   animation: analyze-overlay-in 240ms ease both;
 }
 
+.dark .analyze-panel-loading-overlay {
+  background: linear-gradient(180deg, rgba(18, 18, 27, 0.44), rgba(18, 18, 27, 0.22));
+}
+
 @keyframes analyze-overlay-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -272,6 +336,10 @@ body {
   border-radius: 9999px;
   background: #4f5961;
   transform-origin: 50% 50%;
+}
+
+.dark .analyze-apple-spinner span {
+  background: #c3c9d6;
 }
 
 .analyze-apple-spinner span:nth-child(1) { opacity: 0.95; }
@@ -814,6 +882,14 @@ body {
   color: #202936 !important;
 }
 
+.dark .mole-native-login-form .cl-formFieldInputShowPasswordButton {
+  color: #a2a9ba !important;
+}
+
+.dark .mole-native-login-form .cl-formFieldInputShowPasswordButton:hover {
+  color: #eceef6 !important;
+}
+
 .mole-native-login-form .cl-formFieldInputGroup:has(.cl-formFieldInputShowPasswordButton) .cl-formFieldInput {
   padding-right: 2.75rem !important;
 }
@@ -873,6 +949,16 @@ body {
   background-size: 200% 100%;
   background-repeat: no-repeat;
   animation: mole-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+.dark .mole-skeleton {
+  background-color: rgba(148, 163, 184, 0.12);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 30%,
+    rgba(255, 255, 255, 0.14) 50%,
+    rgba(255, 255, 255, 0) 70%
+  );
 }
 
 @media (prefers-reduced-motion: reduce) {

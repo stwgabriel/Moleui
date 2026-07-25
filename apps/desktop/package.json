@@ -60,7 +60,7 @@
     "directories": {
       "output": "dist-electron"
     },
-    "afterPack": "./scripts/adhoc-sign.cjs",
+    "afterPack": "./scripts/after-pack.cjs",
     "files": [
       "dist/**/*",
       "main.mjs",

@@ -285,23 +285,23 @@ function DiskUsageProportionGraph({
       name: 'Free space',
       bytes: diskFree,
       pct: (diskFree / denominator) * 100,
-      background: 'rgba(255,255,255,0.62)',
-      swatch: 'rgba(148,163,184,0.4)',
+      background: 'var(--disk-free-fill, rgba(255,255,255,0.62))',
+      swatch: 'var(--disk-free-swatch, rgba(148,163,184,0.4))',
       muted: true,
     }] : []),
   ];
 
   return (
-    <div className="rounded-[1.35rem] border border-white/55 bg-white/42 p-5 shadow-[0_18px_54px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
+    <div className="rounded-[1.35rem] border border-white/55 bg-white/42 p-5 shadow-[0_18px_54px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/55 dark:shadow-[0_18px_54px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="text-[0.78rem] font-black uppercase tracking-[0.24em] text-slate-500">Disk usage</div>
-        <div className="shrink-0 font-mono text-[11px] font-black text-slate-600">
+        <div className="text-[0.78rem] font-black uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Disk usage</div>
+        <div className="shrink-0 font-mono text-[11px] font-black text-slate-600 dark:text-slate-300">
           {hasDisk ? `${formatBytes(diskTotal)} disk` : `Total ${formatBytes(totalSize)}`}
         </div>
       </div>
       <div
         aria-label="Disk usage proportions"
-        className="relative flex h-6 overflow-hidden rounded-full bg-slate-900/10 shadow-inner shadow-slate-900/10"
+        className="relative flex h-6 overflow-hidden rounded-full bg-slate-900/10 shadow-inner shadow-slate-900/10 dark:bg-white/10"
       >
         {segments.map((segment) => {
           const showInlineLabel = segment.pct >= 9 && !segment.muted;
@@ -330,8 +330,8 @@ function DiskUsageProportionGraph({
       {hasDisk && (
         <div className="mt-4 flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[0.66rem] font-black uppercase tracking-[0.2em] text-slate-500">This folder</div>
-            <div className="mt-0.5 truncate text-sm font-black text-slate-900">
+            <div className="text-[0.66rem] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">This folder</div>
+            <div className="mt-0.5 truncate text-sm font-black text-slate-900 dark:text-slate-100">
               {formatBytes(folderSize)}
               <span className="ml-1.5 font-mono text-[11px] font-black text-[var(--page-accent)]">
                 {folderPctOfDisk < 0.1 ? '<0.1' : folderPctOfDisk.toFixed(folderPctOfDisk < 10 ? 1 : 0)}% of disk
@@ -339,8 +339,8 @@ function DiskUsageProportionGraph({
             </div>
           </div>
           <div className="shrink-0 text-right">
-            <div className="text-[0.66rem] font-black uppercase tracking-[0.2em] text-slate-500">Free</div>
-            <div className="mt-0.5 font-mono text-sm font-black text-slate-700">{formatBytes(diskFree)}</div>
+            <div className="text-[0.66rem] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Free</div>
+            <div className="mt-0.5 font-mono text-sm font-black text-slate-700 dark:text-slate-200">{formatBytes(diskFree)}</div>
           </div>
         </div>
       )}
@@ -349,7 +349,7 @@ function DiskUsageProportionGraph({
         {visibleItems.slice(0, 4).map((item) => (
           <div key={item.path} className="flex min-w-0 items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.color }} />
-            <span className="truncate text-xs font-black text-slate-700">{item.name}</span>
+            <span className="truncate text-xs font-black text-slate-700 dark:text-slate-200">{item.name}</span>
           </div>
         ))}
       </div>
@@ -365,7 +365,7 @@ function AnalyzePanelLoadingOverlay() {
           <span key={index} style={{ transform: `rotate(${index * 45}deg) translateY(-1.28rem)` }} />
         ))}
       </div>
-      <span className="text-[0.7rem] font-black uppercase tracking-[0.22em] text-slate-500">Reading folder</span>
+      <span className="text-[0.7rem] font-black uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">Reading folder</span>
     </div>
   );
 }
@@ -859,35 +859,35 @@ export function AnalyzePage() {
   // ── Path Picker ──────────────────────────────────────────────────────────
   if (stage === 'idle' && view === 'pick') {
     return (
-      <div className="relative h-full min-h-0 overflow-y-auto bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(1.25rem,3vw,3rem)] pt-[clamp(1.5rem,3.8vw,4rem)] text-slate-950" style={analyzeAccentStyle}>
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+      <div className="relative h-full min-h-0 overflow-y-auto bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(1.25rem,3vw,3rem)] pt-[clamp(1.5rem,3.8vw,4rem)] text-slate-950 dark:bg-[#0e0c1d] dark:text-slate-100" style={analyzeAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))] dark:bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.12),transparent_30%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.14),transparent_30%),linear-gradient(135deg,rgba(10,8,24,0.85),rgba(17,13,36,0.66))]" />
 
         <div className="relative flex min-h-full items-center justify-center text-center">
           <main className="flex w-full max-w-[56rem] flex-col items-center">
-            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl">
+            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl dark:bg-slate-900/65">
               <span className="absolute inset-[-0.38rem] rounded-full border-2 border-[rgba(var(--page-accent-rgb),0.18)] border-r-[var(--page-accent)] border-t-[var(--page-accent-hover)]" aria-hidden="true" />
               <BarChart3 className="relative h-[42%] w-[42%]" strokeWidth={2.6} />
             </div>
 
-            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950">
+            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950 dark:text-slate-100">
               Choose scan location.
             </h1>
-            <p className="mt-5 max-w-[35rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500">
+            <p className="mt-5 max-w-[35rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
               Pick a starting point and Mole will build a storage map for that folder.
             </p>
 
-            <div className="mt-8 w-full rounded-[1.75rem] border border-white/60 bg-white/42 p-[clamp(1rem,2vw,1.4rem)] shadow-[0_24px_76px_rgba(83,76,148,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
+            <div className="mt-8 w-full rounded-[1.75rem] border border-white/60 bg-white/42 p-[clamp(1rem,2vw,1.4rem)] shadow-[0_24px_76px_rgba(83,76,148,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/55 dark:shadow-[0_24px_76px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {QUICK_PATHS.map(({ mode, label, path, icon: Icon }) => (
                   <button
                     key={mode}
                     onClick={() => selectAnalyzeMode(mode)}
                     className={`group flex min-h-[8.5rem] flex-col items-center justify-center gap-3 rounded-[1.35rem] border p-4 transition-all ${selectedMode === mode
-                      ? 'border-[rgba(var(--page-accent-rgb),0.42)] bg-white/78 text-[var(--page-accent)] shadow-[0_18px_48px_rgba(var(--page-accent-rgb),0.16)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)]'
-                      : 'border-white/52 bg-white/36 text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] hover:bg-white/62 hover:text-slate-800 hover:shadow-[0_14px_38px_rgba(83,76,148,0.10)]'
+                      ? 'border-[rgba(var(--page-accent-rgb),0.42)] bg-white/78 text-[var(--page-accent)] shadow-[0_18px_48px_rgba(var(--page-accent-rgb),0.16)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)] dark:bg-slate-900/65'
+                      : 'border-white/52 bg-white/36 text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] hover:bg-white/62 hover:text-slate-800 hover:shadow-[0_14px_38px_rgba(83,76,148,0.10)] dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-400 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:hover:bg-white/10 dark:hover:text-slate-200'
                       }`}
                   >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] transition-transform group-hover:scale-105">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] transition-transform group-hover:scale-105 dark:bg-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
                       <Icon className="h-5 w-5" />
                     </span>
                     <span className="text-sm font-black">{label}</span>
@@ -896,12 +896,12 @@ export function AnalyzePage() {
                 ))}
               </div>
 
-              <div className="mt-4 rounded-[1.35rem] border border-white/58 bg-white/52 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-                <label className="mb-2 block px-1 text-left text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500">
+              <div className="mt-4 rounded-[1.35rem] border border-white/58 bg-white/52 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-white/10 dark:bg-slate-900/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]">
+                <label className="mb-2 block px-1 text-left text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
                   Custom path
                 </label>
                 <div className="relative">
-                  <Folder className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Folder className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
                   <input
                     type="text"
                     value={pathInput}
@@ -912,13 +912,13 @@ export function AnalyzePage() {
                       setScanPath(nextPath);
                     }}
                     placeholder="/path/to/folder"
-                    className="w-full rounded-full border border-white/70 bg-white/76 py-3 pl-11 pr-4 font-mono text-sm font-black text-slate-700 shadow-[0_10px_30px_rgba(83,76,148,0.08)] transition-all placeholder:text-slate-400 focus:border-[var(--page-accent)] focus:outline-none focus:ring-4 focus:ring-[rgba(var(--page-accent-rgb),0.14)]"
+                    className="w-full rounded-full border border-white/70 bg-white/76 py-3 pl-11 pr-4 font-mono text-sm font-black text-slate-700 shadow-[0_10px_30px_rgba(83,76,148,0.08)] transition-all placeholder:text-slate-400 focus:border-[var(--page-accent)] focus:outline-none focus:ring-4 focus:ring-[rgba(var(--page-accent-rgb),0.14)] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200 dark:placeholder:text-slate-500"
                   />
                 </div>
               </div>
 
               <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <Button variant="secondary" onClick={reset} className="flex-1 rounded-full border border-white/70 bg-white/70 py-3 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white">
+                <Button variant="secondary" onClick={reset} className="flex-1 rounded-full border border-white/70 bg-white/70 py-3 text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-300 dark:hover:bg-slate-800">
                   Cancel
                 </Button>
                 <Button onClick={() => startScan()} className="flex-1 gap-2 rounded-full py-3 shadow-[0_16px_42px_rgba(var(--page-accent-rgb),0.22)]">
@@ -936,41 +936,41 @@ export function AnalyzePage() {
   // ── Scanning ─────────────────────────────────────────────────────────────
   if (stage === 'scanning') {
     return (
-      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950" style={analyzeAccentStyle}>
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950 dark:bg-[#0e0c1d] dark:text-slate-100" style={analyzeAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))] dark:bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.12),transparent_30%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.14),transparent_30%),linear-gradient(135deg,rgba(10,8,24,0.85),rgba(17,13,36,0.66))]" />
 
         <div className="relative flex h-full min-h-0 items-center justify-center text-center">
           <main className="flex w-full max-w-[42rem] flex-col items-center">
-            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl">
+            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl dark:bg-slate-900/65">
               <span className="absolute inset-[-0.38rem] rounded-full border-2 border-[rgba(var(--page-accent-rgb),0.18)] border-r-[var(--page-accent)] border-t-[var(--page-accent-hover)] animate-spin" aria-hidden="true" />
               <Search className="relative h-[42%] w-[42%]" strokeWidth={2.6} />
             </div>
 
-            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950">
+            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950 dark:text-slate-100">
               Reading storage.
             </h1>
-            <p className="mt-5 max-w-[34rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500">
+            <p className="mt-5 max-w-[34rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
               Mole is scanning this location for the first time and building the storage map.
             </p>
 
             <div className="mt-7 w-full max-w-[32rem] space-y-3">
-              <div className="truncate rounded-full bg-white/70 px-4 py-2 font-mono text-sm font-black text-slate-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)]">
+              <div className="truncate rounded-full bg-white/70 px-4 py-2 font-mono text-sm font-black text-slate-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)] dark:bg-slate-900/60 dark:text-slate-400">
                 {scanPath}
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-white/70 shadow-inner shadow-white/50">
+              <div className="h-2 overflow-hidden rounded-full bg-white/70 shadow-inner shadow-white/50 dark:bg-white/10 dark:shadow-black/40">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-[rgba(var(--page-accent-rgb),0.70)] to-[var(--page-accent)] transition-all duration-500 ease-out"
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <div className="flex items-center justify-between gap-4 text-xs font-bold text-slate-400">
+            <div className="flex items-center justify-between gap-4 text-xs font-bold text-slate-400 dark:text-slate-500">
               <span className="truncate">{currentFile || 'Reading storage...'}</span>
               <span>{Math.round(progress)}%</span>
             </div>
           </div>
 
             <div className="mt-8">
-              <Button variant="secondary" onClick={stopScan} size="lg" className="min-w-[min(260px,42vw)] rounded-full border border-white/70 bg-white/70 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
+              <Button variant="secondary" onClick={stopScan} size="lg" className="min-w-[min(260px,42vw)] rounded-full border border-white/70 bg-white/70 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-300 dark:hover:bg-slate-800 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
                 <X className="w-4 h-4" />
                 Cancel
               </Button>
@@ -1025,11 +1025,11 @@ export function AnalyzePage() {
     return (
       <div className="relative h-full overflow-y-auto p-6 xl:overflow-hidden" style={analyzeAccentStyle}>
         {/* Breadcrumb navigation bar */}
-        <div className="relative z-50 mb-7 flex items-center gap-2 rounded-full border border-white/55 bg-white/28 px-4 py-3 shadow-[0_16px_48px_rgba(109,93,252,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl">
+        <div className="relative z-50 mb-7 flex items-center gap-2 rounded-full border border-white/55 bg-white/28 px-4 py-3 shadow-[0_16px_48px_rgba(109,93,252,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/[0.35] dark:shadow-[0_16px_48px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.07)]">
           <button
             type="button"
             onClick={navigateBack}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/45 hover:text-slate-800"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/45 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
             title={navHistory.length > 0 ? 'Go back' : 'Back to start'}
           >
             <ArrowLeft className="h-4 w-4" />
@@ -1038,24 +1038,24 @@ export function AnalyzePage() {
             <button
               type="button"
               onClick={navigateUp}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/45 hover:text-slate-800"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/45 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
               title="Go to parent folder"
             >
               <ChevronUp className="h-4 w-4" />
             </button>
           )}
-          <div className="mx-1 h-5 w-px shrink-0 bg-slate-300/60" />
-          <div className="flex shrink-0 items-center gap-2 rounded-full px-1.5 text-sm font-black text-slate-600">
+          <div className="mx-1 h-5 w-px shrink-0 bg-slate-300/60 dark:bg-white/15" />
+          <div className="flex shrink-0 items-center gap-2 rounded-full px-1.5 text-sm font-black text-slate-600 dark:text-slate-300">
             <HardDrive className="h-4 w-4" />
             {currentPathLabel}
           </div>
-          <div className="mx-1 h-5 w-px shrink-0 bg-slate-300/60" />
+          <div className="mx-1 h-5 w-px shrink-0 bg-slate-300/60 dark:bg-white/15" />
           <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;
               return (
                 <div key={crumb.path} className="flex items-center gap-0.5 shrink-0">
-                  {index > 0 && <ChevronRight className="h-3 w-3 text-slate-400 shrink-0" />}
+                  {index > 0 && <ChevronRight className="h-3 w-3 text-slate-400 shrink-0 dark:text-slate-500" />}
                   <button
                     type="button"
                     disabled={isLast}
@@ -1063,8 +1063,8 @@ export function AnalyzePage() {
                       if (!isLast) startScan(crumb.path);
                     }}
                     className={`rounded-md px-1.5 py-0.5 text-xs font-semibold transition truncate max-w-[8rem] ${isLast
-                      ? 'text-slate-900 cursor-default'
-                      : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
+                      ? 'text-slate-900 cursor-default dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-white/40 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/10'
                       }`}
                     title={crumb.path}
                   >
@@ -1101,7 +1101,7 @@ export function AnalyzePage() {
                   event.stopPropagation();
                   setIsFilterOpen((open) => !open);
                 }}
-                className="h-10 rounded-full bg-white/72 px-3 text-slate-700 shadow-[0_8px_24px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.8)] hover:bg-white/90"
+                className="h-10 rounded-full bg-white/72 px-3 text-slate-700 shadow-[0_8px_24px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.8)] hover:bg-white/90 dark:bg-slate-900/60 dark:text-slate-200 dark:shadow-[0_8px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-slate-800/80"
               >
                 <ListFilter className="h-[1.05rem] w-[1.05rem]" strokeWidth={2.4} />
                 <span className="hidden text-sm font-black sm:inline">Filter</span>
@@ -1109,25 +1109,25 @@ export function AnalyzePage() {
 
               {isFilterOpen && (
                 <div
-                  className="absolute right-0 top-12 z-[90] w-72 rounded-[1.35rem] border border-white/65 bg-white/90 p-3 shadow-[0_24px_70px_rgba(15,23,42,0.22)] backdrop-blur-2xl"
+                  className="absolute right-0 top-12 z-[90] w-72 rounded-[1.35rem] border border-white/65 bg-white/90 p-3 shadow-[0_24px_70px_rgba(15,23,42,0.22)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/85 dark:shadow-[0_24px_70px_rgba(0,0,0,0.55)]"
                   onClick={(event) => event.stopPropagation()}
                 >
                   <div className="mb-3 flex items-end justify-between gap-4 px-1">
                     <div>
-                      <div className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-slate-500">Show in map</div>
-                      <div className="mt-1 text-sm font-black text-slate-950">{sortedListEntries.length} visible</div>
+                      <div className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Show in map</div>
+                      <div className="mt-1 text-sm font-black text-slate-950 dark:text-slate-100">{sortedListEntries.length} visible</div>
                     </div>
-                    <div className="font-mono text-[11px] font-black text-slate-500">Size order</div>
+                    <div className="font-mono text-[11px] font-black text-slate-500 dark:text-slate-400">Size order</div>
                   </div>
 
-                  <div className="grid grid-cols-2 rounded-full border border-slate-200/80 bg-slate-100/80 p-1 shadow-inner shadow-slate-900/5">
+                  <div className="grid grid-cols-2 rounded-full border border-slate-200/80 bg-slate-100/80 p-1 shadow-inner shadow-slate-900/5 dark:border-white/10 dark:bg-white/10">
                     <button
                       type="button"
                       aria-pressed={showFiles}
                       onClick={() => setShowFiles((current) => (current && !showFolders ? current : !current))}
                       className={`flex h-11 items-center justify-center gap-2 rounded-full text-sm font-black transition ${showFiles
-                        ? 'bg-white text-sky-700 shadow-[0_8px_20px_rgba(14,165,233,0.18)] ring-1 ring-sky-100'
-                        : 'text-slate-500 hover:text-slate-800'
+                        ? 'bg-white text-sky-700 shadow-[0_8px_20px_rgba(14,165,233,0.18)] ring-1 ring-sky-100 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/25'
+                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                         }`}
                     >
                       <File className="h-4 w-4" />
@@ -1139,8 +1139,8 @@ export function AnalyzePage() {
                       aria-pressed={showFolders}
                       onClick={() => setShowFolders((current) => (current && !showFiles ? current : !current))}
                       className={`flex h-11 items-center justify-center gap-2 rounded-full text-sm font-black transition ${showFolders
-                        ? 'bg-white text-violet-700 shadow-[0_8px_20px_rgba(139,92,246,0.18)] ring-1 ring-violet-100'
-                        : 'text-slate-500 hover:text-slate-800'
+                        ? 'bg-white text-violet-700 shadow-[0_8px_20px_rgba(139,92,246,0.18)] ring-1 ring-violet-100 dark:bg-violet-500/15 dark:text-violet-300 dark:ring-violet-500/25'
+                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                         }`}
                     >
                       <Folder className="h-4 w-4" />
@@ -1158,12 +1158,12 @@ export function AnalyzePage() {
           <div data-testid="storage-map-panel" className="relative min-h-[34rem] overflow-hidden rounded-[1.2rem] xl:min-h-0">
             <div className={`relative h-full rounded-[1.35rem] ${contentEnterClass} ${inlineScanPath ? 'analyze-panel-content--loading' : ''}`}>
               {filteredEntries.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 text-center">
-                  <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
-                  <p className="font-semibold text-slate-600">No entries match the current filters.</p>
+                <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 text-center dark:border-white/10 dark:bg-slate-950/[0.35]">
+                  <FolderOpen className="mb-3 h-12 w-12 text-slate-400 dark:text-slate-500" />
+                  <p className="font-semibold text-slate-600 dark:text-slate-300">No entries match the current filters.</p>
                 </div>
               ) : isViewingApplications && applicationEntries.length > 0 ? (
-                <div className="h-full overflow-y-auto rounded-[1.35rem] border border-white/45 bg-white/25 p-3 shadow-inner shadow-white/20 custom-scrollbar">
+                <div className="h-full overflow-y-auto rounded-[1.35rem] border border-white/45 bg-white/25 p-3 shadow-inner shadow-white/20 custom-scrollbar dark:border-white/10 dark:bg-slate-950/[0.35] dark:shadow-black/30">
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(7.25rem,1fr))] gap-3">
                     {applicationEntries.map((entry) => {
                       const appIcon = appIcons[entry.path];
@@ -1179,10 +1179,10 @@ export function AnalyzePage() {
                             setScanPath(entry.path);
                             startScan(entry.path);
                           }}
-                          className="group flex min-h-[8.75rem] max-h-[11rem] min-w-[7.25rem] flex-col items-center justify-center overflow-hidden rounded-[1.1rem] border border-white/62 bg-white/46 p-3 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] transition-colors hover:bg-white/70 hover:shadow-[0_18px_44px_rgba(15,23,42,0.14)]"
+                          className="group flex min-h-[8.75rem] max-h-[11rem] min-w-[7.25rem] flex-col items-center justify-center overflow-hidden rounded-[1.1rem] border border-white/62 bg-white/46 p-3 text-center shadow-[0_12px_32px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] transition-colors hover:bg-white/70 hover:shadow-[0_18px_44px_rgba(15,23,42,0.14)] dark:border-white/10 dark:bg-slate-900/50 dark:shadow-[0_12px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.07)] dark:hover:bg-white/10 dark:hover:shadow-[0_18px_44px_rgba(0,0,0,0.5)]"
                           title={`${entry.name} - ${formatBytes(entry.size)}`}
                         >
-                          <span className="mb-3 flex h-24 w-24 min-h-12 min-w-12 max-w-full items-center justify-center rounded-2xl bg-white/35 p-2 shadow-inner shadow-white/50">
+                          <span className="mb-3 flex h-24 w-24 min-h-12 min-w-12 max-w-full items-center justify-center rounded-2xl bg-white/35 p-2 shadow-inner shadow-white/50 dark:bg-slate-950/[0.35] dark:shadow-black/30">
                             {appIcon ? (
                               <img
                                 src={appIcon}
@@ -1194,8 +1194,8 @@ export function AnalyzePage() {
                               <FallbackIcon className={`h-10 w-10 ${iconCategory.iconClassName}`} />
                             )}
                           </span>
-                          <span className="w-full truncate text-sm font-black text-slate-950">{entry.name.replace(/\.app$/, '')}</span>
-                          <span className="mt-1 font-mono text-[11px] font-bold text-slate-500">{formatBytes(entry.size)}</span>
+                          <span className="w-full truncate text-sm font-black text-slate-950 dark:text-slate-100">{entry.name.replace(/\.app$/, '')}</span>
+                          <span className="mt-1 font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">{formatBytes(entry.size)}</span>
                         </button>
                       );
                     })}
@@ -1219,7 +1219,7 @@ export function AnalyzePage() {
                           startScan(rect.path);
                         }
                       }}
-                      className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition-transform duration-200 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
+                      className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition-transform duration-200 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] dark:border-slate-950/60 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_44px_rgba(0,0,0,0.45)] dark:hover:shadow-[0_24px_62px_rgba(0,0,0,0.55)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
                       style={{
                         left: `${rect.x}%`,
                         top: `${rect.y}%`,
@@ -1265,7 +1265,7 @@ export function AnalyzePage() {
 
             <div className="relative min-h-[31rem] flex-1 overflow-hidden rounded-[1.35rem] xl:min-h-0">
               <div className="flex h-full min-h-0 flex-col">
-                <div data-testid="file-list-summary" className="mb-4 flex items-center justify-between px-2 font-mono text-xs font-black text-slate-500">
+                <div data-testid="file-list-summary" className="mb-4 flex items-center justify-between px-2 font-mono text-xs font-black text-slate-500 dark:text-slate-400">
                   <span>{sortedListEntries.length} items</span>
                   <span>{formatBytes(filteredSize)} total</span>
                 </div>
@@ -1279,8 +1279,8 @@ export function AnalyzePage() {
                     <div className={`min-h-full ${contentEnterClass} ${inlineScanPath ? 'analyze-panel-content--loading' : ''}`}>
                       {filteredEntries.length === 0 ? (
                         <div className="flex h-full min-h-[20rem] flex-col items-center justify-center text-center">
-                          <FolderOpen className="mb-3 h-12 w-12 text-slate-400" />
-                          <p className="font-semibold text-slate-600">No entries match the current filters.</p>
+                          <FolderOpen className="mb-3 h-12 w-12 text-slate-400 dark:text-slate-500" />
+                          <p className="font-semibold text-slate-600 dark:text-slate-300">No entries match the current filters.</p>
                         </div>
                       ) : (
                         <div className="space-y-2.5 pb-2">
@@ -1302,25 +1302,25 @@ export function AnalyzePage() {
                                     startScan(entry.path);
                                   }
                                 }}
-                                className={`group relative w-full overflow-hidden rounded-[1.35rem] border border-white/50 bg-white/30 p-3 text-left shadow-sm transition hover:bg-white/46 ${!entry.is_dir ? 'cursor-default' : ''}`}
+                                className={`group relative w-full overflow-hidden rounded-[1.35rem] border border-white/50 bg-white/30 p-3 text-left shadow-sm transition hover:bg-white/46 dark:border-white/10 dark:bg-slate-950/[0.35] dark:hover:bg-white/10 ${!entry.is_dir ? 'cursor-default' : ''}`}
                               >
                                 <div
                                   className="absolute inset-y-0 left-0 rounded-[1.35rem] bg-[rgba(var(--page-accent-rgb),0.16)] transition-[width] duration-300"
                                   style={{ width: `${Math.min(100, Math.max(3, percentage))}%` }}
                                 />
                                 <div className="relative flex items-center gap-3">
-                                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-inner shadow-white/30 ${iconCategory.backgroundClassName}`} title={iconCategory.label}>
+                                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-inner shadow-white/30 dark:border-white/10 dark:shadow-black/30 ${iconCategory.backgroundClassName}`} title={iconCategory.label}>
                                     <EntryIcon className={`h-[1.125rem] w-[1.125rem] ${iconCategory.iconClassName}`} />
                                   </span>
                                   <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-base font-black text-slate-950">{entry.name}</span>
-                                    <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] font-bold text-slate-500">
+                                    <span className="block truncate text-base font-black text-slate-950 dark:text-slate-100">{entry.name}</span>
+                                    <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                       <span>{formatBytes(entry.size)}</span>
                                       {entryDate && <span>{entryDate}</span>}
                                     </span>
                                   </span>
                                   {entry.is_dir && (
-                                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-700" />
+                                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-700 dark:text-slate-500 dark:group-hover:text-slate-200" />
                                   )}
                                 </div>
                               </button>
@@ -1331,10 +1331,10 @@ export function AnalyzePage() {
                     </div>
                   </div>
                   <div
-                    className={`pointer-events-none absolute inset-x-0 top-0 h-8 rounded-t-[1.35rem] bg-gradient-to-b from-slate-900/7 to-transparent transition-opacity duration-200 ${fileListScrollShadows.top ? 'opacity-100' : 'opacity-0'}`}
+                    className={`pointer-events-none absolute inset-x-0 top-0 h-8 rounded-t-[1.35rem] bg-gradient-to-b from-slate-900/7 to-transparent transition-opacity duration-200 dark:from-black/35 ${fileListScrollShadows.top ? 'opacity-100' : 'opacity-0'}`}
                   />
                   <div
-                    className={`pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-[1.35rem] bg-gradient-to-t from-slate-900/8 to-transparent transition-opacity duration-200 ${fileListScrollShadows.bottom ? 'opacity-100' : 'opacity-0'}`}
+                    className={`pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-[1.35rem] bg-gradient-to-t from-slate-900/8 to-transparent transition-opacity duration-200 dark:from-black/40 ${fileListScrollShadows.bottom ? 'opacity-100' : 'opacity-0'}`}
                   />
                 </div>
               </div>
@@ -1345,14 +1345,14 @@ export function AnalyzePage() {
 
         {contextMenu && createPortal(
           <div
-            className="fixed z-50 w-56 overflow-hidden rounded-2xl border border-white/60 bg-white/90 p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)] backdrop-blur-2xl"
+            className="fixed z-50 w-56 overflow-hidden rounded-2xl border border-white/60 bg-white/90 p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(event) => event.stopPropagation()}
           >
             <button
               type="button"
               onClick={() => void openInFinder(contextMenu.item)}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-slate-700 transition hover:bg-slate-900/5"
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-slate-700 transition hover:bg-slate-900/5 dark:text-slate-200 dark:hover:bg-white/10"
             >
               <ExternalLink className="h-4 w-4" />
               Open in Finder
@@ -1360,7 +1360,7 @@ export function AnalyzePage() {
             <button
               type="button"
               onClick={() => requestDelete(contextMenu.item)}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-rose-600 transition hover:bg-rose-500/10"
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-rose-600 transition hover:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
             >
               <Trash2 className="h-4 w-4" />
               Move {contextMenu.item.is_dir ? 'Folder' : 'File'} to Trash
@@ -1370,21 +1370,21 @@ export function AnalyzePage() {
         )}
 
         {pendingDelete && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-[1.75rem] border border-white/60 bg-white/90 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.24)] backdrop-blur-2xl">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm dark:bg-slate-950/60">
+            <div className="w-full max-w-md rounded-[1.75rem] border border-white/60 bg-white/90 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.24)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/85 dark:shadow-[0_24px_80px_rgba(0,0,0,0.6)]">
               <div className="flex items-start gap-4">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
                   <Trash2 className="h-6 w-6" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-xl font-black text-slate-950">Confirm deletion</h3>
-                  <p className="mt-2 text-sm font-semibold text-slate-600">
+                  <h3 className="text-xl font-black text-slate-950 dark:text-slate-100">Confirm deletion</h3>
+                  <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
                     Move this {pendingDelete.is_dir ? 'folder' : 'file'} to Trash? This action requires confirmation every time.
                   </p>
-                  <div className="mt-4 rounded-2xl border border-slate-900/10 bg-white/65 p-3">
-                    <div className="truncate text-sm font-black text-slate-900">{pendingDelete.name}</div>
-                    <div className="mt-1 truncate font-mono text-xs font-bold text-slate-500">{pendingDelete.path}</div>
-                    <div className="mt-2 font-mono text-xs font-black text-rose-500">{formatBytes(pendingDelete.size)}</div>
+                  <div className="mt-4 rounded-2xl border border-slate-900/10 bg-white/65 p-3 dark:border-white/10 dark:bg-slate-950/40">
+                    <div className="truncate text-sm font-black text-slate-900 dark:text-slate-100">{pendingDelete.name}</div>
+                    <div className="mt-1 truncate font-mono text-xs font-bold text-slate-500 dark:text-slate-400">{pendingDelete.path}</div>
+                    <div className="mt-2 font-mono text-xs font-black text-rose-500 dark:text-rose-400">{formatBytes(pendingDelete.size)}</div>
                   </div>
                 </div>
               </div>

@@ -46,10 +46,10 @@ const iconConfig: Record<string, { color: string; animation: string; shadow: str
 };
 
 const myMacCard =
-  'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
+  'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl dark:bg-slate-900/55 dark:border-white/10 dark:shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]';
 
 const myMacActionCard =
-  'group relative flex items-center gap-4 overflow-hidden rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left  backdrop-blur-2xl transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45';
+  'group relative flex items-center gap-4 overflow-hidden rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left  backdrop-blur-2xl transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 dark:border-white/10 dark:bg-slate-900/45 dark:hover:bg-slate-900/60';
 
 const featureThemes: Record<string, FeatureAccent & { footerText: string }> = {
   PackageX: {
@@ -111,8 +111,8 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
               <div className="relative flex h-full flex-col justify-between gap-8 items-center">
                 <div className="flex items-start justify-between gap-6 text-center">
                   <div className="min-w-0">
-                    <h1 className="text-5xl font-black leading-none text-slate-950">{config.title}</h1>
-                    <p className="mt-4 max-w-[34rem] text-lg font-medium leading-7 text-slate-600">
+                    <h1 className="text-5xl font-black leading-none text-slate-950 dark:text-slate-100">{config.title}</h1>
+                    <p className="mt-4 max-w-[34rem] text-lg font-medium leading-7 text-slate-600 dark:text-slate-300">
                       {config.description}
                     </p>
                   </div>
@@ -130,15 +130,15 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
                   )} */}
                 </div>
 
-                <div className="rounded-3xl border border-white/60 bg-white/30 p-4 shadow-inner shadow-white/30 backdrop-blur-xl">
+                <div className="rounded-3xl border border-white/60 bg-white/30 p-4 shadow-inner shadow-white/30 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/[0.35] dark:shadow-white/10">
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <div className="font-bold text-slate-950">Scan first</div>
-                      <div className="mt-1 font-medium text-slate-600">Preview removable data before anything is deleted.</div>
+                      <div className="font-bold text-slate-950 dark:text-slate-100">Scan first</div>
+                      <div className="mt-1 font-medium text-slate-600 dark:text-slate-300">Preview removable data before anything is deleted.</div>
                     </div>
                     <div>
-                      <div className="font-bold text-slate-950">Keep control</div>
-                      <div className="mt-1 font-medium text-slate-600">Review cleanup sections and select what runs.</div>
+                      <div className="font-bold text-slate-950 dark:text-slate-100">Keep control</div>
+                      <div className="mt-1 font-medium text-slate-600 dark:text-slate-300">Review cleanup sections and select what runs.</div>
                     </div>
                   </div>
                 </div>
@@ -164,14 +164,14 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
                 return (
                   <Card key={index} className={myMacActionCard}>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_25%,rgba(59,130,246,0.14),transparent_42%)]" />
-                    <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-blue-200/70 bg-blue-100/35 shadow-[0_12px_36px_rgba(59,130,246,0.16)] backdrop-blur-xl">
+                    <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-blue-200/70 bg-blue-100/35 shadow-[0_12px_36px_rgba(59,130,246,0.16)] backdrop-blur-xl dark:border-blue-500/25 dark:bg-blue-500/10">
                       {ItemIcon && (
                         <ItemIcon className="h-7 w-7 text-blue-500 transition-transform duration-300 group-hover:scale-110" />
                       )}
                     </div>
                     <div className="relative min-w-0 flex-1">
-                      <h3 className="text-base font-bold text-slate-950">{item.title}</h3>
-                      <p className="mt-1 text-sm font-medium leading-5 text-slate-600">{item.description}</p>
+                      <h3 className="text-base font-bold text-slate-950 dark:text-slate-100">{item.title}</h3>
+                      <p className="mt-1 text-sm font-medium leading-5 text-slate-600 dark:text-slate-300">{item.description}</p>
                     </div>
                   </Card>
                 );
@@ -191,9 +191,9 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
           backgroundImage: `radial-gradient(circle at 78% 34%, ${featureTheme.glow}, transparent 34%), radial-gradient(circle at 45% 78%, rgba(${featureTheme.rgb},0.10), transparent 44%)`,
         }}
       >
-        <div className="pointer-events-none absolute -right-20 top-20 h-[520px] w-[520px] rounded-full border border-white/45 opacity-70" />
-        <div className="pointer-events-none absolute -right-10 top-28 h-[450px] w-[450px] rounded-full border border-white/40 opacity-65" />
-        <div className="pointer-events-none absolute bottom-[-260px] right-[-20px] h-[520px] w-[760px] rounded-[50%] border border-white/45 opacity-65" />
+        <div className="pointer-events-none absolute -right-20 top-20 h-[520px] w-[520px] rounded-full border border-white/45 opacity-70 dark:border-white/10" />
+        <div className="pointer-events-none absolute -right-10 top-28 h-[450px] w-[450px] rounded-full border border-white/40 opacity-65 dark:border-white/10" />
+        <div className="pointer-events-none absolute bottom-[-260px] right-[-20px] h-[520px] w-[760px] rounded-[50%] border border-white/45 opacity-65 dark:border-white/10" />
         <div className="pointer-events-none absolute left-1/2 top-[15%] text-4xl font-light text-white/85">+</div>
         <div className="pointer-events-none absolute right-[9%] top-[9%] text-4xl font-light text-white/85">+</div>
         <div className="pointer-events-none absolute right-[4%] top-[20%] text-3xl font-light text-white/75">+</div>
@@ -202,24 +202,24 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
 
         <div className="relative mx-auto grid h-full max-w-[1540px] grid-cols-[minmax(360px,0.9fr)_minmax(360px,1.1fr)] grid-rows-[minmax(0,1fr)_auto] gap-x-10 px-[5.5%] pb-8 pt-[clamp(5.25rem,9vh,7rem)]">
           <section className="min-w-0">
-            <h1 className="text-[clamp(3rem,4vw,4.2rem)] font-black leading-[0.96] tracking-normal text-slate-950 drop-shadow-[0_3px_0_rgba(255,255,255,0.85)]">
+            <h1 className="text-[clamp(3rem,4vw,4.2rem)] font-black leading-[0.96] tracking-normal text-slate-950 drop-shadow-[0_3px_0_rgba(255,255,255,0.85)] dark:text-slate-100 dark:drop-shadow-[0_3px_0_rgba(0,0,0,0.45)]">
               {config.title}
             </h1>
-            <p className="mt-[clamp(1.25rem,3vh,2.25rem)] max-w-[29rem] text-[clamp(1.05rem,1.25vw,1.28rem)] font-medium leading-[1.58] tracking-normal text-slate-600">
+            <p className="mt-[clamp(1.25rem,3vh,2.25rem)] max-w-[29rem] text-[clamp(1.05rem,1.25vw,1.28rem)] font-medium leading-[1.58] tracking-normal text-slate-600 dark:text-slate-300">
               {config.description}
             </p>
 
-            <div className="mt-[clamp(1.5rem,4vh,3rem)] max-w-[34rem] divide-y divide-slate-300/45 border-y border-slate-300/45">
+            <div className="mt-[clamp(1.5rem,4vh,3rem)] max-w-[34rem] divide-y divide-slate-300/45 border-y border-slate-300/45 dark:divide-white/10 dark:border-white/10">
               {config.items.map((item, index) => {
                 const ItemIcon = getIcon(item.icon);
                 return (
                   <div key={index} className="flex items-center gap-[clamp(1.1rem,2.1vw,1.75rem)] py-[clamp(0.85rem,2vh,1.65rem)]">
-                    <div className="flex h-[clamp(3.25rem,4.2vw,4.25rem)] w-[clamp(3.25rem,4.2vw,4.25rem)] shrink-0 items-center justify-center rounded-[1.1rem] border border-white/70 bg-white/35 shadow-[0_14px_34px_rgba(78,79,110,0.10),inset_0_1px_1px_rgba(255,255,255,0.75)] backdrop-blur-xl">
+                    <div className="flex h-[clamp(3.25rem,4.2vw,4.25rem)] w-[clamp(3.25rem,4.2vw,4.25rem)] shrink-0 items-center justify-center rounded-[1.1rem] border border-white/70 bg-white/35 shadow-[0_14px_34px_rgba(78,79,110,0.10),inset_0_1px_1px_rgba(255,255,255,0.75)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/[0.35] dark:shadow-[0_14px_34px_rgba(0,0,0,0.45),inset_0_1px_1px_rgba(255,255,255,0.08)]">
                       {ItemIcon && <ItemIcon className="h-[clamp(1.55rem,2.3vw,2rem)] w-[clamp(1.55rem,2.3vw,2rem)]" style={{ color: featureTheme.accent }} strokeWidth={1.9} aria-hidden="true" />}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-[clamp(1.05rem,1.35vw,1.35rem)] font-black leading-none tracking-normal text-slate-950">{item.title}</h3>
-                      <p className="mt-[clamp(0.45rem,1vh,0.75rem)] text-[clamp(0.85rem,1vw,1rem)] font-medium leading-[1.22] tracking-normal text-slate-500">{item.description}</p>
+                      <h3 className="text-[clamp(1.05rem,1.35vw,1.35rem)] font-black leading-none tracking-normal text-slate-950 dark:text-slate-100">{item.title}</h3>
+                      <p className="mt-[clamp(0.45rem,1vh,0.75rem)] text-[clamp(0.85rem,1vw,1rem)] font-medium leading-[1.22] tracking-normal text-slate-500 dark:text-slate-400">{item.description}</p>
                     </div>
                   </div>
                 );
@@ -229,10 +229,10 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
 
           <section className="relative flex min-h-0 items-center justify-center overflow-hidden pb-[clamp(1rem,3vh,2.5rem)]">
             <div
-              className="absolute bottom-[14%] h-20 w-[min(410px,42vw)] rounded-[50%] bg-white/35 backdrop-blur-xl"
+              className="absolute bottom-[14%] h-20 w-[min(410px,42vw)] rounded-[50%] bg-white/35 backdrop-blur-xl dark:bg-slate-950/[0.35]"
               style={{ boxShadow: `0 30px 70px ${featureTheme.glow}, inset 0 1px 1px rgba(255,255,255,0.65)` }}
             />
-            <div className="absolute bottom-[11%] h-20 w-[min(500px,50vw)] rounded-[50%] border border-white/35" />
+            <div className="absolute bottom-[11%] h-20 w-[min(500px,50vw)] rounded-[50%] border border-white/35 dark:border-white/10" />
             {featureImage ? (
               <img
                 src={featureImage}
@@ -274,7 +274,7 @@ export function StartScreen({ config, onStart, variant = 'default' }: StartScree
             >
               {config.buttonText}
             </Button>
-            <div className="flex items-center gap-3 text-[clamp(0.8rem,1vw,0.98rem)] font-semibold tracking-normal text-slate-500">
+            <div className="flex items-center gap-3 text-[clamp(0.8rem,1vw,0.98rem)] font-semibold tracking-normal text-slate-500 dark:text-slate-400">
               <Icons.LockKeyhole className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
               {featureTheme.footerText}
             </div>

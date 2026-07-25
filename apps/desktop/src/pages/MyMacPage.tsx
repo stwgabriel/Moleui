@@ -46,8 +46,8 @@ const PROCESS_MENU_MARGIN = 8;
 const PROCESS_DONUT_OTHER_ID = 'other-processes';
 const PROCESS_DONUT_OTHER_COLOR = '#d1d5db';
 const GRAPH_EDGE_FADE = '[mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]';
-const GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
-const ACTION_CARD = 'group relative flex items-center gap-5 rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left  backdrop-blur-2xl overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+const GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl dark:bg-slate-900/55 dark:border-white/10 dark:shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]';
+const ACTION_CARD = 'group relative flex items-center gap-5 rounded-[1.75rem] border border-white/55 bg-white/35 p-5 text-left  backdrop-blur-2xl overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-white/10 dark:bg-slate-900/45 dark:hover:bg-white/10';
 const CARD_TOP_VALUE = 'text-xl font-bold leading-none text-right';
 
 interface HistoryPoint {
@@ -112,12 +112,12 @@ interface ProcessAppGroup {
 
 function DetailRow({ icon: Icon, label, value }: DetailRowProps) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-900/10 py-3 last:border-b-0">
-      <div className="flex min-w-0 items-center gap-2.5 text-slate-600">
-        <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-900/10 py-3 last:border-b-0 dark:border-white/10">
+      <div className="flex min-w-0 items-center gap-2.5 text-slate-600 dark:text-slate-300">
+        <Icon className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" aria-hidden="true" />
         <span className="truncate font-medium">{label}</span>
       </div>
-      <span className="min-w-0 max-w-[58%] truncate text-right font-semibold text-slate-900" title={value}>{value}</span>
+      <span className="min-w-0 max-w-[58%] truncate text-right font-semibold text-slate-900 dark:text-slate-100" title={value}>{value}</span>
     </div>
   );
 }
@@ -129,9 +129,9 @@ function DetailRow({ icon: Icon, label, value }: DetailRowProps) {
 
 function DetailRowSkeleton({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-900/10 py-3 last:border-b-0">
-      <div className="flex min-w-0 items-center gap-2.5 text-slate-600">
-        <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-900/10 py-3 last:border-b-0 dark:border-white/10">
+      <div className="flex min-w-0 items-center gap-2.5 text-slate-600 dark:text-slate-300">
+        <Icon className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" aria-hidden="true" />
         <span className="truncate font-medium">{label}</span>
       </div>
       <div className="mole-skeleton h-4 w-16 rounded-md" />
@@ -144,7 +144,7 @@ function MetricCardSkeleton({ title, className }: { title: string; className: st
     <Card className={`min-h-36 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD} ${className}`}>
       <div className="flex h-full flex-col">
         <div className="flex items-start justify-between gap-3">
-          <div className="text-xl font-bold text-slate-950">{title}</div>
+          <div className="text-xl font-bold text-slate-950 dark:text-slate-100">{title}</div>
           <div className="mole-skeleton h-6 w-14 rounded-lg" />
         </div>
         <div className={`min-h-0 flex-1 py-2 ${GRAPH_EDGE_FADE}`}>
@@ -174,7 +174,7 @@ function MyMacSkeleton() {
                 className="w-24 shrink-0 object-contain drop-shadow-[0_16px_24px_rgba(15,23,42,0.16)]"
               />
               <div className="flex shrink-0 flex-col items-end gap-2 text-right">
-                <span className="text-[11px] font-semibold uppercase text-slate-500">Health</span>
+                <span className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Health</span>
                 <div className="mole-skeleton h-9 w-16 rounded-xl" />
               </div>
             </div>
@@ -183,13 +183,13 @@ function MyMacSkeleton() {
               <div className="mole-skeleton h-5 w-3/4 rounded-md" />
               <div className="mole-skeleton h-4 w-2/3 rounded-md" />
               <div className="mt-3 flex items-center justify-between gap-3">
-                <span className="text-sm font-medium text-slate-600">Health Score</span>
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Health Score</span>
                 <div className="mole-skeleton h-4 w-24 rounded-md" />
               </div>
             </div>
           </div>
 
-          <div className="min-w-0 rounded-3xl border border-white/60 bg-white/30 px-3 text-sm shadow-inner shadow-white/30 backdrop-blur-xl">
+          <div className="min-w-0 rounded-3xl border border-white/60 bg-white/30 px-3 text-sm shadow-inner shadow-white/30 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/[0.35] dark:shadow-white/10">
             <DetailRowSkeleton icon={Settings2} label="System" />
             <DetailRowSkeleton icon={Clock3} label="Uptime" />
             <DetailRowSkeleton icon={Battery} label="Battery" />
@@ -210,7 +210,7 @@ function MyMacSkeleton() {
       <Card className={`col-span-4 row-start-3 row-span-2 min-h-0 rounded-[1.75rem] p-4 ${GLASS_CARD}`}>
         <div className="flex h-full min-h-0 flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-xl font-bold text-slate-950">Apps &amp; Processes</div>
+            <div className="text-xl font-bold text-slate-950 dark:text-slate-100">Apps &amp; Processes</div>
             <div className="mole-skeleton h-8 w-40 rounded-full" />
           </div>
           <div className="min-h-0 flex-1 space-y-2.5 overflow-hidden">
@@ -239,12 +239,12 @@ function ProcessAppIcon({ process, icon, iconMissing }: { process: ProcessInfo; 
       {icon ? (
         <img src={icon} alt="" className="h-7 w-7 object-contain" draggable={false} />
       ) : iconMissing ? (
-        <svg viewBox="0 0 32 32" className="h-7 w-7 text-slate-400" fill="none" aria-hidden="true">
+        <svg viewBox="0 0 32 32" className="h-7 w-7 text-slate-400 dark:text-slate-500" fill="none" aria-hidden="true">
           <rect x="7" y="7" width="18" height="18" rx="5" fill="currentColor" opacity="0.16" />
           <path d="M11 16h10M16 11v10M10 23l12-14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       ) : (
-        <span className="h-2 w-2 rounded-full bg-slate-400/45" />
+        <span className="h-2 w-2 rounded-full bg-slate-400/45 dark:bg-slate-500/45" />
       )}
     </span>
   );
@@ -306,7 +306,7 @@ function ProcessDonutIconLabel(props: any) {
         y={labelY}
         dominantBaseline="central"
         textAnchor={textAnchor}
-        fill="#475569"
+        fill="var(--chart-label, #475569)"
         fontSize={10}
         fontWeight={700}
       >
@@ -1041,7 +1041,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                       className="w-24 shrink-0 object-contain drop-shadow-[0_16px_24px_rgba(15,23,42,0.16)]"
                     />
                     <div className="flex shrink-0 flex-col items-end text-right">
-                      <span className="text-[11px] font-semibold uppercase text-slate-500">Health</span>
+                      <span className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Health</span>
                       <span
                         className="text-4xl font-black leading-none tracking-tight drop-shadow-[0_10px_24px_rgba(139,92,246,0.24)]"
                         style={{ color: getHealthColor(metrics.health_score) }}
@@ -1054,27 +1054,27 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
 
                   <div className="mt-3 min-w-0">
                     <h2
-                      className="overflow-hidden text-lg font-bold leading-tight text-slate-950 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                      className="overflow-hidden text-lg font-bold leading-tight text-slate-950 dark:text-slate-100 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
                       title={formatMacName(metrics.host)}
                     >
                       {formatMacName(metrics.host)}
                     </h2>
                     <p
-                      className="mt-1 overflow-hidden text-sm font-medium leading-snug text-slate-600 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                      className="mt-1 overflow-hidden text-sm font-medium leading-snug text-slate-600 dark:text-slate-300 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
                       title={metrics.hardware?.model || 'Mac'}
                     >
                       {metrics.hardware?.model || 'Mac'}
                     </p>
-                    <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-600">
+                    <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-600 dark:text-slate-300">
                       <span className="font-medium">Health Score</span>
-                      <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-800">
+                      <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
                         <span className="truncate">{metrics.health_score >= 80 ? 'Excellent' : metrics.health_score >= 60 ? 'Good' : 'Needs attention'}</span>
                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: getHealthColor(metrics.health_score) }} />
                       </span>
                     </div>
                   </div>
                 </div>
-                <div className="min-w-0 rounded-3xl border border-white/60 bg-white/30 px-3 text-sm shadow-inner shadow-white/30 backdrop-blur-xl">
+                <div className="min-w-0 rounded-3xl border border-white/60 bg-white/30 px-3 text-sm shadow-inner shadow-white/30 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/[0.35] dark:shadow-white/10">
                   <DetailRow icon={Settings2} label="System" value={metrics.hardware?.os_version || 'macOS'} />
                   <DetailRow icon={Clock3} label="Uptime" value={metrics.uptime || '—'} />
                   <DetailRow icon={Battery} label="Battery" value={metrics.batteries?.[0]?.health || 'Normal'} />
@@ -1090,14 +1090,14 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
               aria-label="Open Clean page to free up space"
             >
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_25%,rgba(59,130,246,0.18),transparent_42%)]" />
-              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-blue-200/70 bg-blue-100/35 shadow-[0_12px_36px_rgba(59,130,246,0.18)] backdrop-blur-xl">
+              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-blue-200/70 bg-blue-100/35 dark:border-blue-500/25 dark:bg-blue-500/15 shadow-[0_12px_36px_rgba(59,130,246,0.18)] backdrop-blur-xl">
                 <Sparkles className="h-9 w-9 text-blue-500 drop-shadow-[0_8px_18px_rgba(59,130,246,0.35)] transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12" />
               </div>
               <div className="relative min-w-0 flex-1">
                 <div className="text-xl font-bold text-blue-500">Clean</div>
-                <div className="mt-1 text-sm font-medium text-slate-600">Free up space</div>
+                <div className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-300">Free up space</div>
               </div>
-              <ArrowRight className="relative h-5 w-5 text-slate-500 transition-transform duration-200 group-hover:translate-x-1" />
+              <ArrowRight className="relative h-5 w-5 text-slate-500 dark:text-slate-400 transition-transform duration-200 group-hover:translate-x-1" />
             </button>
 
             {/* Uninstall - Row 4, Col 1 */}
@@ -1107,21 +1107,21 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
               aria-label="Open Uninstall page to remove apps"
             >
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_25%,rgba(244,63,94,0.16),transparent_42%)]" />
-              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-rose-200/70 bg-rose-100/35 shadow-[0_12px_36px_rgba(244,63,94,0.18)] backdrop-blur-xl">
+              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-rose-200/70 bg-rose-100/35 dark:border-rose-500/25 dark:bg-rose-500/15 shadow-[0_12px_36px_rgba(244,63,94,0.18)] backdrop-blur-xl">
                 <Trash2 className="h-9 w-9 text-rose-500 drop-shadow-[0_8px_18px_rgba(244,63,94,0.32)] transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6" />
               </div>
               <div className="relative min-w-0 flex-1">
                 <div className="text-xl font-bold text-rose-500">Uninstall</div>
-                <div className="mt-1 text-sm font-medium text-slate-600">Remove apps</div>
+                <div className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-300">Remove apps</div>
               </div>
-              <ArrowRight className="relative h-5 w-5 text-slate-500 transition-transform duration-200 group-hover:translate-x-1" />
+              <ArrowRight className="relative h-5 w-5 text-slate-500 dark:text-slate-400 transition-transform duration-200 group-hover:translate-x-1" />
             </button>
 
             {/* Processor - Row 1, Col 2 */}
             <Card className={`min-h-36 col-start-2 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="text-xl font-bold text-slate-950">Processor</div>
+                  <div className="text-xl font-bold text-slate-950 dark:text-slate-100">Processor</div>
                   <div className={CARD_TOP_VALUE} style={{ color: getHeatColor(metrics.cpu.usage) }}>
                     {metrics.cpu.usage.toFixed(0)}%
                   </div>
@@ -1139,7 +1139,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                       <Tooltip
                         content={({ active, payload }) =>
                           active && payload?.length ? (
-                            <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md backdrop-blur-xl">
+                            <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md backdrop-blur-xl dark:bg-slate-900/65 dark:border-white/10">
                               {(payload[0].value as number).toFixed(1)}%
                             </div>
                           ) : null
@@ -1157,7 +1157,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-auto flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
+                <div className="mt-auto flex items-center justify-between gap-3 text-xs font-medium text-slate-500 dark:text-slate-400">
                   <span>{metrics.cpu.core_count} cores</span>
                   <span className="tabular-nums">Load {metrics.cpu.load1.toFixed(2)}</span>
                 </div>
@@ -1168,7 +1168,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
             <Card className={`min-h-36 col-start-2 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="text-xl font-bold text-slate-950">GPU</div>
+                  <div className="text-xl font-bold text-slate-950 dark:text-slate-100">GPU</div>
                   <div className={CARD_TOP_VALUE} style={{ color: gpuUsage == null ? '#64748b' : getHeatColor(gpuUsage) }}>
                     {gpuUsage == null ? '—' : `${gpuUsage.toFixed(0)}%`}
                   </div>
@@ -1186,7 +1186,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                       <Tooltip
                         content={({ active, payload }) =>
                           active && payload?.length ? (
-                            <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md backdrop-blur-xl">
+                            <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md backdrop-blur-xl dark:bg-slate-900/65 dark:border-white/10">
                               {(payload[0]?.value as number)?.toFixed(1)}%
                             </div>
                           ) : null
@@ -1205,7 +1205,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-auto flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
+                <div className="mt-auto flex items-center justify-between gap-3 text-xs font-medium text-slate-500 dark:text-slate-400">
                   <span className="min-w-0 truncate">{metrics.gpu?.[0]?.name || 'Apple GPU'}</span>
                   <span className="shrink-0">Temp {gpuTemperature}</span>
                 </div>
@@ -1219,14 +1219,14 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
               aria-label="Open Optimize page to boost performance"
             >
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_25%,rgba(139,92,246,0.18),transparent_42%)]" />
-              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-violet-200/70 bg-violet-100/35 shadow-[0_12px_36px_rgba(139,92,246,0.20)] backdrop-blur-xl">
+              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-violet-200/70 bg-violet-100/35 dark:border-violet-500/25 dark:bg-violet-500/15 shadow-[0_12px_36px_rgba(139,92,246,0.20)] backdrop-blur-xl">
                 <Zap className="h-9 w-9 fill-violet-500/20 text-violet-500 drop-shadow-[0_8px_18px_rgba(139,92,246,0.35)] transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6" />
               </div>
               <div className="relative min-w-0 flex-1">
                 <div className="text-xl font-bold text-violet-500">Optimize</div>
-                <div className="mt-1 text-sm font-medium text-slate-600">Boost performance</div>
+                <div className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-300">Boost performance</div>
               </div>
-              <ArrowRight className="relative h-5 w-5 text-slate-500 transition-transform duration-200 group-hover:translate-x-1" />
+              <ArrowRight className="relative h-5 w-5 text-slate-500 dark:text-slate-400 transition-transform duration-200 group-hover:translate-x-1" />
             </button>
 
             {/* Analyze - Row 4, Col 2 */}
@@ -1236,21 +1236,21 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
               aria-label="Open Analyze page for disk insights"
             >
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_25%,rgba(236,72,153,0.16),transparent_42%)]" />
-              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-pink-200/70 bg-pink-100/35 shadow-[0_12px_36px_rgba(236,72,153,0.18)] backdrop-blur-xl">
+              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-pink-200/70 bg-pink-100/35 dark:border-pink-500/25 dark:bg-pink-500/15 shadow-[0_12px_36px_rgba(236,72,153,0.18)] backdrop-blur-xl">
                 <Search className="h-9 w-9 text-pink-500 drop-shadow-[0_8px_18px_rgba(236,72,153,0.32)] transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6" />
               </div>
               <div className="relative min-w-0 flex-1">
                 <div className="text-xl font-bold text-pink-500">Analyze</div>
-                <div className="mt-1 text-sm font-medium text-slate-600">Disk insights</div>
+                <div className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-300">Disk insights</div>
               </div>
-              <ArrowRight className="relative h-5 w-5 text-slate-500 transition-transform duration-200 group-hover:translate-x-1" />
+              <ArrowRight className="relative h-5 w-5 text-slate-500 dark:text-slate-400 transition-transform duration-200 group-hover:translate-x-1" />
             </button>
 
             {/* RAM - Row 1, Col 3 */}
             <Card className={`min-h-44 col-start-3 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="text-xl font-bold text-slate-950">RAM</div>
+                  <div className="text-xl font-bold text-slate-950 dark:text-slate-100">RAM</div>
                   <div className={CARD_TOP_VALUE} style={{ color: getHeatColor(metrics.memory.used_percent) }}>
                     {metrics.memory.used_percent.toFixed(0)}%
                   </div>
@@ -1280,12 +1280,12 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                   </ResponsiveContainer>
                   {/* Center label */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-sm font-bold leading-none text-slate-950">{memoryFreeLabel}</span>
-                    <span className="mt-0.5 text-[10px] font-semibold leading-none text-slate-500">Free</span>
+                    <span className="text-sm font-bold leading-none text-slate-950 dark:text-slate-100">{memoryFreeLabel}</span>
+                    <span className="mt-0.5 text-[10px] font-semibold leading-none text-slate-500 dark:text-slate-400">Free</span>
                   </div>
                 </div>
                 <div className="mt-auto space-y-0.5 text-center">
-                  <div className="text-xs font-medium text-slate-500">{formatBytes(metrics.memory.used)} / {formatBytes(metrics.memory.total)}</div>
+                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{formatBytes(metrics.memory.used)} / {formatBytes(metrics.memory.total)}</div>
                   {metrics.memory.swap_total != null && metrics.memory.swap_total > 0 && (
                     <div className="text-xs font-medium text-amber-500">
                       swap {formatBytes(metrics.memory.swap_used ?? 0)}
@@ -1299,7 +1299,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
             <Card className={`min-h-44 col-start-4 row-start-1 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="text-xl font-bold text-slate-950">Storage</div>
+                  <div className="text-xl font-bold text-slate-950 dark:text-slate-100">Storage</div>
                   <div className={CARD_TOP_VALUE} style={{ color: getHeatColor(metrics.disks?.[0]?.used_percent ?? 0) }}>
                     {(metrics.disks?.[0]?.used_percent ?? 0).toFixed(0)}%
                   </div>
@@ -1328,12 +1328,12 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-sm font-bold leading-none text-slate-950">{storageFreeLabel}</span>
-                    <span className="mt-0.5 text-[10px] font-semibold leading-none text-slate-500">Free</span>
+                    <span className="text-sm font-bold leading-none text-slate-950 dark:text-slate-100">{storageFreeLabel}</span>
+                    <span className="mt-0.5 text-[10px] font-semibold leading-none text-slate-500 dark:text-slate-400">Free</span>
                   </div>
                 </div>
                 <div className="mt-auto text-center">
-                  <div className="text-xs font-medium text-slate-500">{formatBytes(metrics.disks?.[0]?.used || 0)} / {formatBytes(metrics.disks?.[0]?.total || 0)}</div>
+                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{formatBytes(metrics.disks?.[0]?.used || 0)} / {formatBytes(metrics.disks?.[0]?.total || 0)}</div>
                 </div>
               </div>
             </Card>
@@ -1342,7 +1342,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
             <Card className={`min-h-36 col-start-3 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="text-xl font-bold text-slate-950">Network</div>
+                  <div className="text-xl font-bold text-slate-950 dark:text-slate-100">Network</div>
                 </div>
                 <div className={`min-h-0 flex-1 py-2 ${GRAPH_EDGE_FADE}`}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -1361,7 +1361,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                       <Tooltip
                         content={({ active, payload }) =>
                           active && payload?.length ? (
-                            <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md space-y-0.5 backdrop-blur-xl">
+                            <div className="bg-white/80 border border-white/70 rounded-lg px-2 py-1 text-xs shadow-md space-y-0.5 backdrop-blur-xl dark:bg-slate-900/65 dark:border-white/10">
                               <div className="text-blue-500">↓ {(payload[0]?.value as number)?.toFixed(2)} MB/s</div>
                               <div className="text-emerald-500">↑ {(payload[1]?.value as number)?.toFixed(2)} MB/s</div>
                             </div>
@@ -1384,12 +1384,12 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
             <Card className={`min-h-36 col-start-4 row-start-2 rounded-[1.75rem] p-4 overflow-hidden ${GLASS_CARD}`}>
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="text-xl font-bold text-slate-950">Battery</div>
+                  <div className="text-xl font-bold text-slate-950 dark:text-slate-100">Battery</div>
                   <div className={`${CARD_TOP_VALUE} text-emerald-500`}>{batteryPercent == null ? '—' : `${batteryPercent.toFixed(0)}%`}</div>
                 </div>
                 <div className="relative min-h-0 flex-1 py-2">
                   {batteryCharging && (
-                    <div className="pointer-events-none absolute right-2 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-200/80 bg-emerald-100/80 text-emerald-500 shadow-[0_8px_20px_rgba(16,185,129,0.25)] backdrop-blur-xl" aria-label="Battery charging">
+                    <div className="pointer-events-none absolute right-2 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-200/80 bg-emerald-100/80 text-emerald-500 dark:border-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-300 shadow-[0_8px_20px_rgba(16,185,129,0.25)] backdrop-blur-xl" aria-label="Battery charging">
                       <Zap className="h-4 w-4 fill-emerald-400/30" aria-hidden="true" />
                     </div>
                   )}
@@ -1402,7 +1402,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                           <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid vertical horizontal={false} stroke="rgba(15, 23, 42, 0.09)" strokeDasharray="1 5" />
+                      <CartesianGrid vertical horizontal={false} stroke="var(--chart-grid, rgba(15, 23, 42, 0.09))" strokeDasharray="1 5" />
                       <XAxis
                         dataKey="t"
                         type="number"
@@ -1422,9 +1422,9 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                           const point = item?.payload as BatteryChartPoint | undefined;
 
                           return active && item?.value != null ? (
-                            <div className="space-y-0.5 rounded-lg border border-white/70 bg-white/80 px-2 py-1 text-xs shadow-md backdrop-blur-xl">
+                            <div className="space-y-0.5 rounded-lg border border-white/70 bg-white/80 px-2 py-1 text-xs shadow-md backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/65">
                               <div>{(item.value as number).toFixed(0)}% {point?.forecast ? 'predicted' : 'battery'}</div>
-                              {point && <div className="text-slate-500">{point.status} · {new Date(point.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
+                              {point && <div className="text-slate-500 dark:text-slate-400">{point.status} · {new Date(point.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
                             </div>
                           ) : null;
                         }}
@@ -1454,20 +1454,20 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                       />
                       </AreaChart>
                     </ResponsiveContainer>
-                    <div className="pointer-events-none absolute bottom-5 left-0 top-0 w-7 bg-gradient-to-r from-white/55 to-transparent" />
-                    <div className="pointer-events-none absolute bottom-5 right-0 top-0 w-7 bg-gradient-to-l from-white/55 to-transparent" />
+                    <div className="pointer-events-none absolute bottom-5 left-0 top-0 w-7 bg-gradient-to-r from-white/55 to-transparent dark:from-slate-900/55" />
+                    <div className="pointer-events-none absolute bottom-5 right-0 top-0 w-7 bg-gradient-to-l from-white/55 to-transparent dark:from-slate-900/55" />
                   </div>
                 </div>
-                <div className="mt-auto flex flex-col gap-0.5 text-xs font-medium text-slate-500">
+                <div className="mt-auto flex flex-col gap-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
                   <div className="truncate">{batteryPrediction.label}</div>
-                  <div className="truncate text-[11px] text-slate-400">{batteryPrediction.detail}</div>
+                  <div className="truncate text-[11px] text-slate-400 dark:text-slate-500">{batteryPrediction.detail}</div>
                 </div>
               </div>
             </Card>
 
             {/* Processes - Row 3-4, All Columns */}
-            <Card className={`relative col-span-4 row-start-3 row-span-2 min-h-0 rounded-[1.75rem] overflow-visible ${isProcessExpanded ? 'z-40' : 'z-0'} ${GLASS_CARD} bg-transparent`}>
-              <div className={`absolute inset-x-0 bottom-0 grid grid-cols-[20rem_minmax(0,1fr)] gap-4 rounded-[1.75rem] border border-white/60 p-4 transition-[height,background-color,box-shadow] duration-300 ease-out ${isProcessExpanded ? 'h-[calc(100%+18rem)] max-h-[calc(100vh-1rem)] bg-white/90 shadow-[0_24px_80px_rgba(15,23,42,0.16)] backdrop-blur-2xl' : 'h-full bg-white/35 shadow-[0_18px_58px_rgba(109,93,252,0.12)] backdrop-blur-2xl'}`}>
+            <Card className={`relative col-span-4 row-start-3 row-span-2 min-h-0 rounded-[1.75rem] overflow-visible ${isProcessExpanded ? 'z-40' : 'z-0'} ${GLASS_CARD} bg-transparent dark:bg-transparent`}>
+              <div className={`absolute inset-x-0 bottom-0 grid grid-cols-[20rem_minmax(0,1fr)] gap-4 rounded-[1.75rem] border border-white/60 dark:border-white/10 p-4 transition-[height,background-color,box-shadow] duration-300 ease-out ${isProcessExpanded ? 'h-[calc(100%+18rem)] max-h-[calc(100vh-1rem)] bg-white/90 dark:bg-slate-900/90 shadow-[0_24px_80px_rgba(15,23,42,0.16)] backdrop-blur-2xl' : 'h-full bg-white/35 dark:bg-slate-900/45 shadow-[0_18px_58px_rgba(109,93,252,0.12)] backdrop-blur-2xl'}`}>
                 <div className="relative flex min-h-0 overflow-visible p-1">
                   <div className="relative h-full min-h-0 flex-1">
                     {topProcessDonutData.length > 0 ? (
@@ -1497,33 +1497,33 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                         </ResponsiveContainer>
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                           <div className="flex flex-col items-center justify-center text-center">
-                            <span className="text-2xl font-black leading-none text-slate-950">{allProcesses.length}</span>
-                            <span className="mt-1 text-xs font-semibold text-slate-500">Processes</span>
+                            <span className="text-2xl font-black leading-none text-slate-950 dark:text-slate-100">{allProcesses.length}</span>
+                            <span className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Processes</span>
                           </div>
                         </div>
                       </>
                     ) : (
-                      <div className="flex h-full items-center justify-center text-sm font-medium text-slate-500">No process data</div>
+                      <div className="flex h-full items-center justify-center text-sm font-medium text-slate-500 dark:text-slate-400">No process data</div>
                     )}
                   </div>
                 </div>
                 <div className="flex min-h-0 flex-col">
                   <div className="mb-2 flex items-center justify-between gap-3 px-2">
-                    <div className="text-xl font-bold text-slate-950">Apps & Processes</div>
+                    <div className="text-xl font-bold text-slate-950 dark:text-slate-100">Apps & Processes</div>
                     <div className="flex min-w-0 items-center gap-2">
                       <label className="relative min-w-0 w-[18rem]" aria-label="Search processes">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" aria-hidden="true" />
                       <input
                         type="search"
                         value={processSearch}
                         onChange={(event) => setProcessSearch(event.target.value)}
                         placeholder="Search processes"
-                        className="h-8 w-full rounded-full border border-slate-300 bg-slate-100/80 pl-8 pr-3 text-xs font-semibold text-slate-700 outline-none backdrop-blur-xl placeholder:text-slate-500 focus:border-slate-400 focus:bg-slate-100 focus:ring-2 focus:ring-violet-500/20"
+                        className="h-8 w-full rounded-full border border-slate-300 bg-slate-100/80 pl-8 pr-3 text-xs font-semibold text-slate-700 outline-none backdrop-blur-xl placeholder:text-slate-500 focus:border-slate-400 focus:bg-slate-100 focus:ring-2 focus:ring-violet-500/20 dark:border-white/10 dark:bg-white/10 dark:text-slate-200 dark:placeholder:text-slate-400 dark:focus:border-white/20 dark:focus:bg-white/15"
                       />
                       </label>
                       <button
                         type="button"
-                        className="flex h-8 w-8 shrink-0 items-center justify-center text-slate-600 transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center text-slate-600 transition hover:text-violet-600 dark:text-slate-300 dark:hover:text-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                         aria-label={isProcessExpanded ? 'Collapse all processes' : 'Expand all processes'}
                         aria-expanded={isProcessExpanded}
                         onClick={() => setIsProcessExpanded((expanded) => !expanded)}
@@ -1532,12 +1532,12 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                       </button>
                     </div>
                   </div>
-                  <div className="mb-1 grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="mb-1 grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     <span />
                     <div className="grid grid-cols-2 items-center gap-3">
                       <button
                         type="button"
-                        className="text-left transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                        className="text-left transition hover:text-violet-600 dark:hover:text-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                         aria-sort={processSort.key === 'cpu' ? (processSort.direction === 'desc' ? 'descending' : 'ascending') : 'none'}
                         onClick={() => toggleProcessSort('cpu')}
                       >
@@ -1545,7 +1545,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                       </button>
                       <button
                         type="button"
-                        className="text-left transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                        className="text-left transition hover:text-violet-600 dark:hover:text-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                         aria-sort={processSort.key === 'memory' ? (processSort.direction === 'desc' ? 'descending' : 'ascending') : 'none'}
                         onClick={() => toggleProcessSort('memory')}
                       >
@@ -1556,7 +1556,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                   </div>
                   <div className="flex-1 overflow-auto pr-1 custom-scrollbar">
                     {visibleProcessAppGroups.length === 0 ? (
-                      <div className="flex h-full items-center justify-center text-sm font-medium text-slate-500">No matching processes</div>
+                      <div className="flex h-full items-center justify-center text-sm font-medium text-slate-500 dark:text-slate-400">No matching processes</div>
                     ) : visibleProcessAppGroups.map((group, idx) => {
                       const cpuBar = Math.min(group.totalCpu, 100);
                       const appColor = getProcessColor(group.name, group.icon);
@@ -1565,17 +1565,17 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                       const primaryProcess = group.processes[0];
                       const groupMeta = canExpand ? `${group.processes.length} processes` : `PID ${primaryProcess.pid}`;
                       return (
-                        <div key={group.id} className="border-b border-slate-900/10 last:border-b-0">
+                        <div key={group.id} className="border-b border-slate-900/10 last:border-b-0 dark:border-white/10">
                           <div
                             className="grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 px-2 py-1.5 hover:rounded-xl hover:bg-violet-500/10"
                             onContextMenu={(event) => handleProcessContextMenu(event, primaryProcess)}
                           >
                             <div className="flex min-w-0 items-center gap-2.5">
                               <span className="h-5 w-1 shrink-0 rounded-full" style={{ backgroundColor: appColor }} aria-hidden="true" />
-                              <span className={`w-5 shrink-0 text-center text-xs font-bold tabular-nums ${group.pinnedRank >= 0 ? 'text-violet-600' : 'text-slate-400'}`}>{idx + 1}</span>
+                              <span className={`w-5 shrink-0 text-center text-xs font-bold tabular-nums ${group.pinnedRank >= 0 ? 'text-violet-600 dark:text-violet-300' : 'text-slate-400 dark:text-slate-500'}`}>{idx + 1}</span>
                               <button
                                 type="button"
-                                className="flex h-7 w-7 shrink-0 items-center justify-center text-slate-500 transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:opacity-35"
+                                className="flex h-7 w-7 shrink-0 items-center justify-center text-slate-500 transition hover:text-violet-600 dark:text-slate-400 dark:hover:text-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:opacity-35"
                                 aria-label={isExpanded ? `Hide processes for ${group.name}` : `Show processes for ${group.name}`}
                                 aria-expanded={canExpand ? isExpanded : undefined}
                                 disabled={!canExpand}
@@ -1585,25 +1585,25 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                               </button>
                               <ProcessAppIcon process={group.iconProcess} icon={group.icon} iconMissing={group.iconMissing} />
                               <div className="min-w-0">
-                                <div className="truncate text-sm font-semibold text-slate-800" title={group.name}>{group.name}</div>
-                                <div className="text-[11px] font-medium text-slate-400">{groupMeta}</div>
+                                <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200" title={group.name}>{group.name}</div>
+                                <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">{groupMeta}</div>
                               </div>
                             </div>
                             <div className="grid grid-cols-2 items-center gap-3 text-xs">
                               <div className="flex items-center gap-2" style={{ color: appColor }} aria-label={`${group.totalCpu.toFixed(1)} percent CPU`}>
-                                <span className="h-1.5 w-10 overflow-hidden rounded-full bg-slate-900/5">
+                                <span className="h-1.5 w-10 overflow-hidden rounded-full bg-slate-900/5 dark:bg-white/10">
                                   <span className="block h-full rounded-full" style={{ width: `${cpuBar}%`, backgroundColor: appColor }} />
                                 </span>
                                 <span className="font-semibold tabular-nums">{group.totalCpu.toFixed(1)}%</span>
                               </div>
-                              <span className="font-medium tabular-nums text-slate-500">{formatProcessMemory(group.totalMemory)}</span>
+                              <span className="font-medium tabular-nums text-slate-500 dark:text-slate-400">{formatProcessMemory(group.totalMemory)}</span>
                             </div>
                             {canExpand ? (
                               <span className="h-7 w-7" aria-hidden="true" />
                             ) : (
                               <button
                                 type="button"
-                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-900/10 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-900/10 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                                 aria-label={`Open actions for ${primaryProcess.name}`}
                                 aria-haspopup="menu"
                                 onClick={(event) => handleProcessMenuButton(event, primaryProcess)}
@@ -1617,23 +1617,23 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                               {group.processes.map((proc) => (
                                 <div
                                   key={proc.pid}
-                                  className="grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-white/50"
+                                  className="grid grid-cols-[minmax(0,1fr)_9rem_2rem] items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-white/50 dark:hover:bg-white/10"
                                   onContextMenu={(event) => handleProcessContextMenu(event, proc)}
                                 >
                                   <div className="flex min-w-0 items-center gap-2.5">
                                     <ProcessAppIcon process={proc} icon={processIcons[proc.pid] ?? group.icon} iconMissing={processIconMisses[proc.pid] ?? group.iconMissing} />
                                     <div className="min-w-0">
-                                      <div className="truncate text-sm font-medium text-slate-700" title={proc.name}>{proc.name}</div>
-                                      <div className="text-[11px] font-medium text-slate-400">PID {proc.pid}</div>
+                                      <div className="truncate text-sm font-medium text-slate-700 dark:text-slate-200" title={proc.name}>{proc.name}</div>
+                                      <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">PID {proc.pid}</div>
                                     </div>
                                   </div>
                                   <div className="grid grid-cols-2 items-center gap-3 text-xs">
                                     <span className="font-semibold tabular-nums" style={{ color: appColor }}>{proc.cpu.toFixed(1)}%</span>
-                                    <span className="font-medium tabular-nums text-slate-500">{formatProcessMemory(getProcessMemoryValue(proc))}</span>
+                                    <span className="font-medium tabular-nums text-slate-500 dark:text-slate-400">{formatProcessMemory(getProcessMemoryValue(proc))}</span>
                                   </div>
                                   <button
                                     type="button"
-                                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-900/10 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-900/10 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                                     aria-label={`Open actions for ${proc.name}`}
                                     aria-haspopup="menu"
                                     onClick={(event) => handleProcessMenuButton(event, proc)}
@@ -1654,22 +1654,22 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
             {processMenu && createPortal(
               <div
                 role="menu"
-                className="fixed z-50 max-h-[calc(100vh-1rem)] overflow-auto rounded-2xl border border-slate-900/10 bg-white/95 p-1.5 text-left text-sm font-semibold text-slate-800 shadow-[0_18px_56px_rgba(15,23,42,0.18)] backdrop-blur-2xl"
+                className="fixed z-50 max-h-[calc(100vh-1rem)] overflow-auto rounded-2xl border border-slate-900/10 bg-white/95 p-1.5 text-left text-sm font-semibold text-slate-800 dark:border-white/10 dark:bg-slate-900/95 dark:text-slate-200 shadow-[0_18px_56px_rgba(15,23,42,0.18)] backdrop-blur-2xl"
                 style={{ left: processMenu.x, top: processMenu.y, width: PROCESS_MENU_WIDTH }}
                 onClick={(event) => event.stopPropagation()}
               >
-                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100" onClick={() => runProcessAction('pin')}>
+                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10" onClick={() => runProcessAction('pin')}>
                   {pinnedPids.includes(processMenu.process.pid) ? 'Unpin Row' : 'Pin Row'}
                 </button>
-                <div className="my-1 h-px bg-slate-900/10" />
-                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100" onClick={() => runProcessAction('copy-name')}>Copy Process Name</button>
-                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100" onClick={() => runProcessAction('copy-pid')}>Copy PID</button>
-                <div className="my-1 h-px bg-slate-900/10" />
-                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45" disabled={!processMenu.process.command} onClick={() => runProcessAction('reveal')}>Reveal in Finder</button>
-                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100" onClick={() => runProcessAction('activity-monitor')}>Open Activity Monitor</button>
-                <div className="my-1 h-px bg-slate-900/10" />
-                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100" onClick={() => runProcessAction('terminate')}>Terminate</button>
-                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100" onClick={() => runProcessAction('force-quit')}>Force Quit</button>
+                <div className="my-1 h-px bg-slate-900/10 dark:bg-white/10" />
+                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10" onClick={() => runProcessAction('copy-name')}>Copy Process Name</button>
+                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10" onClick={() => runProcessAction('copy-pid')}>Copy PID</button>
+                <div className="my-1 h-px bg-slate-900/10 dark:bg-white/10" />
+                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-45" disabled={!processMenu.process.command} onClick={() => runProcessAction('reveal')}>Reveal in Finder</button>
+                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10" onClick={() => runProcessAction('activity-monitor')}>Open Activity Monitor</button>
+                <div className="my-1 h-px bg-slate-900/10 dark:bg-white/10" />
+                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10" onClick={() => runProcessAction('terminate')}>Terminate</button>
+                <button type="button" role="menuitem" className="w-full rounded-xl px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10" onClick={() => runProcessAction('force-quit')}>Force Quit</button>
               </div>,
               document.body,
             )}

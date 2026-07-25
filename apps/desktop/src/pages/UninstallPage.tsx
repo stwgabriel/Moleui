@@ -20,6 +20,10 @@ type Stage = 'idle' | 'loading' | 'selection' | 'confirmation' | 'executing' | '
 
 const uninstallAccentStyle = featureAccentVars('uninstall');
 
+// Shared entrance easing, same curve the onboarding modal and login use, so the
+// uninstall flow's choreography reads as one system with the rest of the app.
+const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
 interface App {
   name: string;
   bundle_id: string;
@@ -52,14 +56,14 @@ interface BubbleNode extends SimulationNodeDatum {
   fy?: number | null;
 }
 
-const GLASS_CARD = 'bg-white/45 border border-white/55 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl';
-const SOFT_CARD = 'rounded-[1.75rem] border border-white/55 bg-white/35  backdrop-blur-2xl';
+const GLASS_CARD = 'bg-white/45 dark:bg-slate-900/50 border border-white/55 dark:border-white/10 shadow-[0_24px_80px_rgba(109,93,252,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] dark:shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl';
+const SOFT_CARD = 'rounded-[1.75rem] border border-white/55 dark:border-white/10 bg-white/35 dark:bg-slate-950/35  backdrop-blur-2xl';
 const UNINSTALL_SHELL = 'relative h-full min-h-0 overflow-hidden p-2';
 const UNINSTALL_ACCENT_BG = 'pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_88%_16%,rgba(var(--page-accent-rgb),0.16),transparent_34%),radial-gradient(circle_at_16%_88%,rgba(109,93,252,0.12),transparent_38%)]';
 const LIST_CARD = `relative overflow-hidden rounded-[1.5rem] p-4 ${SOFT_CARD}`;
 const APP_SELECTION_CARD = `relative overflow-hidden rounded-[1.25rem] p-3 ${SOFT_CARD}`;
-const PILL_INPUT = 'rounded-full border border-white/60 bg-white/45 text-slate-950 shadow-inner shadow-white/40 backdrop-blur-xl placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[rgba(var(--page-accent-rgb),0.35)] focus:border-[rgba(var(--page-accent-rgb),0.35)] transition-all';
-const MUTED_PILL = 'rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 backdrop-blur-xl';
+const PILL_INPUT = 'rounded-full border border-white/60 dark:border-white/10 bg-white/45 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 shadow-inner shadow-white/40 dark:shadow-white/10 backdrop-blur-xl placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[rgba(var(--page-accent-rgb),0.35)] focus:border-[rgba(var(--page-accent-rgb),0.35)] transition-all';
+const MUTED_PILL = 'rounded-full border border-white/60 dark:border-white/10 bg-white/35 dark:bg-slate-950/35 shadow-inner shadow-white/30 dark:shadow-white/10 backdrop-blur-xl';
 
 function getScrollShadows(element: HTMLDivElement | null) {
   if (!element) return { top: false, bottom: false };
@@ -109,7 +113,7 @@ const AppIcon = memo(function AppIcon({ icon, size = 'md' }: { icon?: string; si
   }
 
   return (
-    <div className={`${iconBoxClassName} ${iconRadiusClassName} border border-rose-200/70 bg-rose-100/35 flex items-center justify-center flex-shrink-0 shadow-[0_10px_24px_rgba(244,63,94,0.14)] backdrop-blur-xl`}>
+    <div className={`${iconBoxClassName} ${iconRadiusClassName} border border-rose-200/70 dark:border-rose-500/25 bg-rose-100/35 dark:bg-rose-500/15 flex items-center justify-center flex-shrink-0 shadow-[0_10px_24px_rgba(244,63,94,0.14)] backdrop-blur-xl`}>
       <Package className={`${fallbackIconClassName} text-[var(--page-accent)]`} />
     </div>
   );
@@ -265,7 +269,7 @@ function AppRemovalAnimation({
       data-testid="uninstall-removal-animation"
     >
       <div className="relative h-44 w-44">
-        <div className="absolute -bottom-3 left-1/2 h-4 w-32 -translate-x-1/2 rounded-full bg-slate-950/10 blur-lg" />
+        <div className="absolute -bottom-3 left-1/2 h-4 w-32 -translate-x-1/2 rounded-full bg-slate-950/10 dark:bg-slate-950/60 blur-lg" />
         <div className="uninstall-core-halo absolute inset-1 rounded-full" />
 
         <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 176 176" fill="none">
@@ -347,7 +351,7 @@ function AppRemovalAnimation({
       </div>
 
       <div className="flex min-h-5 items-center justify-center">
-        <span className="max-w-[16rem] truncate text-sm font-bold tracking-[-0.01em] text-slate-700">
+        <span className="max-w-[16rem] truncate text-sm font-bold tracking-[-0.01em] text-slate-700 dark:text-slate-200">
           {done ? 'Complete' : displayedApp?.name ?? 'Preparing…'}
         </span>
       </div>
@@ -365,7 +369,7 @@ function AppRemovalAnimation({
           ))}
           {overflowCount > 0 && (
             <div className="uninstall-orbit-bubble flex h-11 w-11 items-center justify-center rounded-full">
-              <span className="text-xs font-black text-slate-600">+{overflowCount}</span>
+              <span className="text-xs font-black text-slate-600 dark:text-slate-300">+{overflowCount}</span>
             </div>
           )}
         </div>
@@ -567,11 +571,11 @@ function SelectedAppBubbleCluster({
         data-testid="selected-app-orbit-stage"
         style={{ minHeight: stageMinHeight }}
       >
-        <div className="pointer-events-none absolute w-full inset-6 rounded-full border border-white/30 opacity-50" />
+        <div className="pointer-events-none absolute w-full inset-6 rounded-full border border-white/30 dark:border-white/10 opacity-50" />
         {selectedCount > 6 && (
-          <div className="pointer-events-none absolute inset-1 rounded-[40%] border border-white/20 opacity-45" />
+          <div className="pointer-events-none absolute inset-1 rounded-[40%] border border-white/20 dark:border-white/10 opacity-45" />
         )}
-        <div className="pointer-events-none absolute left-1/2 top-1/2 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30 blur-3xl" />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30 dark:bg-white/10 blur-3xl" />
         <motion.div
           className="uninstall-orbit-bubble absolute left-0 top-0 z-20 flex flex-col items-center justify-center gap-2 rounded-full px-4 text-center"
           data-testid="selected-app-center-bubble"
@@ -580,11 +584,11 @@ function SelectedAppBubbleCluster({
           animate={{ x: centerLayout.x - centerLayout.size / 2, y: centerLayout.y - centerLayout.size / 2, scale: 1, opacity: 1 }}
           transition={bubbleTransition}
         >
-          <Package className="h-9 w-9 text-slate-400/70" />
-          <span className="relative text-xs font-black text-slate-950">
+          <Package className="h-9 w-9 text-slate-400/70 dark:text-slate-500/70" />
+          <span className="relative text-xs font-black text-slate-950 dark:text-slate-100">
             {selectedCount === 0 ? 'Select apps' : `${selectedCount} selected`}
           </span>
-          <span className="relative max-w-full truncate text-[11px] font-bold text-slate-500">
+          <span className="relative max-w-full truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">
             {selectedSizeLabel}
           </span>
         </motion.div>
@@ -620,15 +624,15 @@ function SelectedAppBubbleCluster({
                       className="relative flex h-full w-full flex-col items-center justify-center gap-2 rounded-full px-3"
                     >
                       <AppIcon icon={appIcons[app.path]} size={iconSize} />
-                      <span className={`relative max-w-full truncate font-bold text-slate-950 drop-shadow-[0_1px_0_rgba(255,255,255,0.55)] ${isDense ? 'text-[10px]' : 'text-xs'}`}>
+                      <span className={`relative max-w-full truncate font-bold text-slate-950 dark:text-slate-100 drop-shadow-[0_1px_0_rgba(255,255,255,0.55)] dark:drop-shadow-[0_1px_0_rgba(0,0,0,0.45)] ${isDense ? 'text-[10px]' : 'text-xs'}`}>
                         {app.name}
                       </span>
                       {!isDense && (
-                        <span className="relative max-w-[86%] truncate text-[10px] font-semibold text-slate-500">
+                        <span className="relative max-w-[86%] truncate text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                           {app.size}
                         </span>
                       )}
-                      <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-rose-200/90 bg-white/95 text-rose-600 opacity-80 shadow-[0_8px_20px_rgba(244,63,94,0.24)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                      <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-rose-200/90 dark:border-rose-500/25 bg-white/95 dark:bg-slate-900/90 text-rose-600 dark:text-rose-300 opacity-80 shadow-[0_8px_20px_rgba(244,63,94,0.24)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                         <X className="h-4 w-4" strokeWidth={2.8} />
                       </span>
                     </span>
@@ -1334,8 +1338,10 @@ export function UninstallPage() {
     return { apps, summary, progress: currentProgress };
   };
 
-  // Render stages
-  const viewKey = stage === 'idle' ? 'start' : 'working';
+  // Render stages. Keying the transition by stage (not just start/working)
+  // crossfades every hand-off in the flow — selection -> confirmation ->
+  // executing -> results — while each stage choreographs its own entrance.
+  const viewKey = stage === 'idle' ? 'start' : stage;
 
   const renderStage = () => {
   if (stage === 'idle') {
@@ -1368,32 +1374,32 @@ export function UninstallPage() {
 
   if (stage === 'loading') {
     return (
-      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950" style={uninstallAccentStyle}>
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))]" />
+      <div className="relative h-full min-h-0 overflow-hidden bg-[#fbf9ff] dark:bg-slate-950 px-[clamp(1.25rem,3vw,4rem)] pb-[clamp(0.85rem,1.65vw,1.75rem)] pt-[clamp(1.25rem,2.4vw,2.5rem)] text-slate-950 dark:text-slate-100" style={uninstallAccentStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.08),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.08),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,243,255,0.58))] dark:bg-[radial-gradient(circle_at_26%_14%,rgba(var(--page-accent-rgb),0.14),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(109,93,252,0.14),transparent_28%),linear-gradient(135deg,rgba(15,23,42,0.85),rgba(30,27,58,0.65))]" />
 
         <div className="relative flex h-full min-h-0 items-center justify-center text-center">
           <main className="flex w-full max-w-[42rem] flex-col items-center">
-            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl">
+            <div className="relative flex h-[clamp(5rem,8vw,6.5rem)] w-[clamp(5rem,8vw,6.5rem)] items-center justify-center rounded-full bg-white/78 dark:bg-slate-900/60 text-[var(--page-accent)] shadow-[0_24px_76px_rgba(83,76,148,0.14),0_0_0_10px_rgba(var(--page-accent-rgb),0.08)] backdrop-blur-2xl">
               <span className="absolute inset-[-0.38rem] rounded-full border-2 border-[rgba(var(--page-accent-rgb),0.18)] border-r-[var(--page-accent)] border-t-[var(--page-accent-hover)] animate-spin" aria-hidden="true" />
               <Package className="relative h-[42%] w-[42%]" strokeWidth={2.6} />
             </div>
 
-            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950">
+            <h1 className="mt-7 text-[clamp(2.6rem,5.8vw,5.6rem)] font-black leading-[0.9] tracking-[-0.06em] text-slate-950 dark:text-slate-100">
               Listing apps.
             </h1>
-            <p className="mt-5 max-w-[34rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500">
+            <p className="mt-5 max-w-[34rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
               Mole is reading installed applications before you choose what to remove.
             </p>
 
             {scanStatus && (
-              <div className="mt-7 inline-flex max-w-full items-center gap-3 rounded-full bg-white/70 px-4 py-2 text-sm font-black text-slate-500 shadow-[0_10px_30px_rgba(83,76,148,0.08)]">
+              <div className="mt-7 inline-flex max-w-full items-center gap-3 rounded-full bg-white/70 dark:bg-slate-900/55 px-4 py-2 text-sm font-black text-slate-500 dark:text-slate-400 shadow-[0_10px_30px_rgba(83,76,148,0.08)]">
                 <Folder className="h-4 w-4 shrink-0 text-[var(--page-accent)]" />
                 <span className="truncate">{scanStatus}</span>
               </div>
             )}
 
             <div className="mt-8">
-              <Button variant="secondary" icon={X} onClick={cancelScan} size="lg" className="min-w-[min(260px,42vw)] rounded-full border border-white/70 bg-white/70 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
+              <Button variant="secondary" icon={X} onClick={cancelScan} size="lg" className="min-w-[min(260px,42vw)] rounded-full border border-white/70 dark:border-white/10 bg-white/70 dark:bg-slate-900/55 px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] text-slate-600 dark:text-slate-300 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white dark:hover:bg-slate-800 [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]">
                 Cancel
               </Button>
             </div>
@@ -1415,11 +1421,11 @@ export function UninstallPage() {
           <div className="px-4 pb-4 pt-3">
             <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
-                <h2 className="max-w-xl text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
+                <h2 className="max-w-xl text-3xl font-black tracking-[-0.045em] text-slate-950 dark:text-slate-100 mb-1">
                   Select Applications to Uninstall
                 </h2>
                 <div className="flex items-center gap-3">
-                  <p className="text-sm font-semibold text-slate-500">
+                  <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
                     {selectedApps.size} of {apps.length} selected
                   </p>
                   {apps.length > 0 && (
@@ -1431,11 +1437,11 @@ export function UninstallPage() {
                       >
                         Select All
                       </button>
-                      <span className="text-slate-300 text-xs">|</span>
+                      <span className="text-slate-300 dark:text-slate-600 text-xs">|</span>
                       <button
                         type="button"
                         onClick={deselectAll}
-                        className="text-xs font-bold text-slate-500 hover:text-slate-600 transition-colors"
+                        className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
                       >
                         Deselect All
                       </button>
@@ -1448,7 +1454,7 @@ export function UninstallPage() {
                   variant="secondary"
                   icon={ArrowLeft}
                   onClick={reset}
-                  className="rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-slate-600 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]"
+                  className="rounded-full border border-white/70 dark:border-white/10 bg-white/70 dark:bg-slate-900/55 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-slate-600 dark:text-slate-300 shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white dark:hover:bg-slate-800 [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)]"
                 >
                   Back
                 </Button>
@@ -1459,7 +1465,7 @@ export function UninstallPage() {
                   disabled={isRefreshingApps}
                   aria-label={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
                   title={isRefreshingApps ? 'Refreshing applications' : 'Scan again'}
-                  className={`rounded-full border border-white/70 bg-white/70 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-[var(--page-accent)] shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)] ${isRefreshingApps ? '[&_svg]:animate-spin' : ''}`}
+                  className={`rounded-full border border-white/70 dark:border-white/10 bg-white/70 dark:bg-slate-900/55 px-[clamp(1rem,1.45vw,1.25rem)] py-[clamp(0.65rem,0.95vw,0.75rem)] text-[clamp(0.88rem,1.1vw,1rem)] text-[var(--page-accent)] shadow-[0_10px_30px_rgba(83,76,148,0.08)] hover:bg-white dark:hover:bg-slate-800 [&_svg]:h-[clamp(1rem,1.25vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.25vw,1.25rem)] ${isRefreshingApps ? '[&_svg]:animate-spin' : ''}`}
                 >
                   Refresh
                 </Button>
@@ -1469,7 +1475,7 @@ export function UninstallPage() {
             {/* Search and Sort Controls */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex-1 relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
                 <input
                   type="text"
                   placeholder="Search applications..."
@@ -1480,18 +1486,18 @@ export function UninstallPage() {
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 )}
               </div>
               <div className={`flex items-center gap-2 px-4 py-3 ${MUTED_PILL}`}>
-                <ArrowUpDown className="w-4 h-4 text-slate-400" />
+                <ArrowUpDown className="w-4 h-4 text-slate-400 dark:text-slate-500" />
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as 'name' | 'size')}
-                  className="bg-transparent text-sm font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                  className="bg-transparent text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
                 >
                   <option value="size">Sort by Size</option>
                   <option value="name">Sort by Name</option>
@@ -1500,7 +1506,7 @@ export function UninstallPage() {
             </div>
 
             {searchQuery && (
-              <p className="text-sm font-medium text-slate-500 mt-3">
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-3">
                 Found {filteredApps.length} application{filteredApps.length !== 1 ? 's' : ''}
               </p>
             )}
@@ -1521,7 +1527,7 @@ export function UninstallPage() {
                   onClick={proceedToConfirmation}
                   disabled={selectedApps.size === 0}
                   icon={Trash2}
-                  className="mx-auto min-w-[min(370px,80%)] justify-center gap-3 rounded-full bg-[var(--page-accent)] px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] font-black shadow-[0_18px_50px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-white/80 disabled:shadow-none [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
+                  className="mx-auto min-w-[min(370px,80%)] justify-center gap-3 rounded-full bg-[var(--page-accent)] px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] font-black shadow-[0_18px_50px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)] disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:text-white/80 disabled:shadow-none [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
                 >
                   Uninstall Apps
                   <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-black">
@@ -1541,13 +1547,13 @@ export function UninstallPage() {
                 >
                   {filteredApps.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center">
-                      <div className="p-4 rounded-full border border-white/60 bg-white/35 shadow-inner shadow-white/30 mb-4 backdrop-blur-xl">
-                        <Search className="w-8 h-8 text-slate-400" />
+                      <div className="p-4 rounded-full border border-white/60 dark:border-white/10 bg-white/35 dark:bg-slate-950/35 shadow-inner shadow-white/30 dark:shadow-white/10 mb-4 backdrop-blur-xl">
+                        <Search className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                       </div>
-                      <h3 className="text-lg font-bold text-slate-950 mb-1">
+                      <h3 className="text-lg font-bold text-slate-950 dark:text-slate-100 mb-1">
                         No applications found
                       </h3>
-                      <p className="text-sm font-medium text-slate-600">
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
                         Try adjusting your search query
                       </p>
                     </div>
@@ -1563,7 +1569,7 @@ export function UninstallPage() {
                             tabIndex={0}
                             aria-pressed={isSelected}
                             aria-label={`${isSelected ? 'Deselect' : 'Select'} ${app.name}`}
-                            className={`${APP_SELECTION_CARD} shadow-sm cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--page-accent-rgb),0.45)] ${isSelected ? 'ring-2 ring-[var(--page-accent)] bg-white/55' : ''
+                            className={`${APP_SELECTION_CARD} shadow-sm cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/45 dark:hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--page-accent-rgb),0.45)] ${isSelected ? 'ring-2 ring-[var(--page-accent)] bg-white/55 dark:bg-slate-900/60' : ''
                               }`}
                             onClick={() => toggleApp(originalIndex)}
                             onKeyDown={(event) => {
@@ -1582,16 +1588,16 @@ export function UninstallPage() {
                               />
                               <AppIcon icon={appIcons[app.path]} size="sm" />
                               <div className="min-w-0 flex-1">
-                                <div className="truncate text-sm font-bold text-slate-950">{app.name}</div>
-                                <div className="truncate text-xs font-medium text-slate-500">{app.path}</div>
+                                <div className="truncate text-sm font-bold text-slate-950 dark:text-slate-100">{app.name}</div>
+                                <div className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{app.path}</div>
                               </div>
                               <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${app.source === 'Homebrew'
-                                  ? 'bg-red-500/10 text-red-500'
-                                  : 'bg-white/45 text-slate-600'
+                                  ? 'bg-red-500/10 text-red-500 dark:text-red-400'
+                                  : 'bg-white/45 text-slate-600 dark:bg-white/10 dark:text-slate-300'
                                 }`}>
                                 {app.source}
                               </span>
-                              <span className="min-w-[4rem] shrink-0 text-right text-xs font-bold text-slate-600">
+                              <span className="min-w-[4rem] shrink-0 text-right text-xs font-bold text-slate-600 dark:text-slate-300">
                                 {app.size}
                               </span>
                             </div>
@@ -1602,8 +1608,8 @@ export function UninstallPage() {
                   )}
                 </div>
                 <div className="pointer-events-none absolute inset-2 overflow-hidden rounded-[1.5rem]">
-                  <div className={`absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-slate-950/12 to-transparent transition-opacity duration-200 ${appListShadows.top ? 'opacity-100' : 'opacity-0'}`} />
-                  <div className={`absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/14 to-transparent transition-opacity duration-200 ${appListShadows.bottom ? 'opacity-100' : 'opacity-0'}`} />
+                  <div className={`absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-slate-950/12 dark:from-slate-950/50 to-transparent transition-opacity duration-200 ${appListShadows.top ? 'opacity-100' : 'opacity-0'}`} />
+                  <div className={`absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/14 dark:from-slate-950/60 to-transparent transition-opacity duration-200 ${appListShadows.bottom ? 'opacity-100' : 'opacity-0'}`} />
                 </div>
               </div>
             </div>
@@ -1625,42 +1631,50 @@ export function UninstallPage() {
       <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
         <div className="relative flex h-full min-h-0 flex-col gap-2">
-          <div className="px-4 pb-4 pt-3">
+          <motion.div
+            className="px-4 pb-4 pt-3"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: EASE }}
+          >
             <div className="flex items-start gap-4 mb-4">
-              <div className="p-3 rounded-2xl bg-amber-100/40">
+              <div className="p-3 rounded-2xl bg-amber-100/40 dark:bg-amber-500/15">
                 <AlertTriangle className="w-6 h-6 text-amber-500" />
               </div>
               <div className="flex-1">
-                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
+                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 dark:text-slate-100 mb-1">
                   Confirm Uninstallation
                 </h2>
-                <p className="font-medium text-slate-600 mb-4">
+                <p className="font-medium text-slate-600 dark:text-slate-300 mb-4">
                   The following applications and their associated files will be removed:
                 </p>
 
                 {/* Tags list for selected apps */}
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-2">
-                    {displayedApps.map(index => {
+                    {displayedApps.map((index, chipIndex) => {
                       const app = apps[index];
                       return (
-                        <div
+                        <motion.div
                           key={index}
-                          className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-white/60 bg-white/40 shadow-inner shadow-white/30 backdrop-blur-xl transition-all hover:bg-white/55"
+                          initial={{ opacity: 0, y: 8, scale: 0.94 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{ duration: 0.35, ease: EASE, delay: Math.min(0.08 + chipIndex * 0.045, 0.45) }}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-white/60 dark:border-white/10 bg-white/40 dark:bg-slate-950/35 shadow-inner shadow-white/30 dark:shadow-white/10 backdrop-blur-xl transition-all hover:bg-white/55 dark:hover:bg-white/10"
                         >
                           <AppIcon icon={appIcons[app.path]} size="sm" />
-                          <span className="font-semibold text-slate-950 text-sm">{app.name}</span>
-                          <span className="text-xs text-slate-400">•</span>
-                          <span className="text-xs font-medium text-slate-500">{app.size}</span>
+                          <span className="font-semibold text-slate-950 dark:text-slate-100 text-sm">{app.name}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500">•</span>
+                          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{app.size}</span>
                           {app.source === 'Homebrew' && (
                             <>
-                              <span className="text-xs text-slate-400">•</span>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 font-semibold">
+                              <span className="text-xs text-slate-400 dark:text-slate-500">•</span>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 dark:text-red-400 font-semibold">
                                 Brew
                               </span>
                             </>
                           )}
-                        </div>
+                        </motion.div>
                       );
                     })}
                   </div>
@@ -1690,16 +1704,21 @@ export function UninstallPage() {
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
 
           <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-hidden">
-            <div className="mb-4">
+            <motion.div
+              className="mb-4"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: EASE, delay: 0.1 }}
+            >
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-slate-950">
+                <h3 className="font-bold text-slate-950 dark:text-slate-100">
                   {isAnalyzing ? 'Analyzing files...' : 'Files to be removed'}
                 </h3>
                 {isAnalyzing && (
-                  <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
                     <Loader className="w-4 h-4 animate-spin" />
                     <span>Scanning...</span>
                   </div>
@@ -1708,38 +1727,44 @@ export function UninstallPage() {
 
               {isAnalyzing && (
                 <div className="space-y-2">
-                  <div className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40">
+                  <div className="h-2 bg-white/45 dark:bg-white/10 rounded-full overflow-hidden shadow-inner shadow-white/40 dark:shadow-white/10">
                     <div
                       className="h-full bg-gradient-to-r from-[rgba(var(--page-accent-rgb),0.70)] to-[var(--page-accent)] transition-all duration-300 ease-out"
                       style={{ width: `${analysisProgress}%` }}
                     />
                   </div>
-                  <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                     <span>Scanning application files and dependencies...</span>
                     <span>{Math.round(analysisProgress)}%</span>
                   </div>
                 </div>
               )}
               {parsedDryRun.summary && (
-                <Card className={`${LIST_CARD} border-rose-200/60`}>
+                <Card className={`${LIST_CARD} border-rose-200/60 dark:border-rose-500/25`}>
                   <div className="flex items-center gap-3">
                     <Info className="w-5 h-5 text-[var(--page-accent)]" />
-                    <span className="text-sm font-medium text-slate-600">{parsedDryRun.summary}</span>
+                    <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{parsedDryRun.summary}</span>
                   </div>
                 </Card>
               )}
-            </div>
+            </motion.div>
 
             <div ref={dryRunListRef} className="space-y-4 max-h-full overflow-auto pb-[15rem]">
               {parsedDryRun.apps.map((app, appIndex) => {
                 const selectedApp = getAppByName(app.name);
                 return (
-                  <Card key={appIndex} className={LIST_CARD}>
+                  <motion.div
+                    key={appIndex}
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, ease: EASE }}
+                  >
+                  <Card className={LIST_CARD}>
                     <div className="flex items-center gap-3 mb-3">
                       <AppIcon icon={selectedApp ? appIcons[selectedApp.path] : undefined} />
                       <div className="flex-1">
-                        <div className="font-bold text-slate-950">{app.name}</div>
-                        <div className="text-sm font-medium text-slate-500">{app.size}</div>
+                        <div className="font-bold text-slate-950 dark:text-slate-100">{app.name}</div>
+                        <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{app.size}</div>
                       </div>
                       <CheckCircle className="w-5 h-5 text-accent-success" />
                     </div>
@@ -1749,7 +1774,7 @@ export function UninstallPage() {
                         {app.files.slice(0, 5).map((file, fileIndex) => (
                           <div
                             key={fileIndex}
-                            className={`text-sm flex items-center gap-2 ${file.isSystem ? 'text-amber-500' : 'text-slate-500'
+                            className={`text-sm flex items-center gap-2 ${file.isSystem ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'
                               }`}
                           >
                             {file.isSystem ? (
@@ -1769,13 +1794,14 @@ export function UninstallPage() {
                           </div>
                         ))}
                         {app.files.length > 5 && (
-                          <div className="text-xs font-medium text-slate-500 ml-5">
+                          <div className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-5">
                             + {app.files.length - 5} more files
                           </div>
                         )}
                       </div>
                     )}
                   </Card>
+                  </motion.div>
                 );
               })}
 
@@ -1783,8 +1809,13 @@ export function UninstallPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between px-4 py-4">
-            <Button variant="ghost" onClick={cancelConfirmation} className="gap-2 rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500">
+          <motion.div
+            className="mx-2 mb-2 flex items-center justify-between rounded-[1.5rem] border border-white/55 dark:border-white/10 bg-white/45 dark:bg-slate-900/55 px-4 py-3 shadow-[0_18px_44px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.6)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-2xl"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: EASE, delay: 0.16 }}
+          >
+            <Button variant="ghost" onClick={cancelConfirmation} className="gap-2 rounded-full px-4 text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400">
               <X className="w-4 h-4" />
               Cancel
             </Button>
@@ -1797,26 +1828,43 @@ export function UninstallPage() {
               <Trash2 className="w-4 h-4" />
               Uninstall {selectedApps.size} App{selectedApps.size > 1 ? 's' : ''}
             </Button>
-          </div>
+          </motion.div>
 
           {showFinalConfirmation && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-              <Card className="w-full max-w-lg rounded-[2rem] border border-white/60 bg-white/90 p-6 shadow-[0_36px_120px_rgba(15,23,42,0.32),0_16px_48px_rgba(244,63,94,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)]">
+              <motion.div
+                className="absolute inset-0 bg-slate-950/30 backdrop-blur-md"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.25, ease: EASE }}
+                onClick={() => setShowFinalConfirmation(false)}
+                aria-hidden="true"
+              />
+              <motion.div
+                role="alertdialog"
+                aria-modal="true"
+                aria-label="Confirm uninstall"
+                className="relative w-full max-w-lg"
+                initial={{ opacity: 0, y: 18, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.35, ease: EASE }}
+              >
+              <Card className="w-full rounded-[2rem] border border-white/60 dark:border-white/10 bg-white/90 dark:bg-slate-900/90 p-6 shadow-[0_36px_120px_rgba(15,23,42,0.32),0_16px_48px_rgba(244,63,94,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)] dark:shadow-[0_36px_120px_rgba(0,0,0,0.6),0_16px_48px_rgba(244,63,94,0.18),inset_0_1px_1px_rgba(255,255,255,0.08)]">
                 <div className="flex items-start gap-4">
-                  <div className="rounded-2xl border border-rose-200/70 bg-rose-100/40 p-3 shadow-[0_14px_32px_rgba(244,63,94,0.16)]">
+                  <div className="rounded-2xl border border-rose-200/70 dark:border-rose-500/25 bg-rose-100/40 dark:bg-rose-500/15 p-3 shadow-[0_14px_32px_rgba(244,63,94,0.16)]">
                     <AlertTriangle className="h-6 w-6 text-[var(--page-accent)]" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-2xl font-black tracking-[-0.04em] text-slate-950">
+                    <h3 className="text-2xl font-black tracking-[-0.04em] text-slate-950 dark:text-slate-100">
                       Are you sure?
                     </h3>
-                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600 dark:text-slate-300">
                       Do you really want to do this? This action is irreversible and the selected applications and related files will be removed.
                     </p>
                   </div>
                 </div>
 
-                <label className="mt-6 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/60 bg-white/45 px-4 py-3 shadow-inner shadow-white/30">
+                <label className="mt-6 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/60 dark:border-white/10 bg-white/45 dark:bg-slate-900/50 px-4 py-3 shadow-inner shadow-white/30 dark:shadow-white/10">
                   <input
                     type="checkbox"
                     checked={dontShowFinalConfirmationAgain}
@@ -1825,18 +1873,18 @@ export function UninstallPage() {
                   />
                   <span className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${dontShowFinalConfirmationAgain
                       ? 'border-[var(--page-accent)] bg-[var(--page-accent)] text-white'
-                      : 'border-slate-300 bg-white/70 text-transparent'
+                      : 'border-slate-300 dark:border-slate-600 bg-white/70 dark:bg-slate-900/70 text-transparent'
                     }`}>
                     <Check className="h-3.5 w-3.5" />
                   </span>
-                  <span className="text-sm font-semibold text-slate-700">Don't show again</span>
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Don't show again</span>
                 </label>
 
                 <div className="mt-6 flex items-center justify-end gap-3">
                   <Button
                     variant="ghost"
                     onClick={() => setShowFinalConfirmation(false)}
-                    className="rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500"
+                    className="rounded-full px-4 text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400"
                   >
                     Cancel
                   </Button>
@@ -1849,6 +1897,7 @@ export function UninstallPage() {
                   </Button>
                 </div>
               </Card>
+              </motion.div>
             </div>
           )}
         </div>
@@ -1876,22 +1925,27 @@ export function UninstallPage() {
       <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
         <div className="relative flex h-full min-h-0 flex-col gap-2">
-          <div className="px-4 pb-4 pt-3">
-            <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-1">
+          <motion.div
+            className="px-4 pb-4 pt-3"
+            initial={{ opacity: 0, y: -14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: EASE }}
+          >
+            <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 dark:text-slate-100 mb-1">
               Uninstalling Applications
             </h2>
-            <p className="font-medium text-slate-600 mb-4">
+            <p className="font-medium text-slate-600 dark:text-slate-300 mb-4">
               Removing selected applications and their files...
             </p>
 
             {progressTotal > 0 && (
               <div className="mb-4">
-                <div className="flex items-center justify-between text-sm font-medium text-slate-600 mb-2">
+                <div className="flex items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
                   <span>Progress</span>
                   <span>{progressCurrent} of {progressTotal}</span>
                 </div>
                 <div
-                  className="h-2 bg-white/45 rounded-full overflow-hidden shadow-inner shadow-white/40"
+                  className="h-2 bg-white/45 dark:bg-white/10 rounded-full overflow-hidden shadow-inner shadow-white/40 dark:shadow-white/10"
                   role="progressbar"
                   aria-valuenow={Math.round(progressPercent)}
                   aria-valuemin={0}
@@ -1908,27 +1962,38 @@ export function UninstallPage() {
 
             <div className="flex items-center gap-3 py-2">
               <Info className="w-5 h-5 text-amber-500" />
-              <span className="text-sm font-medium text-slate-600">
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
                 Do not close this window until the process completes
               </span>
             </div>
-          </div>
+          </motion.div>
 
           <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-auto">
             <div ref={executeListRef} className="space-y-4">
-              <div className="flex justify-center py-6">
+              <motion.div
+                className="flex justify-center py-6"
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, ease: EASE, delay: 0.1 }}
+              >
                 <AppRemovalAnimation
                   progressPercent={progressPercent}
                   currentApp={removalScene.current}
                   upcomingApps={removalScene.upcoming}
                   done={removalScene.done}
                 />
-              </div>
+              </motion.div>
 
               {executingApps.map((app, appIndex) => (
-                <Card key={appIndex} className={`${LIST_CARD} ${app.completed ? 'border-emerald-300/50' : ''}`}>
+                <motion.div
+                  key={appIndex}
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease: EASE }}
+                >
+                <Card className={`${LIST_CARD} ${app.completed ? 'border-emerald-300/50 dark:border-emerald-500/25' : ''}`}>
                   <div className="flex items-center gap-3 mb-3">
-                    <div className={`p-2 rounded-2xl border backdrop-blur-xl ${app.completed ? 'border-emerald-200/70 bg-emerald-100/35' : 'border-rose-200/70 bg-rose-100/35'
+                    <div className={`p-2 rounded-2xl border backdrop-blur-xl ${app.completed ? 'border-emerald-200/70 bg-emerald-100/35 dark:border-emerald-500/25 dark:bg-emerald-500/15' : 'border-rose-200/70 bg-rose-100/35 dark:border-rose-500/25 dark:bg-rose-500/15'
                       }`}>
                       {app.completed ? (
                         <CheckCircle className="w-5 h-5 text-emerald-500" />
@@ -1937,8 +2002,8 @@ export function UninstallPage() {
                       )}
                     </div>
                     <div className="flex-1">
-                      <div className="font-bold text-slate-950">{app.name}</div>
-                      <div className="text-sm font-medium text-slate-500">
+                      <div className="font-bold text-slate-950 dark:text-slate-100">{app.name}</div>
+                      <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
                         {app.completed ? 'Completed' : 'Removing files...'}
                         {app.progress && ` (${app.progress})`}
                       </div>
@@ -1948,7 +2013,7 @@ export function UninstallPage() {
                   {app.files.length > 0 && (
                     <div className="space-y-1 ml-11">
                       {app.files.slice(-5).map((file, fileIndex) => (
-                        <div key={fileIndex} className="text-sm flex items-center gap-2 text-slate-500">
+                        <div key={fileIndex} className="text-sm flex items-center gap-2 text-slate-500 dark:text-slate-400">
                           <Check className="w-3 h-3 flex-shrink-0 text-emerald-500" />
                           <span className="font-mono text-xs truncate">
                             {file.replace(/^\/Users\/[^\/]+/, '~')}
@@ -1956,25 +2021,34 @@ export function UninstallPage() {
                         </div>
                       ))}
                       {app.files.length > 5 && (
-                        <div className="text-xs font-medium text-slate-500 ml-5">
+                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-5">
                           {app.files.length} files removed
                         </div>
                       )}
                     </div>
                   )}
                 </Card>
+                </motion.div>
               ))}
 
               {summary && (
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <CheckCircle className="w-5 h-5 text-emerald-500" />
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <div className="font-bold text-slate-950 mb-1">Uninstall Complete</div>
-                      <div className="text-sm font-medium text-slate-600">{sanitizeCliSummary(summary)}</div>
+                <motion.div
+                  initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.45, ease: EASE }}
+                >
+                  <Card className={`${LIST_CARD} border-emerald-300/50 dark:border-emerald-500/25`}>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-2xl border border-emerald-200/70 bg-emerald-100/35 dark:border-emerald-500/25 dark:bg-emerald-500/15 backdrop-blur-xl">
+                        <CheckCircle className="w-5 h-5 text-emerald-500" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-950 dark:text-slate-100 mb-1">Uninstall Complete</div>
+                        <div className="text-sm font-medium text-slate-600 dark:text-slate-300">{sanitizeCliSummary(summary)}</div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </Card>
+                </motion.div>
               )}
             </div>
           </div>
@@ -1993,51 +2067,85 @@ export function UninstallPage() {
     return (
       <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
-        <div className="relative flex h-full items-center justify-center">
-          <div className="w-full max-w-2xl p-8 text-center">
-            <div className="space-y-6">
-              <div className={`inline-flex rounded-full border p-6 shadow-[0_18px_48px_rgba(15,23,42,0.10)] backdrop-blur-xl ${result?.ok ? 'border-emerald-200/70 bg-emerald-100/35' : 'border-red-200/70 bg-red-100/35'
-                }`}>
-                {result?.ok ? (
-                  <CheckCircle className="w-12 h-12 text-emerald-500" />
-                ) : (
-                  <AlertCircle className="w-12 h-12 text-red-500" />
-                )}
-              </div>
-              <div>
-                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-2">
-                  {result?.ok ? 'Uninstall Complete' : 'Uninstall Failed'}
-                </h2>
-                <p className="font-medium text-slate-600">
-                  {resultSummary}
-                </p>
-              </div>
-              {result?.ok && parsedResult.apps.length > 0 && (
-                <div className="mx-auto max-h-[300px] max-w-xl space-y-2 overflow-auto text-left">
-                  {parsedResult.apps.map((app, index) => (
-                    <div key={`${app.name}-${index}`} className="flex items-start gap-3 px-2 py-2">
-                      <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
-                      <div className="min-w-0">
-                        <div className="font-bold text-slate-950">{app.name}</div>
-                        <div className="text-sm font-medium text-slate-500">
-                          {app.files.length > 0 ? `${app.files.length} file${app.files.length === 1 ? '' : 's'} removed` : 'Removed'}
+        <div className="relative flex h-full items-center justify-center p-6">
+          <motion.div
+            className="w-full max-w-2xl"
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.45, ease: EASE }}
+          >
+            <Card className={`relative overflow-hidden rounded-[2rem] p-8 text-center ${GLASS_CARD}`}>
+              <div
+                className={`absolute inset-0 ${result?.ok
+                  ? 'bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.16),transparent_42%)]'
+                  : 'bg-[radial-gradient(circle_at_50%_0%,rgba(239,68,68,0.18),transparent_42%)]'
+                  }`}
+              />
+              <div className="relative space-y-6">
+                <motion.div
+                  className={`inline-flex rounded-full border p-6 shadow-[0_18px_48px_rgba(15,23,42,0.10)] backdrop-blur-xl ${result?.ok ? 'border-emerald-200/70 bg-emerald-100/35 dark:border-emerald-500/25 dark:bg-emerald-500/15' : 'border-red-200/70 bg-red-100/35 dark:border-red-500/25 dark:bg-red-500/15'
+                    }`}
+                  initial={{ opacity: 0, scale: 0.4 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 20, delay: 0.12 }}
+                >
+                  {result?.ok ? (
+                    <CheckCircle className="w-12 h-12 text-emerald-500" />
+                  ) : (
+                    <AlertCircle className="w-12 h-12 text-red-500" />
+                  )}
+                </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease: EASE, delay: 0.2 }}
+                >
+                  <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 dark:text-slate-100 mb-2">
+                    {result?.ok ? 'Uninstall Complete' : 'Uninstall Failed'}
+                  </h2>
+                  <p className="font-medium text-slate-600 dark:text-slate-300">
+                    {resultSummary}
+                  </p>
+                </motion.div>
+                {result?.ok && parsedResult.apps.length > 0 && (
+                  <div className="mx-auto max-h-[300px] max-w-xl space-y-2 overflow-auto text-left">
+                    {parsedResult.apps.map((app, index) => (
+                      <motion.div
+                        key={`${app.name}-${index}`}
+                        className="flex items-start gap-3 px-2 py-2"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.35, ease: EASE, delay: Math.min(0.26 + index * 0.05, 0.6) }}
+                      >
+                        <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-950 dark:text-slate-100">{app.name}</div>
+                          <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                            {app.files.length > 0 ? `${app.files.length} file${app.files.length === 1 ? '' : 's'} removed` : 'Removed'}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {result && !result.ok && (
-                <pre className="mx-auto max-h-[300px] max-w-xl overflow-auto whitespace-pre-wrap text-left font-mono text-sm text-slate-600">
-                  {resultSummary}
-                </pre>
-              )}
-              <Button onClick={reset} className="gap-2 rounded-full bg-[var(--page-accent)] shadow-[0_18px_40px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]">
-                <Check className="w-4 h-4" />
-                Done
-              </Button>
-            </div>
-          </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+                {result && !result.ok && (
+                  <pre className="mx-auto max-h-[300px] max-w-xl overflow-auto whitespace-pre-wrap text-left font-mono text-sm text-slate-600 dark:text-slate-300">
+                    {resultSummary}
+                  </pre>
+                )}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease: EASE, delay: 0.3 }}
+                >
+                  <Button onClick={reset} className="gap-2 rounded-full bg-[var(--page-accent)] shadow-[0_18px_40px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]">
+                    <Check className="w-4 h-4" />
+                    Done
+                  </Button>
+                </motion.div>
+              </div>
+            </Card>
+          </motion.div>
         </div>
       </div>
     );
@@ -2047,18 +2155,24 @@ export function UninstallPage() {
     return (
       <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
-        <div className="relative flex h-full items-center justify-center">
-          <Card className={`w-full max-w-2xl overflow-hidden rounded-[2rem] p-8 text-center ${GLASS_CARD}`}>
+        <div className="relative flex h-full items-center justify-center p-6">
+          <motion.div
+            className="w-full max-w-2xl"
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.45, ease: EASE }}
+          >
+          <Card className={`w-full overflow-hidden rounded-[2rem] p-8 text-center ${GLASS_CARD}`}>
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(239,68,68,0.18),transparent_42%)]" />
             <div className="relative space-y-6">
-              <div className="inline-flex rounded-full border border-red-200/70 bg-red-100/35 p-6 shadow-[0_18px_48px_rgba(239,68,68,0.16)] backdrop-blur-xl">
+              <div className="inline-flex rounded-full border border-red-200/70 dark:border-red-500/25 bg-red-100/35 dark:bg-red-500/15 p-6 shadow-[0_18px_48px_rgba(239,68,68,0.16)] backdrop-blur-xl">
                 <AlertCircle className="w-12 h-12 text-red-500" />
               </div>
               <div>
-                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 mb-2">
+                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 dark:text-slate-100 mb-2">
                   {error?.title || 'Error'}
                 </h2>
-                <p className="font-medium text-slate-600">
+                <p className="font-medium text-slate-600 dark:text-slate-300">
                   {error?.message || 'An unknown error occurred'}
                 </p>
               </div>
@@ -2067,6 +2181,7 @@ export function UninstallPage() {
               </Button>
             </div>
           </Card>
+          </motion.div>
         </div>
       </div>
     );

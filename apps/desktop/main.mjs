@@ -12,7 +12,7 @@ const isDev = !app.isPackaged;
 // Dev renderer URL is configurable so the app can run on a free port when the
 // default Vite port (30736) is taken by another project. Defaults to 30736.
 const DEV_SERVER_URL = process.env.MOLE_DEV_URL || "http://localhost:30736";
-const appIconPath = path.join(__dirname, "public", "assets", "base", isDev ? "molui-dark.png" : "molui-purple.png");
+const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-purple.png");
 
 // Packaged builds serve the renderer over a loopback HTTP origin
 // (http://localhost:<port>) instead of file:// or a custom app:// scheme.
@@ -160,6 +160,7 @@ function startRendererServer() {
   })();
 }
 const MY_MAC_METRICS_FILE = "my-mac-metrics.json";
+const THEME_PREFS_FILE = "theme-prefs.json";
 const BACKGROUND_SYSTEMS_FILE = "background-systems.json";
 const BATTERY_SAMPLE_INTERVAL_MS = 6 * 60 * 1000;
 const MAX_BATTERY_HISTORY = 24 * 60;
@@ -173,7 +174,203 @@ app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("enable-gpu-rasterization");
 app.commandLine.appendSwitch("enable-zero-copy");
 app.setName("Moleui Desktop");
-nativeTheme.themeSource = "light";
+
+// Theme preference ("system" | "light" | "dark"). The renderer owns the UI and
+// pushes changes over IPC; the main process persists the choice so nativeTheme
+// (window vibrancy, prefers-color-scheme) is correct from the first frame of
+// the next launch, before any renderer has booted.
+const VALID_THEME_SOURCES = new Set(["system", "light", "dark"]);
+
+function themePrefsPath() {
+  return path.join(app.getPath("userData"), THEME_PREFS_FILE);
+}
+
+function readThemePreference() {
+  try {
+    const theme = JSON.parse(fs.readFileSync(themePrefsPath(), "utf8"))?.theme;
+    return VALID_THEME_SOURCES.has(theme) ? theme : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function writeThemePreference(theme) {
+  try {
+    fs.writeFileSync(themePrefsPath(), JSON.stringify({ theme }), "utf8");
+  } catch (error) {
+    console.error("Failed to write theme preference:", error);
+  }
+}
+
+nativeTheme.themeSource = readThemePreference();
+
+// User-selectable app icon. Every variant is a layered Icon Composer bundle
+// (build/*.icon) compiled into the packaged app's Assets.car, so whichever
+// icon the user picks keeps macOS 26's dark / clear / tinted appearances;
+// per-variant .icns fallbacks cover older macOS. Keep this registry in sync
+// with the build/*.icon bundles and scripts/embed-appicon.cjs.
+const APP_ICONS = [
+  { id: "classic", label: "Classic Purple", asset: "AppIcon", file: "molui-purple.png" },
+  { id: "midnight", label: "Midnight", asset: "AppIcon-Midnight", file: "molui-midnight.png" },
+  { id: "cream", label: "Cream", asset: "AppIcon-Cream", file: "molui-light.png" },
+  { id: "porcelain", label: "Porcelain", asset: "AppIcon-Porcelain", file: "molui-white.png" },
+];
+const DEFAULT_APP_ICON_ID = "classic";
+const APP_ICON_PREFS_FILE = "app-icon-prefs.json";
+
+function appIconPrefsPath() {
+  return path.join(app.getPath("userData"), APP_ICON_PREFS_FILE);
+}
+
+function readAppIconPreference() {
+  try {
+    const icon = JSON.parse(fs.readFileSync(appIconPrefsPath(), "utf8"))?.icon;
+    return APP_ICONS.some((entry) => entry.id === icon) ? icon : DEFAULT_APP_ICON_ID;
+  } catch {
+    return DEFAULT_APP_ICON_ID;
+  }
+}
+
+function writeAppIconPreference(icon) {
+  try {
+    fs.writeFileSync(appIconPrefsPath(), JSON.stringify({ icon }), "utf8");
+  } catch (error) {
+    console.error("Failed to write app icon preference:", error);
+  }
+}
+
+let appIconPreferenceId = null;
+
+function selectedAppIcon() {
+  if (appIconPreferenceId === null) {
+    appIconPreferenceId = readAppIconPreference();
+  }
+  return APP_ICONS.find((entry) => entry.id === appIconPreferenceId) ?? APP_ICONS[0];
+}
+
+function macAppBundlePath() {
+  if (isDev || process.platform !== "darwin") return null;
+  // app.getPath("exe") is <bundle>.app/Contents/MacOS/<binary>
+  const bundle = path.resolve(app.getPath("exe"), "..", "..", "..");
+  return bundle.endsWith(".app") ? bundle : null;
+}
+
+// The icon asset the installed bundle currently advertises: CFBundleIconName
+// (Assets.car, macOS 26 appearances) with CFBundleIconFile as the pre-Tahoe
+// fallback. null when it cannot be determined (dev, or unreadable plist).
+function readBundleIconAsset() {
+  const bundle = macAppBundlePath();
+  if (!bundle) return null;
+  const infoPlist = path.join(bundle, "Contents", "Info.plist");
+  for (const key of ["CFBundleIconName", "CFBundleIconFile"]) {
+    try {
+      const value = execFileSync("plutil", ["-extract", key, "raw", "-o", "-", infoPlist], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (value) return value.replace(/\.icns$/, "");
+    } catch {
+      // key missing; try the fallback key
+    }
+  }
+  return null;
+}
+
+// Dock icon for the running session. In dev the classic icon follows the
+// effective appearance (purple in light, slate in dark). Packaged builds skip
+// app.dock.setIcon whenever the bundle already advertises the chosen icon:
+// a runtime PNG would override the system's rendering of the bundled
+// Assets.car and lose the Tahoe appearances, so it is only used as immediate
+// feedback / fallback while the bundle still shows a different icon.
+function applyDockIcon() {
+  if (process.platform !== "darwin") return;
+  const selected = selectedAppIcon();
+  if (!isDev && readBundleIconAsset() === selected.asset) return;
+  const file =
+    isDev && selected.id === DEFAULT_APP_ICON_ID && nativeTheme.shouldUseDarkColors
+      ? "molui-midnight.png"
+      : selected.file;
+  const icon = nativeImage.createFromPath(path.join(__dirname, "public", "assets", "base", file));
+  if (!icon.isEmpty()) {
+    app.dock.setIcon(icon);
+  }
+}
+
+// Rewriting CFBundleIconName/CFBundleIconFile breaks the bundle's signature
+// seal, and re-signing rewrites the running main binary (the Info.plist hash
+// lives in its code directory) — doing that while the app runs risks the
+// kernel killing the process on a later page-in. So the bundle rewrite runs
+// in a detached helper that waits for this process to exit; if the helper
+// never runs (crash, reboot), startup detects the mismatch and re-arms it.
+// The app ships ad-hoc signed (scripts/adhoc-sign.cjs), so an ad-hoc re-sign
+// restores a valid signature without a developer identity.
+let bundleIconHelper = null;
+
+function armBundleIconSync() {
+  if (isDev || process.platform !== "darwin") return false;
+  const selected = selectedAppIcon();
+  const bundle = macAppBundlePath();
+  if (!bundle) return false;
+  if (readBundleIconAsset() === selected.asset) {
+    disarmBundleIconSync();
+    return false;
+  }
+
+  const contents = path.join(bundle, "Contents");
+  const infoPlist = path.join(contents, "Info.plist");
+  const resources = path.join(contents, "Resources");
+  try {
+    fs.accessSync(infoPlist, fs.constants.W_OK);
+    fs.accessSync(bundle, fs.constants.W_OK);
+  } catch {
+    console.warn("App bundle is not writable; icon change stays session-only");
+    return false;
+  }
+
+  const steps = [];
+  if (fs.existsSync(path.join(resources, "Assets.car"))) {
+    steps.push('/usr/bin/plutil -replace CFBundleIconName -string "$ICON_ASSET" "$INFO_PLIST"');
+  }
+  if (fs.existsSync(path.join(resources, `${selected.asset}.icns`))) {
+    steps.push('/usr/bin/plutil -replace CFBundleIconFile -string "$ICON_ASSET.icns" "$INFO_PLIST"');
+  }
+  if (steps.length === 0) {
+    console.warn(`No bundled resources for icon ${selected.asset}; icon change stays session-only`);
+    return false;
+  }
+  steps.push('/usr/bin/codesign --force --sign - --timestamp=none "$APP_BUNDLE"');
+  steps.push('/usr/bin/touch "$APP_BUNDLE"');
+
+  disarmBundleIconSync();
+  const script = [
+    'while /bin/kill -0 "$TARGET_PID" 2>/dev/null; do /bin/sleep 1; done',
+    ...steps,
+  ].join("\n");
+  const helper = spawn("/bin/sh", ["-c", script], {
+    detached: true,
+    stdio: "ignore",
+    env: {
+      TARGET_PID: String(process.pid),
+      ICON_ASSET: selected.asset,
+      INFO_PLIST: infoPlist,
+      APP_BUNDLE: bundle,
+    },
+  });
+  helper.unref();
+  bundleIconHelper = helper;
+  return true;
+}
+
+function disarmBundleIconSync() {
+  if (bundleIconHelper) {
+    try {
+      bundleIconHelper.kill();
+    } catch {
+      // already gone
+    }
+    bundleIconHelper = null;
+  }
+}
 
 // Store active processes for cancellation
 const activeProcesses = new Map();
@@ -1514,6 +1711,13 @@ function showPrimaryWindow(mode) {
     applyLoginWindowBounds(mainWindow);
   }
 
+  // The renderer re-sends enter-app/enter-login after every reload (including
+  // dev HMR full reloads), so only grab focus when the window isn't already on
+  // screen; otherwise each reload would yank focus from whatever the user is
+  // doing. When the mode flips while visible (login -> app) the window already
+  // has focus, so skipping the re-focus loses nothing.
+  if (mainWindow.isVisible()) return;
+
   if (process.platform === "darwin") {
     app.dock.show();
   }
@@ -1988,6 +2192,37 @@ ipcMain.handle("mole:process:icons", async (_event, processes) => {
   }
 
   return { ok: true, icons, missing };
+});
+
+ipcMain.handle("mole:appIcon:list", async () => ({
+  icons: APP_ICONS.map(({ id, label, file }) => ({ id, label, preview: `assets/base/${file}` })),
+}));
+
+ipcMain.handle("mole:appIcon:get", async () => ({ icon: selectedAppIcon().id }));
+
+ipcMain.handle("mole:appIcon:set", async (_event, iconId) => {
+  const selected = APP_ICONS.find((entry) => entry.id === iconId);
+  if (!selected) {
+    return { ok: false, message: "Unknown app icon" };
+  }
+  appIconPreferenceId = selected.id;
+  writeAppIconPreference(selected.id);
+  applyDockIcon();
+  // Packaged: rewrite the bundle's icon after quit so Finder, the pinned Dock
+  // tile, and the macOS 26 appearances all follow the choice permanently.
+  const appliesOnQuit = armBundleIconSync();
+  return { ok: true, icon: selected.id, appliesOnQuit };
+});
+
+ipcMain.handle("mole:theme:get", async () => ({ theme: nativeTheme.themeSource }));
+
+ipcMain.handle("mole:theme:set", async (_event, theme) => {
+  const next = VALID_THEME_SOURCES.has(theme) ? theme : "system";
+  if (nativeTheme.themeSource !== next) {
+    nativeTheme.themeSource = next;
+    writeThemePreference(next);
+  }
+  return { ok: true, theme: next };
 });
 
 ipcMain.handle("mole:settings:open", async (event) => {
@@ -2523,11 +2758,11 @@ app.whenReady().then(async () => {
   }
 
   if (process.platform === "darwin") {
-    const appIcon = nativeImage.createFromPath(appIconPath);
-
-    if (!appIcon.isEmpty()) {
-      app.dock.setIcon(appIcon);
-    }
+    applyDockIcon();
+    nativeTheme.on("updated", applyDockIcon);
+    // If a previous icon switch never reached the bundle (crash/reboot before
+    // the on-quit helper ran), re-arm it so the choice eventually sticks.
+    armBundleIconSync();
 
     if (openedAsHidden) {
       app.dock.hide();

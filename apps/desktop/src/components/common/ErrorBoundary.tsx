@@ -26,10 +26,10 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <main className="flex h-screen flex-col items-center justify-center gap-4 px-8 text-center text-slate-800">
+        <main className="flex h-screen flex-col items-center justify-center gap-4 px-8 text-center text-slate-800 dark:text-slate-200">
           <div className="window-drag-region" aria-hidden="true" />
           <h1 className="text-lg font-bold">Something went wrong</h1>
-          <p className="max-w-md text-sm text-slate-500">
+          <p className="max-w-md text-sm text-slate-500 dark:text-slate-400">
             The app hit an unexpected error and could not finish loading. Reloading usually fixes it.
           </p>
           <button

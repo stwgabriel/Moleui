@@ -42,7 +42,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
 
   return (
     <aside
-      className="relative z-20 flex h-full w-[180px] shrink-0 flex-col overflow-hidden border-r border-white/55 bg-white/[0.26] px-3 pb-5 pt-7 backdrop-blur-[32px]"
+      className="relative z-20 flex h-full w-[180px] shrink-0 flex-col overflow-hidden border-r border-white/55 bg-white/[0.26] px-3 pb-5 pt-7 backdrop-blur-[32px] dark:border-white/10 dark:bg-slate-950/[0.35]"
       aria-label="Main navigation"
     >
       <div className="mt-[clamp(3.35rem,5.8vh,4.25rem)] flex justify-center">
@@ -70,7 +70,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                 'group relative flex w-[116px] flex-col items-center justify-center gap-2.5 rounded-[1.35rem] py-[clamp(0.6rem,1.25vh,0.8rem)] text-center transition-colors duration-300 active:scale-[0.98]',
                 isActive
                   ? 'text-[var(--nav-accent)]'
-                  : 'text-slate-500 hover:bg-[rgba(var(--nav-accent-rgb),0.08)] hover:text-slate-700'
+                  : 'text-slate-500 hover:bg-[rgba(var(--nav-accent-rgb),0.08)] hover:text-slate-700 dark:text-slate-400 dark:hover:bg-[rgba(var(--nav-accent-rgb),0.14)] dark:hover:text-slate-200'
               )}
               aria-current={isActive ? 'page' : undefined}
             >
@@ -94,7 +94,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
 
         <button
           onClick={handleSettingsClick}
-          className="group mt-auto flex w-[116px] flex-col items-center justify-center gap-2.5 rounded-[1.35rem] py-[clamp(0.6rem,1.25vh,0.8rem)] text-center text-slate-500 transition-all duration-300 hover:bg-[#f0edff]/80 hover:text-slate-700 active:scale-[0.98]"
+          className="group mt-auto flex w-[116px] flex-col items-center justify-center gap-2.5 rounded-[1.35rem] py-[clamp(0.6rem,1.25vh,0.8rem)] text-center text-slate-500 transition-all duration-300 hover:bg-[#f0edff]/80 hover:text-slate-700 active:scale-[0.98] dark:text-slate-400 dark:hover:bg-white/[0.07] dark:hover:text-slate-200"
           aria-label="Open account settings"
         >
           <UserAvatar className="h-10 w-10 transition-transform duration-300 group-hover:scale-105" />
