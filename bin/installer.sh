@@ -601,6 +601,44 @@ build_installer_delete_plan() {
     [[ ${#INSTALLER_DELETE_PATHS[@]} -gt 0 ]]
 }
 
+# The app-protection policy intentionally protects names such as Fliqlo because
+# matching app data can contain user state. An installer archive with the same
+# name is different: it is disposable only after this module has scanned it,
+# added the exact path to the identity-checked plan, and confirmed that it still
+# lives beneath one of the explicit installer scan roots.
+installer_delete_plan_allows_protected_path() {
+    local file_path="$1"
+
+    [[ -f "$file_path" && ! -L "$file_path" ]] || return 1
+    [[ ${#INSTALLER_DELETE_PATHS[@]} -gt 0 ]] || return 1
+    case "$file_path" in
+        *.dmg | *.pkg | *.mpkg | *.iso | *.xip) ;;
+        *.zip)
+            is_installer_zip "$file_path" 2> /dev/null || return 1
+            ;;
+        *) return 1 ;;
+    esac
+
+    local planned=false
+    local planned_path
+    for planned_path in "${INSTALLER_DELETE_PATHS[@]}"; do
+        if [[ "$file_path" == "$planned_path" ]]; then
+            planned=true
+            break
+        fi
+    done
+    [[ "$planned" == "true" ]] || return 1
+
+    local scan_root
+    for scan_root in "${INSTALLER_SCAN_PATHS[@]}"; do
+        if [[ "$file_path" == "${scan_root%/}"/* ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 execute_installer_delete_plan() {
     local plan_index
     for ((plan_index = 0; plan_index < ${#INSTALLER_DELETE_PATHS[@]}; plan_index++)); do
@@ -630,7 +668,7 @@ execute_installer_delete_plan() {
             continue
         fi
 
-        if mole_delete "$file_path" false; then
+        if mole_delete "$file_path" false "installer-plan"; then
             if [[ "${MOLE_DRY_RUN:-0}" == "1" ]] || [[ ! -e "$file_path" && ! -L "$file_path" ]]; then
                 total_size_freed_kb=$((total_size_freed_kb + ((current_size + 1023) / 1024)))
                 total_deleted=$((total_deleted + 1))

@@ -112,6 +112,7 @@ _mole_is_critical_deletion_path() {
 # Validate path for deletion (absolute, no traversal, not system dir)
 validate_path_for_deletion() {
     local path="$1"
+    local policy_context="${2:-standard}"
 
     # Check path is not empty
     if [[ -z "$path" ]]; then
@@ -199,10 +200,18 @@ validate_path_for_deletion() {
     # Check if path is protected (keychains, system settings, etc)
     if declare -f should_protect_path > /dev/null 2>&1; then
         if should_protect_path "$policy_path"; then
-            if [[ "${MO_DEBUG:-0}" == "1" ]]; then
-                log_warning "Path validation: protected path skipped: $policy_path"
+            # Installer cleanup may remove a data-protected app name only when
+            # the installer module proves this exact regular archive is already
+            # in its identity-checked delete plan and beneath an approved scan
+            # root. Critical-system checks above are never bypassed.
+            if [[ "$policy_context" != "installer-plan" ]] ||
+                ! declare -f installer_delete_plan_allows_protected_path > /dev/null ||
+                ! installer_delete_plan_allows_protected_path "$policy_path"; then
+                if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+                    log_warning "Path validation: protected path skipped: $policy_path"
+                fi
+                return 1
             fi
-            return 1
         fi
     fi
 
@@ -218,12 +227,13 @@ safe_remove() {
     local path="$1"
     local silent="${2:-false}"
     local precomputed_size_kb="${3:-}"
+    local policy_context="${4:-standard}"
 
     # Validate path. Silent cleanup callers still need the same policy result,
     # but should not print one validation warning per skipped cache item.
     if [[ "$silent" == "true" ]]; then
-        validate_path_for_deletion "$path" 2> /dev/null || return 1
-    elif ! validate_path_for_deletion "$path"; then
+        validate_path_for_deletion "$path" "$policy_context" 2> /dev/null || return 1
+    elif ! validate_path_for_deletion "$path" "$policy_context"; then
         return 1
     fi
 
@@ -491,7 +501,7 @@ safe_sudo_remove() {
 # every call for forensic review. Designed for destructive paths where undo
 # matters (e.g. uninstall). Not used by cache-clean paths.
 #
-# Usage: mole_delete <path> [needs_sudo=false]
+# Usage: mole_delete <path> [needs_sudo=false] [policy_context=standard]
 #
 # Environment:
 #   MOLE_DELETE_MODE      "permanent" (default) or "trash"; other values fail
@@ -509,6 +519,7 @@ safe_sudo_remove() {
 mole_delete() {
     local path="$1"
     local needs_sudo="${2:-false}"
+    local policy_context="${3:-standard}"
     local mode="${MOLE_DELETE_MODE:-permanent}"
 
     [[ -z "$path" ]] && return 1
@@ -537,7 +548,7 @@ mole_delete() {
     # up front to avoid a no-op Trash move followed by a validation failure.
     # The rejection itself is recorded in the forensic log so audit trails
     # can distinguish refused-by-policy from never-attempted.
-    if ! validate_path_for_deletion "$path"; then
+    if ! validate_path_for_deletion "$path" "$policy_context"; then
         _mole_delete_log "$mode" "0" "rejected" "$path"
         return 1
     fi
@@ -611,7 +622,7 @@ mole_delete() {
     elif [[ "$needs_sudo" == "true" ]]; then
         safe_sudo_remove "$path" || rc=$?
     else
-        safe_remove "$path" "true" || rc=$?
+        safe_remove "$path" "true" "" "$policy_context" || rc=$?
     fi
 
     local status_label="ok"

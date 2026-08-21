@@ -276,6 +276,7 @@ setup() {
         export MOLE_TEST_NO_AUTH=1
         export MOLE_DELETE_LOG="$HOME/deletions.log"
         source "$1"
+        ASSUME_YES=true
 
         INSTALLER_PATHS=("$2" "$3")
         INSTALLER_SIZES=(3 3)
@@ -292,6 +293,51 @@ setup() {
 	[[ "$output" == *"deleted=2 failed=0"* ]]
 }
 
+@test "delete_selected_installers removes an explicitly planned archive whose app name is data-protected" {
+	local target="$HOME/Downloads/Fliqlo 1.9.5.dmg"
+	printf 'installer' > "$target"
+
+	# shellcheck disable=SC2016
+	run env HOME="$HOME" TERM="$TERM" bash -euo pipefail -c '
+        export MOLE_TEST_MODE=1
+        export MOLE_TEST_NO_AUTH=1
+        export MOLE_DELETE_LOG="$HOME/deletions.log"
+        source "$1"
+        ASSUME_YES=true
+
+        should_protect_path "$2"
+        INSTALLER_PATHS=("$2")
+        INSTALLER_SIZES=("$(get_file_size "$2")")
+        MOLE_SELECTION_RESULT="0"
+
+        delete_selected_installers < <(printf "\n")
+        printf "deleted=%s failed=%s\n" "$total_deleted" "$total_delete_failed"
+        [[ ! -e "$2" ]]
+    ' bash "$PROJECT_ROOT/bin/installer.sh" "$target"
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"deleted=1 failed=0"* ]]
+}
+
+@test "installer-plan policy does not allow a protected archive outside the exact delete plan" {
+	local target="$HOME/Downloads/Fliqlo not selected.dmg"
+	printf 'installer' > "$target"
+
+	# shellcheck disable=SC2016
+	run env HOME="$HOME" TERM="$TERM" bash -euo pipefail -c '
+        export MOLE_TEST_MODE=1
+        export MOLE_TEST_NO_AUTH=1
+        export MOLE_DELETE_LOG="$HOME/deletions.log"
+        source "$1"
+
+        INSTALLER_DELETE_PATHS=()
+        ! validate_path_for_deletion "$2" "installer-plan"
+        [[ -e "$2" ]]
+    ' bash "$PROJECT_ROOT/bin/installer.sh" "$target"
+
+	[ "$status" -eq 0 ]
+}
+
 @test "delete_selected_installers records protected-path failures" {
 	local removable="$HOME/Downloads/Good.dmg"
 	printf 'good' > "$removable"
@@ -302,6 +348,7 @@ setup() {
         export MOLE_TEST_NO_AUTH=1
         export MOLE_DELETE_LOG="$HOME/deletions.log"
         source "$1"
+        ASSUME_YES=true
 
         system_size=$(get_file_size "/System")
         INSTALLER_PATHS=("$2" "/System")
