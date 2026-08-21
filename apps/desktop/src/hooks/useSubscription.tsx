@@ -35,9 +35,9 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const syncCurrentUser = useMutation(api.users.syncCurrentUser);
   const createCheckoutSession = useAction(api.billing.createCheckoutSession);
   const createBillingPortalSession = useAction(api.billing.createBillingPortalSession);
-  // Entitlement is fetched imperatively inside try/catch so a backend error
+  // Entitlement is watched imperatively inside try/catch so a backend error
   // (auth/config/server) degrades to an error state instead of throwing during
-  // render and blanking the whole app (which an un-bounded useQuery would do).
+  // render and blanking the whole app, while Convex updates remain reactive.
   const [entitlement, setEntitlement] = useState<{ isSubscribed?: boolean; status?: string } | undefined>();
   const [entitlementError, setEntitlementError] = useState<string | null>(null);
   const [country, setCountry] = useState('US');
@@ -81,9 +81,11 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     setEntitlement(undefined);
     setEntitlementError(null);
 
-    async function loadEntitlement() {
+    const entitlementWatch = convex.watchQuery(api.subscriptions.entitlement, {});
+
+    const updateEntitlement = () => {
       try {
-        const nextEntitlement = await convex.query(api.subscriptions.entitlement, {});
+        const nextEntitlement = entitlementWatch.localQueryResult();
         if (!cancelled) setEntitlement(nextEntitlement);
       } catch (error) {
         if (!cancelled) {
@@ -92,12 +94,14 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
           console.error('Failed to load subscription:', error);
         }
       }
-    }
+    };
 
-    void loadEntitlement();
+    const unsubscribe = entitlementWatch.onUpdate(updateEntitlement);
+    updateEntitlement();
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [billingRefreshKey, convex, isSignedIn]);
 

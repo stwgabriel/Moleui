@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
+import { MotionConfig } from 'motion/react';
 import { Toaster } from 'sonner';
 import { cn } from '@/utils/cn';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -15,12 +16,14 @@ import { PermissionsBanner } from '@/components/permissions/PermissionsBanner';
 import type { PageId } from '@/types';
 
 // Order feature pages appear in (sidebar order + the order kept-alive pages mount)
-const PAGE_ORDER: PageId[] = ['mymac', 'clean', 'optimize', 'uninstall', 'analyze'];
+const PAGE_ORDER: PageId[] = ['mymac', 'clean', 'automations', 'optimize', 'uninstall', 'analyze', 'repos'];
 
 const CleanPage = lazy(() => import('@/pages/CleanPage').then((module) => ({ default: module.CleanPage })));
+const AutomationsPage = lazy(() => import('@/pages/AutomationsPage').then((module) => ({ default: module.AutomationsPage })));
 const OptimizePage = lazy(() => import('@/pages/OptimizePage').then((module) => ({ default: module.OptimizePage })));
 const UninstallPage = lazy(() => import('@/pages/UninstallPage').then((module) => ({ default: module.UninstallPage })));
 const AnalyzePage = lazy(() => import('@/pages/AnalyzePage').then((module) => ({ default: module.AnalyzePage })));
+const ReposPage = lazy(() => import('@/pages/ReposPage').then((module) => ({ default: module.ReposPage })));
 
 function PageLoadingFallback() {
   return (
@@ -37,19 +40,25 @@ function App() {
   // becomes the app — no second window has to rehydrate the session.
   const windowMode = window.moleDesktop?.windowMode || new URLSearchParams(window.location.search).get('window');
 
-  if (windowMode === 'settings') {
-    return (
-      <SubscriptionProvider>
-        <SettingsWindow />
-      </SubscriptionProvider>
-    );
-  }
-
-  if (windowMode === 'developer') {
-    return <CliMonitorWindow />;
-  }
-
-  return <PrimaryWindow />;
+  // The reduced-motion block in index.css only reaches CSS animations and
+  // transitions. Everything animated through motion/react writes inline styles
+  // per frame and is untouched by it, so the honouring has to happen here.
+  // `reducedMotion="user"` makes motion drop transform and layout animation while
+  // still allowing opacity, so entrances resolve to a plain fade rather than
+  // disappearing.
+  return (
+    <MotionConfig reducedMotion="user">
+      {windowMode === 'settings' ? (
+        <SubscriptionProvider>
+          <SettingsWindow />
+        </SubscriptionProvider>
+      ) : windowMode === 'developer' ? (
+        <CliMonitorWindow />
+      ) : (
+        <PrimaryWindow />
+      )}
+    </MotionConfig>
+  );
 }
 
 // Primary window: one window for both the sign-in form and the app. We gate on
@@ -115,12 +124,16 @@ function MainApp() {
         return <MyMacPage onNavigate={handlePageChange} active={isActive} />;
       case 'clean':
         return <CleanPage />;
+      case 'automations':
+        return <AutomationsPage />;
       case 'optimize':
         return <OptimizePage />;
       case 'uninstall':
         return <UninstallPage />;
       case 'analyze':
         return <AnalyzePage />;
+      case 'repos':
+        return <ReposPage active={isActive} />;
       default:
         return null;
     }

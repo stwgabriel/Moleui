@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useClerk, useUser } from '@clerk/clerk-react';
-import { Activity, CheckCircle2, Clock3, CreditCard, Crown, Fingerprint, History, LogOut, Monitor, Moon, Palette, RotateCw, Settings, ShieldCheck, Sun, SunMoon, XCircle, type LucideIcon } from 'lucide-react';
-import type { AppIconOption, BackgroundSystemStatus, ThemePreference } from '@/types';
+import { Activity, CheckCircle2, Clock3, CreditCard, Crown, Download, Fingerprint, History, LogOut, Monitor, Moon, Palette, RotateCw, Settings, ShieldCheck, Sun, SunMoon, XCircle, type LucideIcon } from 'lucide-react';
+import type { AppIconOption, AppUpdateState, BackgroundSystemStatus, ThemePreference } from '@/types';
 import { UserAvatar } from '@/components/account/UserAvatar';
 import { PermissionsPanel } from '@/components/permissions/PermissionsPanel';
 import { useSubscription } from '@/hooks/useSubscription';
@@ -22,6 +22,15 @@ const FALLBACK_PROFILE: SettingsProfile = {
     name: 'This Mac',
     email: 'This Mac',
   },
+};
+
+const FALLBACK_UPDATE_STATE: AppUpdateState = {
+  status: 'disabled',
+  currentVersion: '',
+  availableVersion: null,
+  progress: null,
+  message: 'Updates are available in installed release builds.',
+  lastCheckedAt: null,
 };
 
 type SettingsPage = 'general' | 'permissions' | 'background';
@@ -81,6 +90,8 @@ export function SettingsWindow() {
   const [appIconNotice, setAppIconNotice] = useState<string | null>(null);
   const [isBillingBusy, setIsBillingBusy] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
+  const [updateState, setUpdateState] = useState<AppUpdateState>(FALLBACK_UPDATE_STATE);
+  const [isUpdateActionBusy, setIsUpdateActionBusy] = useState(false);
   const displayName = clerkUser?.fullName || profile.user.name;
   const displayEmail = clerkUser?.primaryEmailAddress?.emailAddress || profile.user.email;
 
@@ -125,6 +136,26 @@ export function SettingsWindow() {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const updates = window.moleDesktop?.updates;
+    if (!updates) return;
+    let isMounted = true;
+
+    updates.onState((state) => {
+      if (isMounted) setUpdateState(state);
+    });
+    void updates.getState().then((state) => {
+      if (isMounted) setUpdateState(state);
+    }).catch((error) => {
+      console.error('Failed to load update state:', error);
+    });
+
+    return () => {
+      isMounted = false;
+      updates.removeListeners();
     };
   }, []);
 
@@ -182,6 +213,8 @@ export function SettingsWindow() {
       }
       if (result.appliesOnQuit) {
         setAppIconNotice('Finder and the Dock finish updating after you quit Moleui.');
+      } else if (result.message) {
+        setAppIconNotice(result.message);
       }
     } catch (error) {
       console.error('Failed to change app icon:', error);
@@ -224,6 +257,35 @@ export function SettingsWindow() {
       console.error('Clerk sign-out failed:', error);
     });
     await window.moleDesktop?.auth?.signOut();
+  }
+
+  async function handleCheckForUpdates() {
+    const updates = window.moleDesktop?.updates;
+    if (!updates || isUpdateActionBusy) return;
+    setIsUpdateActionBusy(true);
+    try {
+      setUpdateState(await updates.check());
+    } catch (error) {
+      console.error('Failed to check for updates:', error);
+    } finally {
+      setIsUpdateActionBusy(false);
+    }
+  }
+
+  async function handleInstallUpdate() {
+    const updates = window.moleDesktop?.updates;
+    if (!updates || isUpdateActionBusy) return;
+    setIsUpdateActionBusy(true);
+    try {
+      const result = await updates.install();
+      if (!result.ok) {
+        setUpdateState((state) => ({ ...state, status: 'error', message: result.message ?? 'Failed to install update' }));
+        setIsUpdateActionBusy(false);
+      }
+    } catch (error) {
+      console.error('Failed to install update:', error);
+      setIsUpdateActionBusy(false);
+    }
   }
 
   const isSubscribed = subscription.isSubscribed;
@@ -427,6 +489,51 @@ export function SettingsWindow() {
                           {appIconNotice}
                         </p>
                       )}
+                    </div>
+                  )}
+                </section>
+
+                {/* Updates */}
+                <section aria-labelledby="updates-heading" className={cn(PANEL, 'p-4')}>
+                  <h2 id="updates-heading" className={cn(SECTION_LABEL, 'mb-3 block')}>Updates</h2>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <IconTile
+                        icon={updateState.status === 'downloaded' || updateState.status === 'up-to-date' ? CheckCircle2 : Download}
+                        className={cn(
+                          updateState.status === 'error'
+                            ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300'
+                            : updateState.status === 'downloaded' || updateState.status === 'up-to-date'
+                              ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300'
+                              : 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300'
+                        )}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-[0.95rem] font-semibold">
+                          Moleui{updateState.currentVersion ? ` ${updateState.currentVersion}` : ''}
+                        </p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{updateState.message}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void (updateState.status === 'downloaded' ? handleInstallUpdate() : handleCheckForUpdates())}
+                      disabled={isUpdateActionBusy || updateState.status === 'disabled' || updateState.status === 'checking' || updateState.status === 'available' || updateState.status === 'downloading'}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-full bg-violet-600 px-4 py-2 text-sm font-bold text-white shadow-[0_10px_24px_rgba(124,58,237,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-violet-700 active:translate-y-0 disabled:translate-y-0 disabled:opacity-50"
+                    >
+                      <RotateCw className={cn('h-3.5 w-3.5', (isUpdateActionBusy || updateState.status === 'checking' || updateState.status === 'downloading') && 'animate-spin')} aria-hidden="true" />
+                      {updateState.status === 'downloaded'
+                        ? 'Restart to update'
+                        : updateState.status === 'checking'
+                          ? 'Checking…'
+                          : updateState.status === 'available' || updateState.status === 'downloading'
+                            ? 'Downloading…'
+                            : 'Check for updates'}
+                    </button>
+                  </div>
+                  {updateState.status === 'downloading' && updateState.progress !== null && (
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-white/10" aria-label={`Update download ${Math.round(updateState.progress)}%`}>
+                      <div className="h-full rounded-full bg-violet-600 transition-[width] duration-300" style={{ width: `${updateState.progress}%` }} />
                     </div>
                   )}
                 </section>

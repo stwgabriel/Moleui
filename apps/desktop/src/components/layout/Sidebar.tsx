@@ -1,7 +1,9 @@
 import {
   Activity,
   BarChart3,
+  CalendarClock,
   Gauge,
+  GitBranch,
   PackageX,
   Sparkles,
   type LucideIcon,
@@ -25,9 +27,11 @@ const NAV_ITEMS: Array<{
 }> = [
   { page: 'mymac', icon: Activity, label: 'My Mac' },
   { page: 'clean', icon: Sparkles, label: 'Cleanup' },
+  { page: 'automations', icon: CalendarClock, label: 'Automations' },
   { page: 'optimize', icon: Gauge, label: 'Optimize' },
   { page: 'uninstall', icon: PackageX, label: 'Uninstall' },
   { page: 'analyze', icon: BarChart3, label: 'Storage' },
+  { page: 'repos', icon: GitBranch, label: 'Repos' },
 ];
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {

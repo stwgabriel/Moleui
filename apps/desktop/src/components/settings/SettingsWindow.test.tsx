@@ -79,6 +79,27 @@ describe('SettingsWindow', () => {
         get: vi.fn().mockResolvedValue({ icon: 'classic' }),
         set: vi.fn().mockResolvedValue({ ok: true, icon: 'midnight', appliesOnQuit: true }),
       },
+      updates: {
+        getState: vi.fn().mockResolvedValue({
+          status: 'idle',
+          currentVersion: '0.12.0',
+          availableVersion: null,
+          progress: null,
+          message: 'Moleui checks for updates automatically.',
+          lastCheckedAt: null,
+        }),
+        check: vi.fn().mockResolvedValue({
+          status: 'up-to-date',
+          currentVersion: '0.12.0',
+          availableVersion: null,
+          progress: null,
+          message: 'Moleui is up to date.',
+          lastCheckedAt: '2026-08-02T12:00:00.000Z',
+        }),
+        install: vi.fn().mockResolvedValue({ ok: true }),
+        onState: vi.fn(),
+        removeListeners: vi.fn(),
+      },
     } as unknown as typeof window.moleDesktop;
   });
 
@@ -156,6 +177,36 @@ describe('SettingsWindow', () => {
     });
     expect(midnight).toHaveAttribute('aria-checked', 'true');
     expect(await screen.findByText(/after you quit/i)).toBeInTheDocument();
+  });
+
+  it('checks for application updates from General settings', async () => {
+    render(<SettingsWindow />);
+
+    expect(await screen.findByText('Moleui 0.12.0')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /check for updates/i }));
+
+    await waitFor(() => {
+      expect(window.moleDesktop.updates?.check).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText('Moleui is up to date.')).toBeInTheDocument();
+  });
+
+  it('restarts to install a downloaded update', async () => {
+    vi.mocked(window.moleDesktop.updates!.getState).mockResolvedValue({
+      status: 'downloaded',
+      currentVersion: '0.12.0',
+      availableVersion: '0.13.0',
+      progress: 100,
+      message: 'Moleui 0.13.0 is ready. Restart to finish updating.',
+      lastCheckedAt: '2026-08-02T12:00:00.000Z',
+    });
+
+    render(<SettingsWindow />);
+    fireEvent.click(await screen.findByRole('button', { name: /restart to update/i }));
+
+    await waitFor(() => {
+      expect(window.moleDesktop.updates?.install).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('opens checkout from the subscription panel inside the app window', async () => {

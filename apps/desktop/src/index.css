@@ -853,7 +853,7 @@ body {
   padding: 0 !important;
 }
 
-.mole-native-login-form :where(.cl-header, .cl-logoBox, .cl-footer, .cl-footerPages, [class*="cl-footer"], [class*="developmentMode"], [class*="devMode"]) {
+.mole-native-login-form :where(.cl-header, .cl-logoBox, [class*="developmentMode"], [class*="devMode"]) {
   display: none !important;
 }
 

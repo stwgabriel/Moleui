@@ -48,6 +48,7 @@ interface LogEntry {
 
 interface TimelineStage {
   id: string;
+  taskId?: string;
   name: string;
   status: 'pending' | 'active' | 'complete' | 'error';
   items: string[];
@@ -332,8 +333,8 @@ const config: PageConfig = {
 
 const stageCopy: Record<Exclude<Stage, 'idle' | 'complete' | 'error'>, { title: string; description: string }> = {
   previewing: {
-    title: 'Scanning Mac',
-    description: 'Mole is checking the tune-up path first, so you can see every optimization before it changes anything.',
+    title: 'Building plan',
+    description: 'Mole is loading the local maintenance catalog and current system status without running any optimization.',
   },
   'preview-results': {
     title: 'Review tweaks',
@@ -407,6 +408,7 @@ export function OptimizePage() {
   const taskListRef = useRef<HTMLDivElement>(null);
   const runIdRef = useRef(0);
   const activeRunRef = useRef<{ id: number; context: 'preview' | 'main' } | null>(null);
+  const activeUsesOperationsRef = useRef(false);
   const cancelledRunIdsRef = useRef(new Set<number>());
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [taskScrollShadow, setTaskScrollShadow] = useState({ top: false, bottom: false });
@@ -438,6 +440,7 @@ export function OptimizePage() {
   useEffect(() => {
     return () => {
       window.moleDesktop?.optimize?.removeListeners();
+      window.moleDesktop?.operations?.removeListeners();
     };
   }, []);
 
@@ -525,11 +528,17 @@ export function OptimizePage() {
 
     addLog('Stopping...', 'info', context);
     window.moleDesktop.optimize.removeListeners();
+    window.moleDesktop.operations?.removeListeners();
     setExpandedTaskId(null);
     setStage('idle');
 
     try {
-      await window.moleDesktop.optimize.kill();
+      if (activeUsesOperationsRef.current && window.moleDesktop.operations) {
+        await window.moleDesktop.operations.cancel('optimize');
+      } else {
+        await window.moleDesktop.optimize.kill();
+      }
+      activeUsesOperationsRef.current = false;
       addLog(context === 'preview' ? 'Preview cancelled' : 'Optimization stopped by user', 'error', context);
     } catch (error) {
       addLog(`Failed to stop: ${error}`, 'error', context);
@@ -546,7 +555,7 @@ export function OptimizePage() {
     );
   };
 
-  // ─── Dry-run preview ────────────────────────────────────────────────────────
+  // ─── Structured plan ────────────────────────────────────────────────────────
 
   const startPreview = async () => {
     if (!requireSubscription('Optimize')) return;
@@ -558,32 +567,33 @@ export function OptimizePage() {
     setPreviewTimeline([]);
     setExpandedTaskId(null);
 
-    addLog('Running dry-run preview...', 'info', 'preview');
-
-    window.moleDesktop.optimize.onStdout((text) => {
-      addLog(text, 'info', 'preview');
-      parseTimelineFromLog(text, 'preview');
-    });
-
-    window.moleDesktop.optimize.onStderr((text) => {
-      addLog(text, 'error', 'preview');
-    });
+    addLog('Loading structured optimization plan...', 'info', 'preview');
 
     try {
-      const result = await window.moleDesktop.optimize.execute({ dryRun: true });
+      const operations = window.moleDesktop.operations;
+      if (!operations) throw new Error('The local operations interface is unavailable. Restart Moleui after updating.');
+      const result = await operations.plan('optimize');
       const isCurrentRun = activeRunRef.current?.id === runId;
 
-      if (cancelledRunIdsRef.current.has(runId) || result.killed) {
+      if (cancelledRunIdsRef.current.has(runId)) {
         addLog('Preview cancelled', 'error', 'preview');
         if (isCurrentRun) setStage('idle');
       } else if (!isCurrentRun) {
         return;
-      } else if (result.ok || result.exitCode === 0) {
-        setPreviewTimeline((prev) => completeTimeline(prev, { pruneEmpty: true }));
-        addLog('Dry-run complete — no changes were made', 'success', 'preview');
+      } else if (result.ok) {
+        const availableTasks = result.plan.tasks.filter((task) => task.state === 'available');
+        setPreviewTimeline(availableTasks.map((task) => ({
+          id: `task-${task.id}`,
+          taskId: task.id,
+          name: task.name,
+          status: 'complete',
+          items: [task.description],
+          selected: true,
+        })));
+        addLog(`Plan ready with ${availableTasks.length} available maintenance tasks`, 'success', 'preview');
         setStage('preview-results');
       } else {
-        addLog(`Preview failed: ${result.stderr}`, 'error', 'preview');
+        addLog(`Plan failed: ${result.error}`, 'error', 'preview');
         setStage('preview-results');
       }
     } catch (error) {
@@ -601,7 +611,6 @@ export function OptimizePage() {
         activeRunRef.current = null;
       }
       cancelledRunIdsRef.current.delete(runId);
-      window.moleDesktop.optimize.removeListeners();
     }
   };
 
@@ -612,6 +621,17 @@ export function OptimizePage() {
     const taskNames = stage === 'preview-results'
       ? previewTimeline.filter(isTimelineStageSelected).map((timelineStage) => timelineStage.name)
       : undefined;
+    const selectedPlanStages = stage === 'preview-results'
+      ? previewTimeline.filter(isTimelineStageSelected)
+      : [];
+    const taskIds = selectedPlanStages
+      .map((timelineStage) => timelineStage.taskId)
+      .filter((taskId): taskId is string => Boolean(taskId));
+    const useOperations = Boolean(
+      window.moleDesktop.operations &&
+      selectedPlanStages.length > 0 &&
+      taskIds.length === selectedPlanStages.length
+    );
 
     if (stage === 'preview-results' && previewTimeline.length > 0 && taskNames?.length === 0) return;
     if (stage === 'preview-results' && noOptimizationsFound) return;
@@ -626,17 +646,32 @@ export function OptimizePage() {
 
     addLog('Starting system optimization...', 'info');
 
-    window.moleDesktop.optimize.onStdout((text) => {
-      addLog(text, 'info');
-      parseTimelineFromLog(text);
-    });
+    activeUsesOperationsRef.current = useOperations;
+    if (useOperations) {
+      window.moleDesktop.operations?.onEvent((event) => {
+        if (event.operation !== 'optimize') return;
+        if (event.type === 'stdout' && event.text) {
+          addLog(event.text, 'info');
+          parseTimelineFromLog(event.text);
+        } else if (event.type === 'stderr' && event.text) {
+          addLog(event.text, 'error');
+        }
+      });
+    } else {
+      window.moleDesktop.optimize.onStdout((text) => {
+        addLog(text, 'info');
+        parseTimelineFromLog(text);
+      });
 
-    window.moleDesktop.optimize.onStderr((text) => {
-      addLog(text, 'error');
-    });
+      window.moleDesktop.optimize.onStderr((text) => {
+        addLog(text, 'error');
+      });
+    }
 
     try {
-      const result = await window.moleDesktop.optimize.execute({ dryRun: false, taskNames });
+      const result = useOperations
+        ? await window.moleDesktop.operations!.execute('optimize', { taskIds })
+        : await window.moleDesktop.optimize.execute({ dryRun: false, taskNames });
       const isCurrentRun = activeRunRef.current?.id === runId;
 
       if (cancelledRunIdsRef.current.has(runId) || result.killed) {
@@ -668,11 +703,14 @@ export function OptimizePage() {
       }
       cancelledRunIdsRef.current.delete(runId);
       window.moleDesktop.optimize.removeListeners();
+      window.moleDesktop.operations?.removeListeners();
+      activeUsesOperationsRef.current = false;
     }
   };
 
   const reset = () => {
     window.moleDesktop.optimize.removeListeners();
+    window.moleDesktop.operations?.removeListeners();
     setStage('idle');
     setLogs([]);
     setPreviewLogs([]);
@@ -1099,13 +1137,13 @@ export function OptimizePage() {
           size="lg"
           className="min-w-[min(450px,42vw)] rounded-full bg-[var(--page-accent)] px-[clamp(2rem,3vw,2.5rem)] py-[clamp(0.85rem,1.25vw,1rem)] text-[clamp(0.95rem,1.25vw,1.25rem)] shadow-[0_18px_50px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)] [&_svg]:h-[clamp(1rem,1.35vw,1.25rem)] [&_svg]:w-[clamp(1rem,1.35vw,1.25rem)]"
         >
-          {stage === 'previewing' ? 'Cancel Preview' : 'Stop Optimization'}
+          {stage === 'previewing' ? 'Cancel Plan' : 'Stop Optimization'}
         </Button>
       )}
 
       <div className="flex items-center gap-2 text-[clamp(0.78rem,1vw,0.875rem)] font-bold text-slate-500 dark:text-slate-400">
         <ShieldCheck className="h-4 w-4" />
-        A preview runs before any optimization changes
+        A structured local plan loads before any optimization changes
       </div>
     </footer>
   );
@@ -1153,7 +1191,7 @@ export function OptimizePage() {
     return renderAlreadyOptimizedScreen();
   }
 
-  // ─── Previewing (dry-run) ────────────────────────────────────────────────────
+  // ─── Planning and execution ──────────────────────────────────────────────────
 
   if (stage === 'previewing' || stage === 'preview-results' || stage === 'optimizing') {
     const header = stageCopy[stage];

@@ -30,6 +30,14 @@ function mockMoleDesktop() {
     openActivityMonitor: vi.fn(),
     signalProcess: vi.fn(),
     runStatus: vi.fn(),
+    operations: {
+      status: vi.fn(),
+      plan: vi.fn(),
+      execute: vi.fn(),
+      cancel: vi.fn(),
+      onEvent: vi.fn(),
+      removeListeners: vi.fn(),
+    },
     clean: {
       execute: vi.fn(),
       kill: vi.fn(),
@@ -77,6 +85,28 @@ const successfulOptimizeResult: MoleResult = {
   stderr: '',
 };
 
+const successfulOptimizePlan = {
+  ok: true as const,
+  operation: 'optimize' as const,
+  plan: {
+    version: 1 as const,
+    operation: 'optimize' as const,
+    status: 'ready' as const,
+    summary: { available: 1, blocked: 0 },
+    system: {},
+    tasks: [
+      {
+        id: 'system_maintenance',
+        name: 'DNS & Spotlight Check',
+        description: 'Refresh DNS cache and verify Spotlight status',
+        category: 'system' as const,
+        state: 'available' as const,
+        safe: true,
+      },
+    ],
+  },
+};
+
 describe('OptimizePage', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
@@ -86,22 +116,22 @@ describe('OptimizePage', () => {
     vi.mocked(window.moleDesktop.optimize.kill).mockResolvedValue({ ok: true } as any);
   });
 
-  it('returns to the start screen when cancelling a recovered preview', async () => {
+  it('returns to the start screen when cancelling a recovered plan', async () => {
     localStorage.setItem('mole-optimize-stage', JSON.stringify('previewing'));
 
     render(<OptimizePage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /cancel preview/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel plan/i }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: /start optimization/i })).toBeInTheDocument());
     expect(window.moleDesktop.optimize.kill).toHaveBeenCalledOnce();
     expect(window.moleDesktop.optimize.removeListeners).toHaveBeenCalled();
   });
 
-  it('ignores a late successful preview result after cancellation', async () => {
-    let finishPreview: (result: MoleResult) => void = () => {};
-    vi.mocked(window.moleDesktop.optimize.execute).mockReturnValue(
-      new Promise<MoleResult>((resolve) => {
+  it('ignores a late successful plan result after cancellation', async () => {
+    let finishPreview: (result: typeof successfulOptimizePlan) => void = () => {};
+    vi.mocked(window.moleDesktop.operations!.plan).mockReturnValue(
+      new Promise((resolve) => {
         finishPreview = resolve;
       })
     );
@@ -109,13 +139,13 @@ describe('OptimizePage', () => {
     render(<OptimizePage />);
 
     fireEvent.click(screen.getByRole('button', { name: /start optimization/i }));
-    await waitFor(() => expect(screen.getByRole('button', { name: /cancel preview/i })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /cancel plan/i })).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /cancel preview/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel plan/i }));
     await waitFor(() => expect(screen.getByRole('button', { name: /start optimization/i })).toBeInTheDocument());
 
     await act(async () => {
-      finishPreview(successfulOptimizeResult);
+      finishPreview(successfulOptimizePlan);
     });
 
     expect(screen.getByRole('button', { name: /start optimization/i })).toBeInTheDocument();
@@ -154,22 +184,16 @@ describe('OptimizePage', () => {
     });
   });
 
-  it('builds preview tasks from streamed optimize stdout', async () => {
-    let stdoutHandler: (text: string) => void = () => {};
-    vi.mocked(window.moleDesktop.optimize.onStdout).mockImplementation((handler: (text: string) => void) => {
-      stdoutHandler = handler;
-    });
-    vi.mocked(window.moleDesktop.optimize.execute).mockImplementation(async () => {
-      stdoutHandler('\u001b[1;34m➤ DNS & Spotlight Check\u001b[0m\n  \u001b[0;33m→\u001b[0m DNS cache flushed\n');
-      return successfulOptimizeResult;
-    });
+  it('builds preview tasks from the structured operations plan', async () => {
+    vi.mocked(window.moleDesktop.operations!.plan).mockResolvedValue(successfulOptimizePlan);
 
     render(<OptimizePage />);
 
     fireEvent.click(screen.getByRole('button', { name: /start optimization/i }));
 
     await waitFor(() => expect(screen.getByText('DNS & Spotlight Check')).toBeInTheDocument());
-    expect(screen.getByText('Would flush DNS cache')).toBeInTheDocument();
+    expect(screen.getByText('Refresh DNS cache and verify Spotlight status')).toBeInTheDocument();
+    expect(window.moleDesktop.optimize.execute).not.toHaveBeenCalled();
   });
 
   it('shows the centered staged cards with system impact metrics', () => {
@@ -231,14 +255,10 @@ describe('OptimizePage', () => {
     expect(screen.queryByRole('button', { name: /apply optimizations/i })).not.toBeInTheDocument();
   });
 
-  it('filters no-op streamed optimize lines before showing preview tweaks', async () => {
-    let stdoutHandler: (text: string) => void = () => {};
-    vi.mocked(window.moleDesktop.optimize.onStdout).mockImplementation((handler: (text: string) => void) => {
-      stdoutHandler = handler;
-    });
-    vi.mocked(window.moleDesktop.optimize.execute).mockImplementation(async () => {
-      stdoutHandler('➤ System Health Check\n  ✓ All preference files valid\n  ○ No outdated launch agents found\n  ℹ Network stack already optimal\n');
-      return successfulOptimizeResult;
+  it('shows no work when the structured plan has no available tasks', async () => {
+    vi.mocked(window.moleDesktop.operations!.plan).mockResolvedValue({
+      ...successfulOptimizePlan,
+      plan: { ...successfulOptimizePlan.plan, summary: { available: 0, blocked: 0 }, tasks: [] },
     });
 
     render(<OptimizePage />);
@@ -246,27 +266,23 @@ describe('OptimizePage', () => {
     fireEvent.click(screen.getByRole('button', { name: /start optimization/i }));
 
     await waitFor(() => expect(screen.getByText('System is clean.')).toBeInTheDocument());
-    expect(screen.queryByText('System Health Check')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /apply optimizations/i })).not.toBeInTheDocument();
   });
 
-  it('shows only actionable streamed optimize tweaks', async () => {
-    let stdoutHandler: (text: string) => void = () => {};
-    vi.mocked(window.moleDesktop.optimize.onStdout).mockImplementation((handler: (text: string) => void) => {
-      stdoutHandler = handler;
-    });
-    vi.mocked(window.moleDesktop.optimize.execute).mockImplementation(async () => {
-      stdoutHandler('➤ DNS & Spotlight Check\n  ✓ DNS already optimal\n  → Spotlight index rebuilt\n  ○ No network issues found\n');
-      return successfulOptimizeResult;
-    });
+  it('executes selected structured-plan task IDs through the local operations interface', async () => {
+    vi.mocked(window.moleDesktop.operations!.plan).mockResolvedValue(successfulOptimizePlan);
+    vi.mocked(window.moleDesktop.operations!.execute).mockResolvedValue(successfulOptimizeResult);
 
     render(<OptimizePage />);
 
     fireEvent.click(screen.getByRole('button', { name: /start optimization/i }));
 
     await waitFor(() => expect(screen.getByText('DNS & Spotlight Check')).toBeInTheDocument());
-    expect(screen.getByText('Would rebuild Spotlight index')).toBeInTheDocument();
-    expect(screen.queryByText('DNS already optimal')).not.toBeInTheDocument();
-    expect(screen.queryByText('No network issues found')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /apply optimizations/i }));
+
+    await waitFor(() => expect(window.moleDesktop.operations!.execute).toHaveBeenCalledWith(
+      'optimize',
+      { taskIds: ['system_maintenance'] },
+    ));
   });
 });

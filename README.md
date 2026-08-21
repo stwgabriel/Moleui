@@ -36,6 +36,7 @@ Moleui Desktop brings the Moleui maintenance tools into a native-feeling Electro
 - **Uninstall**: Remove apps together with related preferences, caches, launch agents, logs, and leftover support files.
 - **Optimize**: Refresh system services, rebuild caches, reset selected maintenance state, and run common macOS tuneups.
 - **Analyze**: Visualize disk usage and identify large files or folders before removing anything.
+- **Repos**: Inventory every git repository on the machine and show which work exists somewhere other than this disk. Highlights folders with no git history, repositories with no remote, and remotes an authenticated request can no longer reach; pushes unpushed branches and tags; and archives repositories to the Trash only after confirming every branch and tag against the remote.
 
 
 ## Install

@@ -604,7 +604,10 @@ export function CleanPage() {
   };
 
   useEffect(() => {
-    return () => window.moleDesktop?.clean?.removeListeners();
+    return () => {
+      window.moleDesktop?.clean?.removeListeners();
+      window.moleDesktop?.operations?.removeListeners();
+    };
   }, []);
 
   useEffect(() => {
@@ -649,6 +652,30 @@ export function CleanPage() {
     }));
   };
 
+  const removeCleanListeners = () => {
+    window.moleDesktop.clean.removeListeners();
+    window.moleDesktop.operations?.removeListeners();
+  };
+
+  const subscribeToClean = (onStdout: (text: string) => void, onStderr: (text: string) => void) => {
+    removeCleanListeners();
+    if (window.moleDesktop.operations) {
+      window.moleDesktop.operations.onEvent((event) => {
+        if (event.operation !== 'clean' || !event.text) return;
+        if (event.type === 'stdout') onStdout(event.text);
+        if (event.type === 'stderr') onStderr(event.text);
+      });
+      return;
+    }
+    window.moleDesktop.clean.onStdout(onStdout);
+    window.moleDesktop.clean.onStderr(onStderr);
+  };
+
+  const executeClean = (options: { dryRun: boolean; sections?: string[]; command?: 'clean' | 'purge' | 'installer'; all?: boolean }) => {
+    if (window.moleDesktop.operations) return window.moleDesktop.operations.execute('clean', options);
+    return window.moleDesktop.clean.execute(options);
+  };
+
   const runCleanGroups = async (cleanGroups: CleanupGroup[], dryRun: boolean) => {
     if (cleanGroups.length === 0) return true;
 
@@ -674,8 +701,7 @@ export function CleanPage() {
 
     const findGroupForSection = (section: string) => cleanGroups.find((group) => group.sections?.includes(section));
 
-    window.moleDesktop.clean.removeListeners();
-    window.moleDesktop.clean.onStdout((text) => {
+    subscribeToClean((text) => {
       output.push(text);
       const parsedItemsByGroup = new Map<string, CleanupItem[]>();
       let liveSizeDelta = 0;
@@ -739,16 +765,15 @@ export function CleanPage() {
       }
 
       if (dryRun && nextScanItem) setCurrentScanItem(nextScanItem);
-    });
-    window.moleDesktop.clean.onStderr((text) => appendLog(currentGroupId, text, 'error'));
+    }, (text) => appendLog(currentGroupId, text, 'error'));
 
-    const result = await window.moleDesktop.clean.execute({
+    const result = await executeClean({
       command: 'clean',
       dryRun,
       sections: cleanSections,
     });
 
-    window.moleDesktop.clean.removeListeners();
+    removeCleanListeners();
 
     if (result.killed) {
       setGroups((previous) => previous.map((group) => cleanGroupIds.has(group.id) ? { ...group, status: 'error' } : group));
@@ -789,8 +814,7 @@ export function CleanPage() {
     setCurrentScanItem(`Scanning ${group.name.toLowerCase()}...`);
     appendLog(group.id, `$ ${commandLabel(group, dryRun)}`);
 
-    window.moleDesktop.clean.removeListeners();
-    window.moleDesktop.clean.onStdout((text) => {
+    subscribeToClean((text) => {
       output.push(text);
       appendLog(group.id, text);
       const parsedItems: CleanupItem[] = [];
@@ -841,17 +865,16 @@ export function CleanPage() {
       if (dryRun && nextScanItem) {
         setCurrentScanItem(nextScanItem);
       }
-    });
-    window.moleDesktop.clean.onStderr((text) => appendLog(group.id, text, 'error'));
+    }, (text) => appendLog(group.id, text, 'error'));
 
-    const result = await window.moleDesktop.clean.execute({
+    const result = await executeClean({
       command: group.command,
       dryRun,
       sections: group.sections,
       all: group.command === 'installer',
     });
 
-    window.moleDesktop.clean.removeListeners();
+    removeCleanListeners();
 
     if (result.killed) {
       patchGroup(group.id, { status: 'error' });
@@ -952,15 +975,16 @@ export function CleanPage() {
   };
 
   const stopCurrent = async () => {
-    await window.moleDesktop.clean.kill();
-    window.moleDesktop.clean.removeListeners();
+    if (window.moleDesktop.operations) await window.moleDesktop.operations.cancel('clean');
+    else await window.moleDesktop.clean.kill();
+    removeCleanListeners();
     activeGroupRef.current = null;
     setCurrentScanItem('Scan stopped.');
     setStage(stage === 'cleaning' ? 'results' : 'idle');
   };
 
   const reset = () => {
-    window.moleDesktop.clean.removeListeners();
+    removeCleanListeners();
     activeGroupRef.current = null;
     setStage('idle');
     setGroups(createInitialGroups());

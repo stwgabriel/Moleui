@@ -1,5 +1,6 @@
-import { SignIn } from '@clerk/clerk-react';
+import { SignIn, SignUp } from '@clerk/clerk-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useState } from 'react';
 import { useResolvedTheme } from '@/hooks/useTheme';
 
 // Shared easing for the logo-rise / form-reveal choreography.
@@ -8,14 +9,55 @@ const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
 // The sign-in surface of the single primary window. Rendered by PrimaryWindow
 // only while signed out; once Clerk reports a session, PrimaryWindow swaps to the
 // app in this same renderer, so there is no window hand-off to manage here.
-//
-// `ready` is Clerk's isLoaded: while false the logo spins as a loader; once true
-// the logo rises and the sign-in form opens beneath it.
 export function LoginWindow({ ready = true }: { ready?: boolean }) {
   const showForm = ready;
+  const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   // Clerk's `variables` are plain hex values (no `dark:` support), so they need
   // the resolved theme; the `elements` class strings below theme themselves.
   const isDark = useResolvedTheme() === 'dark';
+
+  const appearance = {
+    variables: {
+      colorPrimary: isDark ? '#a06bff' : '#8c3ffc',
+      colorText: isDark ? '#eceef6' : '#202936',
+      colorTextSecondary: isDark ? '#a2a9ba' : '#5a6473',
+      // Clerk paints the input from these variables with higher precedence than
+      // the utility classes below, so they must flip with the theme too.
+      colorInputBackground: isDark ? 'rgba(26, 27, 41, 0.7)' : 'rgba(255, 255, 255, 0.82)',
+      colorInputText: isDark ? '#eceef6' : '#0f172a',
+      colorBackground: 'transparent',
+      borderRadius: '0.75rem',
+      fontFamily: 'DM Sans, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif',
+    },
+    elements: {
+      rootBox: 'w-full',
+      cardBox: 'w-full shadow-none',
+      card: 'w-full border-0 bg-transparent p-0 shadow-none',
+      header: 'hidden',
+      headerTitle: 'hidden',
+      headerSubtitle: 'hidden',
+      logoBox: 'hidden',
+      main: 'gap-4',
+      socialButtonsBlockButton: 'h-11 rounded-xl border border-slate-200/80 bg-white/70 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:bg-white dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-900/80',
+      dividerLine: 'bg-slate-200/80 dark:bg-white/10',
+      dividerText: 'text-xs font-semibold text-slate-400 dark:text-slate-500',
+      formField: 'space-y-2',
+      formFieldLabel: 'text-[13px] font-medium text-slate-700 dark:text-slate-300',
+      formFieldInput: 'h-11 rounded-xl border border-slate-300/80 bg-white/82 px-3 text-[15px] font-medium text-slate-950 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:text-slate-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500 dark:shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]',
+      formButtonPrimary: 'h-11 rounded-xl bg-violet-600 text-[15px] font-semibold text-white shadow-[0_10px_22px_rgba(140,63,252,0.22)] transition hover:bg-violet-700 active:scale-[0.99]',
+      footer: 'hidden',
+      footerPages: 'hidden',
+      footerAction: 'hidden',
+      formResendCodeLink: 'text-violet-700 font-semibold dark:text-violet-300',
+      identityPreview: 'rounded-xl border border-slate-200/80 bg-white/70 shadow-sm dark:border-white/10 dark:bg-slate-900/60',
+      identityPreviewEditButton: 'text-violet-700 font-semibold dark:text-violet-300',
+    },
+  };
+
+  const switchAuthMode = () => {
+    const nextMode = authMode === 'sign-in' ? 'sign-up' : 'sign-in';
+    setAuthMode(nextMode);
+  };
 
   return (
     <main className="mole-native-login relative h-screen overflow-y-auto overflow-x-clip text-slate-950 dark:text-slate-100">
@@ -59,58 +101,49 @@ export function LoginWindow({ ready = true }: { ready?: boolean }) {
               <motion.div
                 key="login-form"
                 className="w-full min-w-0"
+                data-auth-mode={authMode}
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 8 }}
                 transition={{ duration: 0.45, ease: EASE, delay: 0.12 }}
               >
                 <h1 className="mb-8 mt-5 text-center text-[2rem] font-semibold tracking-[-0.045em] text-slate-950 dark:text-slate-100">
-                  Sign in to Moleui
+                  {authMode === 'sign-in' ? 'Sign in to Moleui' : 'Create your Moleui account'}
                 </h1>
 
                 <div className="mole-native-login-form w-full min-w-0">
-                  <SignIn
-                    routing="hash"
-                    appearance={{
-                      variables: {
-                        colorPrimary: isDark ? '#a06bff' : '#8c3ffc',
-                        colorText: isDark ? '#eceef6' : '#202936',
-                        colorTextSecondary: isDark ? '#a2a9ba' : '#5a6473',
-                        // Clerk paints the input from these variables with higher
-                        // precedence than the utility classes below, so they must
-                        // flip with the theme too.
-                        colorInputBackground: isDark ? 'rgba(26, 27, 41, 0.7)' : 'rgba(255, 255, 255, 0.82)',
-                        colorInputText: isDark ? '#eceef6' : '#0f172a',
-                        colorBackground: 'transparent',
-                        borderRadius: '0.75rem',
-                        fontFamily: 'DM Sans, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif',
-                      },
-                      elements: {
-                        rootBox: 'w-full',
-                        cardBox: 'w-full shadow-none',
-                        card: 'w-full border-0 bg-transparent p-0 shadow-none',
-                        header: 'hidden',
-                        headerTitle: 'hidden',
-                        headerSubtitle: 'hidden',
-                        logoBox: 'hidden',
-                        main: 'gap-4',
-                        socialButtonsBlockButton: 'h-11 rounded-xl border border-slate-200/80 bg-white/70 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:bg-white dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-900/80',
-                        dividerLine: 'bg-slate-200/80 dark:bg-white/10',
-                        dividerText: 'text-xs font-semibold text-slate-400 dark:text-slate-500',
-                        formField: 'space-y-2',
-                        formFieldLabel: 'text-[13px] font-medium text-slate-700 dark:text-slate-300',
-                        formFieldInput: 'h-11 rounded-xl border border-slate-300/80 bg-white/82 px-3 text-[15px] font-medium text-slate-950 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:text-slate-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500 dark:shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]',
-                        formButtonPrimary: 'h-11 rounded-xl bg-violet-600 text-[15px] font-semibold text-white shadow-[0_10px_22px_rgba(140,63,252,0.22)] transition hover:bg-violet-700 active:scale-[0.99]',
-                        footer: 'hidden',
-                        footerPages: 'hidden',
-                        footerAction: 'hidden',
-                        formResendCodeLink: 'text-violet-700 font-semibold dark:text-violet-300',
-                        identityPreview: 'rounded-xl border border-slate-200/80 bg-white/70 shadow-sm dark:border-white/10 dark:bg-slate-900/60',
-                        identityPreviewEditButton: 'text-violet-700 font-semibold dark:text-violet-300',
-                      },
-                    }}
-                  />
+                  {authMode === 'sign-in' ? (
+                    <SignIn
+                      routing="virtual"
+                      withSignUp
+                      signUpUrl="#/sign-up"
+                      fallbackRedirectUrl="#/"
+                      signUpFallbackRedirectUrl="#/"
+                      appearance={appearance}
+                    />
+                  ) : (
+                    <SignUp
+                      routing="virtual"
+                      signInUrl="#/"
+                      fallbackRedirectUrl="#/"
+                      appearance={appearance}
+                    />
+                  )}
                 </div>
+
+                <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
+                  {authMode === 'sign-in' ? "Don't have an account?" : 'Already have an account?'}{' '}
+                  <a
+                    href={authMode === 'sign-in' ? '#/sign-up' : '#/'}
+                    className="font-semibold text-violet-700 underline-offset-4 transition hover:underline dark:text-violet-300"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      switchAuthMode();
+                    }}
+                  >
+                    {authMode === 'sign-in' ? 'Create an account' : 'Sign in instead'}
+                  </a>
+                </p>
               </motion.div>
             )}
           </AnimatePresence>

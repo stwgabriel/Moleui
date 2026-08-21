@@ -354,6 +354,9 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "Preview Touch ID setup"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo completion --dry-run" "$NC" "Preview shell completion edits"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "Configure scan directories"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo repos --verify" "$NC" "Check every repo against its remote"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo repos push" "$NC" "Push all unpushed branches"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo repos archive --dry-run" "$NC" "Preview archiving idle pushed repos"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /Volumes" "$NC" "Analyze external drives only"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "Force reinstall latest stable version"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo update --nightly" "$NC" "Install latest unreleased main branch build"
@@ -1032,6 +1035,9 @@ main() {
             ;;
         "purge")
             exec "$SCRIPT_DIR/bin/purge.sh" "${args[@]:1}"
+            ;;
+        "repos" | "repo")
+            exec "$SCRIPT_DIR/bin/repos.sh" "${args[@]:1}"
             ;;
         "installer")
             exec "$SCRIPT_DIR/bin/installer.sh" "${args[@]:1}"

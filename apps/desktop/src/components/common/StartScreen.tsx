@@ -43,6 +43,16 @@ const iconConfig: Record<string, { color: string; animation: string; shadow: str
     animation: 'animate-sparkle',
     shadow: 'drop-shadow(0 8px 18px rgba(245, 158, 11, 0.32))',
   }, // Smart Care - Amber
+  CalendarClock: {
+    color: FEATURE_ACCENTS.automations.accent,
+    animation: 'animate-pulse-glow',
+    shadow: `drop-shadow(0 8px 18px ${FEATURE_ACCENTS.automations.glow})`,
+  }, // Automations - Amber
+  GitBranch: {
+    color: FEATURE_ACCENTS.repos.accent,
+    animation: 'animate-pulse-wave',
+    shadow: `drop-shadow(0 8px 18px ${FEATURE_ACCENTS.repos.glow})`,
+  }, // Repos - Sky
 };
 
 const myMacCard =
@@ -67,6 +77,14 @@ const featureThemes: Record<string, FeatureAccent & { footerText: string }> = {
   Database: {
     ...FEATURE_ACCENTS.analyze,
     footerText: 'Analysis only reads your storage layout',
+  },
+  CalendarClock: {
+    ...FEATURE_ACCENTS.automations,
+    footerText: 'Nothing runs until a dry run passes',
+  },
+  GitBranch: {
+    ...FEATURE_ACCENTS.repos,
+    footerText: 'Remote checks come before anything moves to Trash',
   },
 };
 

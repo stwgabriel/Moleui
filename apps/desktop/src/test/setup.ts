@@ -1,5 +1,26 @@
 import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
+
+// The desktop test command may be launched with an invalid Node
+// `--localstorage-file`, which leaves jsdom's storage object without methods.
+// Keep browser persistence deterministic for auth, settings and page-state tests.
+const localStorageStore = new Map<string, string>();
+const localStorageMock = {
+  getItem: (key: string) => localStorageStore.get(key) ?? null,
+  setItem: (key: string, value: string) => localStorageStore.set(key, value),
+  removeItem: (key: string) => localStorageStore.delete(key),
+  clear: () => localStorageStore.clear(),
+  key: (index: number) => [...localStorageStore.keys()][index] ?? null,
+  get length() {
+    return localStorageStore.size;
+  },
+};
+
+Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: localStorageMock });
+
+beforeEach(() => {
+  localStorageStore.clear();
+});
 
 // jsdom has no Clerk context, so any component that reads auth state would throw
 // "useUser can only be used within the <ClerkProvider />". Stub the hooks and

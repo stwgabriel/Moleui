@@ -80,6 +80,49 @@ parse_optimization_items() {
     ' <<< "$json"
 }
 
+show_optimize_plan_json() {
+    local health_json="$1"
+    local opts_file
+    opts_file=$(mktemp_file)
+    parse_optimization_items "$health_json" > "$opts_file"
+
+    local mem_used mem_total disk_used disk_total disk_percent uptime
+    mem_used=$(json_get_value "$health_json" "memory_used_gb")
+    mem_total=$(json_get_value "$health_json" "memory_total_gb")
+    disk_used=$(json_get_value "$health_json" "disk_used_gb")
+    disk_total=$(json_get_value "$health_json" "disk_total_gb")
+    disk_percent=$(json_get_value "$health_json" "disk_used_percent")
+    uptime=$(json_get_value "$health_json" "uptime_days")
+
+    local task_count
+    task_count=$(awk 'NF { count++ } END { print count + 0 }' "$opts_file")
+
+    printf '{"version":1,"operation":"optimize","status":"ready"'
+    printf ',"summary":{"available":%s,"blocked":0}' "$task_count"
+    printf ',"system":{"memoryUsedGb":%s,"memoryTotalGb":%s,"diskUsedGb":%s,"diskTotalGb":%s,"diskUsedPercent":%s,"uptimeDays":%s}' \
+        "${mem_used:-0}" "${mem_total:-0}" "${disk_used:-0}" "${disk_total:-0}" "${disk_percent:-0}" "${uptime:-0}"
+    printf ',"tasks":['
+
+    local first=true
+    local action name desc safe
+    while IFS='|' read -r action name desc safe; do
+        [[ -n "$action" ]] || continue
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            printf ','
+        fi
+
+        printf '{"id":"%s","name":"%s","description":"%s","category":"system","state":"available","safe":%s}' \
+            "$(json_escape "$action")" \
+            "$(json_escape "$name")" \
+            "$(json_escape "$desc")" \
+            "${safe:-true}"
+    done < "$opts_file"
+
+    printf ']}\n'
+}
+
 show_optimization_summary() {
     local safe_count="${OPTIMIZE_SAFE_COUNT:-0}"
     if ((safe_count == 0)); then
@@ -187,6 +230,22 @@ task_is_selected() {
     return 1
 }
 
+task_action_is_selected() {
+    local action="$1"
+    shift || true
+
+    if [[ $# -eq 0 ]]; then
+        return 0
+    fi
+
+    local selected
+    for selected in "$@"; do
+        [[ "$action" == "$selected" ]] && return 0
+    done
+
+    return 1
+}
+
 announce_action() {
     local name="$1"
     local desc="$2"
@@ -219,6 +278,8 @@ main() {
 
     local health_json
     local -a selected_tasks=()
+    local -a selected_task_ids=()
+    local plan_json=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
             "--help" | "-h")
@@ -233,6 +294,10 @@ main() {
                 export MOLE_DRY_RUN=1
                 shift
                 ;;
+            "--plan-json")
+                plan_json=true
+                shift
+                ;;
             "--task")
                 if [[ $# -lt 2 || -z "${2:-}" ]]; then
                     echo "Missing task name after --task"
@@ -243,6 +308,18 @@ main() {
                 ;;
             --task=*)
                 selected_tasks+=("${1#--task=}")
+                shift
+                ;;
+            "--task-id")
+                if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                    echo "Missing task id after --task-id"
+                    exit 1
+                fi
+                selected_task_ids+=("$2")
+                shift 2
+                ;;
+            --task-id=*)
+                selected_task_ids+=("${1#--task-id=}")
                 shift
                 ;;
             "--whitelist")
@@ -256,6 +333,19 @@ main() {
                 ;;
         esac
     done
+
+    if [[ "$plan_json" == "true" ]]; then
+        if [[ "${MOLE_DRY_RUN:-0}" == "1" || ${#selected_tasks[@]} -gt 0 || ${#selected_task_ids[@]} -gt 0 ]]; then
+            echo "--plan-json cannot be combined with --dry-run, --task, or --task-id" >&2
+            exit 1
+        fi
+        if ! health_json=$(generate_health_json 2> /dev/null) || ! json_validate "$health_json"; then
+            echo '{"version":1,"operation":"optimize","status":"error","summary":{"available":0,"blocked":0},"system":{},"tasks":[]}'
+            exit 1
+        fi
+        show_optimize_plan_json "$health_json"
+        exit 0
+    fi
 
     log_operation_session_start "optimize"
 
@@ -352,6 +442,9 @@ main() {
         if ((${#selected_tasks[@]} > 0)) && ! task_is_selected "$name" "${selected_tasks[@]}"; then
             continue
         fi
+        if ((${#selected_task_ids[@]} > 0)) && ! task_action_is_selected "$action" "${selected_task_ids[@]}"; then
+            continue
+        fi
         if command -v is_whitelisted > /dev/null && is_whitelisted "$action"; then
             opt_msg "Skipped (whitelisted): $name"
             continue
@@ -361,7 +454,7 @@ main() {
         safe_count=$((safe_count + 1))
     done
 
-    if [[ ${#selected_tasks[@]} -gt 0 && $safe_count -eq 0 ]]; then
+    if [[ (${#selected_tasks[@]} -gt 0 || ${#selected_task_ids[@]} -gt 0) && $safe_count -eq 0 ]]; then
         opt_msg "No selected optimization tasks matched"
     fi
 

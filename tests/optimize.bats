@@ -13,6 +13,29 @@ setup_file() {
 	mkdir -p "$HOME"
 }
 
+@test "optimize exposes a structured plan without running a dry run" {
+	run env HOME="$HOME" MOLE_TEST_NO_AUTH=1 MO_NO_OPLOG=1 \
+		"$PROJECT_ROOT/mole" optimize --plan-json
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == \{* ]]
+	[[ "$output" == *'"version":1'* ]]
+	[[ "$output" == *'"operation":"optimize"'* ]]
+	[[ "$output" == *'"tasks":['* ]]
+	[[ "$output" == *'"state":"available"'* ]]
+	[[ "$output" != *"DRY RUN"* ]]
+}
+
+@test "optimize executes a selected stable task id" {
+	run env HOME="$HOME" MOLE_TEST_NO_AUTH=1 MO_NO_OPLOG=1 \
+		"$PROJECT_ROOT/mole" optimize --dry-run --task-id system_maintenance
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"DNS & Spotlight Check"* ]]
+	[[ "$output" != *"Finder Cache Refresh"* ]]
+	[[ "$output" == *"Would apply 1 optimizations"* ]]
+}
+
 teardown_file() {
 	if [[ "$HOME" == "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
 		rm -rf "$HOME"

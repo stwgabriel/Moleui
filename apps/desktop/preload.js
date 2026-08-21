@@ -96,6 +96,17 @@ contextBridge.exposeInMainWorld("moleDesktop", {
     get: () => ipcRenderer.invoke("mole:appIcon:get"),
     set: (icon) => ipcRenderer.invoke("mole:appIcon:set", icon),
   },
+  updates: {
+    getState: () => ipcRenderer.invoke("mole:updates:state"),
+    check: () => ipcRenderer.invoke("mole:updates:check"),
+    install: () => ipcRenderer.invoke("mole:updates:install"),
+    onState: (callback) => {
+      ipcRenderer.on("mole:updates:state", (_, state) => callback(state));
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners("mole:updates:state");
+    },
+  },
   openSettingsWindow: () => ipcRenderer.invoke("mole:settings:open"),
   openDeveloperWindow: () => ipcRenderer.invoke("mole:developer:open"),
   getSettingsProfile: () => ipcRenderer.invoke("mole:settings:profile"),
@@ -117,6 +128,21 @@ contextBridge.exposeInMainWorld("moleDesktop", {
   myMacCache: {
     get: () => ipcRenderer.invoke("mole:my-mac-cache:get"),
     set: (cache) => ipcRenderer.invoke("mole:my-mac-cache:set", cache),
+  },
+
+  // Versioned local operations interface. It keeps CLI flags, process
+  // ownership, and output compatibility inside the trusted main process.
+  operations: {
+    status: () => ipcRenderer.invoke("mole:operations:status"),
+    plan: (operation) => ipcRenderer.invoke("mole:operations:plan", operation),
+    execute: (operation, request) => ipcRenderer.invoke("mole:operations:execute", operation, request),
+    cancel: (operation) => ipcRenderer.invoke("mole:operations:cancel", operation),
+    onEvent: (callback) => {
+      ipcRenderer.on("mole:operations:event", (_, event) => callback(event));
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners("mole:operations:event");
+    },
   },
 
   // Touch ID configuration
@@ -157,6 +183,24 @@ contextBridge.exposeInMainWorld("moleDesktop", {
     },
   },
 
+  // Automations
+  automations: {
+    list: () => ipcRenderer.invoke("mole:automations:list"),
+    saveRecipe: (recipe) => ipcRenderer.invoke("mole:automations:save-recipe", recipe),
+    deleteRecipe: (recipeId) => ipcRenderer.invoke("mole:automations:delete-recipe", recipeId),
+    setEnabled: (recipeId, enabled) => ipcRenderer.invoke("mole:automations:set-enabled", recipeId, enabled),
+    setPaused: (paused) => ipcRenderer.invoke("mole:automations:set-paused", paused),
+    dryRun: (recipeId) => invokeWithLog("mole:automations:dry-run", "automation dry-run", recipeId),
+    runNow: (recipeId) => invokeWithLog("mole:automations:run-now", "automation run", recipeId),
+    cancel: () => invokeWithLog("mole:automations:cancel", "automation cancel"),
+    onChanged: (callback) => {
+      ipcRenderer.on("mole:automations:changed", () => callback());
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners("mole:automations:changed");
+    },
+  },
+
   // Optimize command
   optimize: {
     execute: (options) => invokeWithLog("mole:optimize:execute", "optimize", options),
@@ -186,6 +230,61 @@ contextBridge.exposeInMainWorld("moleDesktop", {
     removeListeners: () => {
       ipcRenderer.removeAllListeners("mole:analyze:stdout");
       ipcRenderer.removeAllListeners("mole:analyze:stderr");
+    },
+  },
+
+  // Repos command
+  repos: {
+    // Read-only inventory. `verify` contacts each remote, which is slow but is
+    // the only way to know a branch really is on the server.
+    scan: (options) => invokeWithLog("mole:repos:scan", `repos --json${options?.verify ? " --verify" : ""}`, options),
+    killScan: () => invokeWithLog("mole:repos:scan:kill", "repos:scan:kill"),
+    // Re-checks one repository against every archive precondition.
+    gate: (repoPath, waivers) => invokeWithLog("mole:repos:gate", `repos --gate ${repoPath}`, repoPath, waivers),
+    push: (paths, options) =>
+      invokeWithLog("mole:repos:push", `repos push${options?.dryRun ? " --dry-run" : ""}`, paths, options),
+    killPush: () => invokeWithLog("mole:repos:push:kill", "repos:push:kill"),
+    sync: (paths, options) =>
+      invokeWithLog("mole:repos:sync", `repos sync${options?.dryRun ? " --dry-run" : ""}`, paths, options),
+    killSync: () => invokeWithLog("mole:repos:sync:kill", "repos:sync:kill"),
+    archive: (paths, options) =>
+      invokeWithLog("mole:repos:archive", `repos archive${options?.dryRun ? " --dry-run" : ""}`, paths, options),
+    killArchive: () => invokeWithLog("mole:repos:archive:kill", "repos:archive:kill"),
+    getRoots: () => ipcRenderer.invoke("mole:repos:get-roots"),
+    getProfiles: () => ipcRenderer.invoke("mole:repos:profiles"),
+    setSyncPreferences: (preferences) => ipcRenderer.invoke("mole:repos:sync-preferences", preferences),
+    setRoots: (roots) => ipcRenderer.invoke("mole:repos:set-roots", roots),
+    chooseRoot: () => ipcRenderer.invoke("mole:repos:choose-root"),
+
+    onScanStdout: (callback) => {
+      onStreamWithLog("mole:repos:scan:stdout", callback);
+    },
+    onPushStdout: (callback) => {
+      onStreamWithLog("mole:repos:push:stdout", callback);
+    },
+    onPushStderr: (callback) => {
+      onStreamWithLog("mole:repos:push:stderr", callback);
+    },
+    onArchiveStdout: (callback) => {
+      onStreamWithLog("mole:repos:archive:stdout", callback);
+    },
+    onArchiveStderr: (callback) => {
+      onStreamWithLog("mole:repos:archive:stderr", callback);
+    },
+    onSyncStdout: (callback) => {
+      onStreamWithLog("mole:repos:sync:stdout", callback);
+    },
+    onSyncStderr: (callback) => {
+      onStreamWithLog("mole:repos:sync:stderr", callback);
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners("mole:repos:scan:stdout");
+      ipcRenderer.removeAllListeners("mole:repos:push:stdout");
+      ipcRenderer.removeAllListeners("mole:repos:push:stderr");
+      ipcRenderer.removeAllListeners("mole:repos:archive:stdout");
+      ipcRenderer.removeAllListeners("mole:repos:archive:stderr");
+      ipcRenderer.removeAllListeners("mole:repos:sync:stdout");
+      ipcRenderer.removeAllListeners("mole:repos:sync:stderr");
     },
   },
 

@@ -23,6 +23,12 @@ export const FEATURE_ACCENTS: Record<AccentPageId, FeatureAccent> = {
     rgb: '41,115,253',
     glow: 'rgba(41,115,253,0.24)',
   },
+  automations: {
+    accent: '#f59e0b',
+    accentHover: '#d97706',
+    rgb: '245,158,11',
+    glow: 'rgba(245,158,11,0.24)',
+  },
   optimize: {
     accent: '#8c3ffc',
     accentHover: '#7730e5',
@@ -41,17 +47,26 @@ export const FEATURE_ACCENTS: Record<AccentPageId, FeatureAccent> = {
     rgb: '253,45,134',
     glow: 'rgba(253,45,134,0.24)',
   },
+  repos: {
+    accent: '#0ea5e9',
+    accentHover: '#0284c7',
+    rgb: '14,165,233',
+    glow: 'rgba(14,165,233,0.24)',
+  },
 };
 
 export const FEATURE_ACCENTS_BY_ICON: Record<string, FeatureAccent> = {
   Activity: FEATURE_ACCENTS.mymac,
   Sparkles: FEATURE_ACCENTS.clean,
   Trash2: FEATURE_ACCENTS.clean,
+  CalendarClock: FEATURE_ACCENTS.automations,
   Gauge: FEATURE_ACCENTS.optimize,
   Zap: FEATURE_ACCENTS.optimize,
   PackageX: FEATURE_ACCENTS.uninstall,
   Database: FEATURE_ACCENTS.analyze,
   PieChart: FEATURE_ACCENTS.analyze,
+  GitBranch: FEATURE_ACCENTS.repos,
+  Cloud: FEATURE_ACCENTS.repos,
 };
 
 export function featureAccentVars(pageId: AccentPageId): CSSProperties {

@@ -55,6 +55,7 @@ await copyRuntimeFile("bin/purge.sh");
 await copyRuntimeFile("bin/installer.sh");
 await copyRuntimeFile("bin/touchid.sh");
 await copyRuntimeFile("bin/completion.sh");
+await copyRuntimeFile("bin/repos.sh");
 
 // Copy lib directories
 await copyRuntimeFile("lib/core");
@@ -64,10 +65,12 @@ await copyRuntimeFile("lib/uninstall");
 await copyRuntimeFile("lib/manage");
 await copyRuntimeFile("lib/optimize");
 await copyRuntimeFile("lib/check");
+await copyRuntimeFile("lib/repos");
 
 // Build Go binaries
 await run("go", ["build", "-o", path.join(runtimeDir, "bin", "status-go"), "./cmd/status"], repoRoot);
 await run("go", ["build", "-o", path.join(runtimeDir, "bin", "analyze-go"), "./cmd/analyze"], repoRoot);
+await run("go", ["build", "-o", path.join(runtimeDir, "bin", "repos-go"), "./cmd/repos"], repoRoot);
 
 // Set executable permissions
 await chmod(path.join(runtimeDir, "mole"), 0o755);
@@ -80,5 +83,7 @@ await chmod(path.join(runtimeDir, "bin", "purge.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "installer.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "touchid.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "completion.sh"), 0o755);
+await chmod(path.join(runtimeDir, "bin", "repos.sh"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "status-go"), 0o755);
 await chmod(path.join(runtimeDir, "bin", "analyze-go"), 0o755);
+await chmod(path.join(runtimeDir, "bin", "repos-go"), 0o755);

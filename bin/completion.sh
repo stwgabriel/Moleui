@@ -15,6 +15,7 @@ clean_option_words="--dry-run -n --external --whitelist --debug --help -h"
 analyze_option_words="--json --help -h"
 history_option_words="--json --limit --help -h"
 purge_option_words="--paths --dry-run -n --include-empty --debug --help -h"
+repos_option_words="push archive plan --json --verify --fetch --cold-days --filter --dry-run --yes --vault --allow-warm --help -h"
 
 emit_zsh_subcommands() {
     for entry in "${MOLE_COMMANDS[@]}"; do
@@ -47,6 +48,15 @@ emit_fish_completions() {
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l include-empty -d "Show zero-size project artifact directories"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l debug -d "Show detailed logs"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l help -s h -d "Show help"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -a push -d "Push unpushed branches and tags"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -a archive -d "Move fully pushed idle repos to the Trash"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -a plan -d "Print a proposed folder layout"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -l verify -d "Confirm every ref against its remote"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -l json -d "Output the report as JSON"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -l dry-run -s n -d "Preview without pushing or archiving"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -l vault -d "Copy local-only files out before archiving"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -l cold-days -r -d "Idle days before a repo counts as cold"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from repos repo" -l help -s h -d "Show help"\n' "$cmd"
     printf '\n'
     printf 'complete -f -c %s -n "not __fish_mole_no_subcommand" -a bash -d "generate bash completion" -n "__fish_see_subcommand_path completion"\n' "$cmd"
     printf 'complete -f -c %s -n "not __fish_mole_no_subcommand" -a zsh -d "generate zsh completion" -n "__fish_see_subcommand_path completion"\n' "$cmd"
@@ -344,6 +354,9 @@ _mole_completions()
                 ;;
             purge)
                 COMPREPLY=( \$(compgen -W "$purge_option_words" -- "\$cur_word") )
+                ;;
+            repos|repo)
+                COMPREPLY=( \$(compgen -W "$repos_option_words" -- "\$cur_word") )
                 ;;
             completion)
                 COMPREPLY=( \$(compgen -W "bash zsh fish" -- "\$cur_word") )

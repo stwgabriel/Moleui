@@ -71,9 +71,10 @@ bun run dev
 ```
 
 This will:
+
 1. Prepare the Mole runtime
-2. Start Vite dev server (port 5173)
-3. Launch Electron app
+2. Start the Vite dev server on port 30736
+3. Launch the Electron app
 
 ### Build for Production
 
@@ -86,10 +87,17 @@ bun run dist:arm64   # Apple Silicon
 bun run dist:amd64   # Intel
 ```
 
-These builds are **ad-hoc signed, not notarized** (`mac.identity: null`,
-`mac.notarize: false` in `package.json`), so they need **no paid Apple Developer
+These local builds are **ad-hoc signed and not notarized**. The `dist` scripts
+disable certificate discovery and the after-pack hook applies a complete ad-hoc
+signature, so they need **no paid Apple Developer
 Program membership**. The trade-off is that macOS Gatekeeper blocks them on first
 launch — see "Installing an unsigned build" below.
+
+Release builds use the `dist:signed:*` scripts with the CI Developer ID and
+notarization credentials. They also emit architecture-specific updater metadata.
+Installed release builds check GitHub Releases automatically, download a matching
+update in the background, and expose **Restart to update** in Settings. Local
+ad-hoc builds cannot auto-update because macOS requires a stable signing identity.
 
 ### Installing an unsigned build (for testers)
 
@@ -104,11 +112,11 @@ xattr -dr com.apple.quarantine /Applications/Moleui.app
 Then open it normally. (Alternative: try to open it once, then go to
 **System Settings → Privacy & Security** and click **Open Anyway**.)
 
-This only affects builds that were *downloaded* — the quarantine flag isn't set
+This only affects builds that were *downloaded*; the quarantine flag isn't set
 on a local copy. Put the one-liner above in your release notes so testers aren't
 stuck. With a paid Apple Developer account you can avoid this entirely: set a
-Developer ID identity, flip `mac.notarize` back to `true`, and build the signed
-target (`bun run dist:signed:arm64`) so Gatekeeper accepts the app with no prompt.
+Developer ID identity and build the signed target (`bun run dist:signed:arm64`)
+so Gatekeeper accepts the app with no prompt.
 
 ## Component Architecture
 

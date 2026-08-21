@@ -427,4 +427,99 @@ describe('UninstallPage', () => {
       vi.useRealTimers();
     }
   });
+  // The confirmation stage is the last screen before files are removed, so the two
+  // ways it can lie are worth pinning: a screen that can never be acted on, and a
+  // destructive button that is one click from doing the work.
+  describe('confirmation stage', () => {
+    const APPS = [
+      { name: 'Figma', bundle_id: 'com.figma.Desktop', source: 'App Store', uninstall_name: 'Figma', path: '/Applications/Figma.app', size: '1.4 GB' },
+      { name: 'Docker', bundle_id: 'com.docker.docker', source: 'Homebrew', uninstall_name: 'Docker', path: '/Applications/Docker.app', size: '2.1 GB' },
+    ];
+
+    function seedConfirmation(dryRunOutput: string[]) {
+      localStorage.setItem('mole-uninstall-stage', JSON.stringify('confirmation'));
+      localStorage.setItem('mole-uninstall-apps', JSON.stringify(APPS));
+      localStorage.setItem('mole-uninstall-selected-apps', JSON.stringify([0, 1]));
+      localStorage.setItem('mole-uninstall-dry-run-output', JSON.stringify(dryRunOutput));
+    }
+
+    const GOOD_OUTPUT = [
+      '✓ Figma, 1.4 GB',
+      '✓ ~/Library/Caches/com.figma.Desktop',
+      '✓ Docker, 2.1 GB',
+      '✓ ~/Library/Containers/com.docker.docker',
+      '→ DRY RUN - Would remove 2 apps, 3.5 GB',
+    ];
+
+    it('recovers a confirmation restored mid-analysis instead of stalling forever', async () => {
+      // `stage` and `dryRunOutput` both persist. Reloading during the dry run used
+      // to restore a screen with partial output, no interval running, and a
+      // permanently disabled primary button.
+      seedConfirmation(['✓ Figma, 1.4 GB']);
+      vi.mocked(window.moleDesktop.uninstall!.dryRun).mockResolvedValue({
+        ok: true,
+        command: 'uninstall --dry-run',
+        exitCode: 0,
+        stdout: GOOD_OUTPUT.join('\n'),
+        stderr: '',
+      });
+
+      render(<UninstallPage />);
+
+      await waitFor(() => expect(window.moleDesktop.uninstall!.dryRun).toHaveBeenCalledTimes(1));
+      expect(window.moleDesktop.uninstall!.dryRun).toHaveBeenCalledWith(['Figma', 'Docker']);
+    });
+
+    it('says so and stays disabled when the dry run lists nothing', async () => {
+      seedConfirmation([]);
+      vi.mocked(window.moleDesktop.uninstall!.dryRun).mockResolvedValue({
+        ok: true,
+        command: 'uninstall --dry-run',
+        exitCode: 0,
+        stdout: 'nothing the parser recognises',
+        stderr: '',
+      });
+
+      render(<UninstallPage />);
+
+      // The sentence appears twice on purpose: once on screen, once in the
+      // surface's status region so it is announced.
+      await waitFor(() => expect(screen.getByText(/Go back and try again/i)).toBeInTheDocument());
+      expect(screen.getByRole('status')).toHaveTextContent(/Mole could not list the files/i);
+      expect(screen.getByRole('button', { name: /Uninstall 2 apps/i })).toBeDisabled();
+    });
+
+    it('counts apps from the selection, which is the set the removal is sent', async () => {
+      seedConfirmation(GOOD_OUTPUT);
+      render(<UninstallPage />);
+
+      await waitFor(() => expect(screen.getByText('2 apps')).toBeInTheDocument());
+      // Files come from the dry run, and are labelled as what was listed.
+      expect(screen.getByText(/2 files listed/i)).toBeInTheDocument();
+    });
+
+    it('warns that a Homebrew app is not recoverable from the Trash', async () => {
+      seedConfirmation(GOOD_OUTPUT);
+      render(<UninstallPage />);
+
+      await waitFor(() =>
+        expect(screen.getByText(/Homebrew removes it permanently/i)).toBeInTheDocument()
+      );
+    });
+
+    it('still requires two steps when the confirmation dialog was dismissed for good', async () => {
+      // With the dialog suppressed, the destructive button was previously one click
+      // from removing files, with no way to bring the dialog back.
+      localStorage.setItem('mole-uninstall-skip-final-confirmation', JSON.stringify(true));
+      seedConfirmation(GOOD_OUTPUT);
+      render(<UninstallPage />);
+
+      const primary = await screen.findByRole('button', { name: /Uninstall 2 apps/i });
+      fireEvent.click(primary);
+
+      expect(window.moleDesktop.uninstall!.execute).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: /Yes, remove them now/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Ask me again next time/i })).toBeInTheDocument();
+    });
+  });
 });

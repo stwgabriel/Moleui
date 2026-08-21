@@ -1,5 +1,13 @@
 # Desktop App Changelog
 
+## Unreleased
+
+### Added
+- Added signed in-app updates with automatic checks, download progress, and restart-to-install controls in Settings.
+
+### Changed
+- Release builds now publish separate updater manifests for Apple Silicon and Intel artifacts.
+
 ## [0.11.0] - 2026-05-31
 
 ### Added

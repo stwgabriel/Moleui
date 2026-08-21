@@ -11,6 +11,10 @@ Desktop-first chapter: Moleui becomes primarily a macOS desktop application, wit
 - Animated sign-in: the brand logo rises from the loading state into the header as the form opens, and the email, password, and two-factor steps slide between each other.
 - My Mac shows a skeleton of its dashboard while metrics load, mirroring the real layout with shimmering placeholders for values and charts so it fills in seamlessly.
 - Smooth crossfade between each feature's start screen and its working view on Clean, Optimize, Uninstall, and Analyze.
+- Repos: a new page and `mo repos` command that inventory every git repository under chosen folders and report whether each one's work exists anywhere but this machine. Folders with no git history, repositories with no remote, and remotes that cannot be reached while signed in are called out first, because none of them can be cleaned up safely.
+- `mo repos push` sends unpushed branches and tags. It never creates commits, so a dirty working tree is reported for you to resolve rather than committed on your behalf, and repositories you cannot push to (a clone of someone else's project, or two local copies sharing one remote) are listed as skipped instead of failing.
+- `mo repos archive` moves fully pushed, idle repositories to the Trash. Every branch and tag is matched against the remote by SHA immediately before each move, so a repository is never removed on the strength of a cached scan, and gitignored files that no remote holds (env files, keys, local databases) can be copied to `~/.mole/repo-vault` first.
+- `mo repos plan` prints a proposed folder layout and moves nothing, since relocating a repository can break linked worktrees and editor workspaces.
 
 ### Changed
 - Repositioned the project around the Electron desktop application (authentication, account and settings, subscription paywall, and live system metrics), moving battery and metrics sampling into the Electron main process for stability.

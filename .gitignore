@@ -90,11 +90,15 @@ mole-analyze
 # Go binaries
 bin/analyze-go
 bin/status-go
+bin/repos-go
 bin/analyze-darwin-*
 bin/status-darwin-*
+bin/repos-darwin-*
 
 # Test artifacts
 tests/tmp-*/
+.playwright-cli/
+.tmp-desktop-dev-status.txt
 tests/*.tmp
 tests/*.log
 

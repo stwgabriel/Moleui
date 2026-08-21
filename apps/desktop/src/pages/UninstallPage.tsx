@@ -3,11 +3,13 @@ import { forceCollide, forceSimulation, forceX, forceY } from 'd3-force';
 import type { SimulationNodeDatum } from 'd3-force';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  CheckCircle, AlertTriangle, Loader, ArrowLeft, X, Trash2,
-  Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, RefreshCw
+  CheckCircle, AlertTriangle, Loader, ArrowLeft, X, Trash2, ChevronDown,
+  Package, Folder, Info, AlertCircle, Check, Search, ArrowUpDown, RefreshCw,
+  ShieldAlert, LockKeyhole
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Sheet } from '@/components/ui/Sheet';
 import { StartScreen } from '@/components/common/StartScreen';
 import { StageTransition } from '@/components/common/StageTransition';
 import { featureAccentVars } from '@/lib/featureAccents';
@@ -64,6 +66,83 @@ const LIST_CARD = `relative overflow-hidden rounded-[1.5rem] p-4 ${SOFT_CARD}`;
 const APP_SELECTION_CARD = `relative overflow-hidden rounded-[1.25rem] p-3 ${SOFT_CARD}`;
 const PILL_INPUT = 'rounded-full border border-white/60 dark:border-white/10 bg-white/45 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 shadow-inner shadow-white/40 dark:shadow-white/10 backdrop-blur-xl placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[rgba(var(--page-accent-rgb),0.35)] focus:border-[rgba(var(--page-accent-rgb),0.35)] transition-all';
 const MUTED_PILL = 'rounded-full border border-white/60 dark:border-white/10 bg-white/35 dark:bg-slate-950/35 shadow-inner shadow-white/30 dark:shadow-white/10 backdrop-blur-xl';
+const GLASS_BAR = 'rounded-[1.5rem] border border-white/55 dark:border-white/10 bg-white/45 dark:bg-slate-900/55 shadow-[0_18px_44px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.6)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-2xl';
+
+interface DryRunApp {
+  name: string;
+  size: string;
+  files: Array<{ path: string; isSystem: boolean }>;
+}
+
+// One app's files. The extra rows used to be a dead "+ N more files" line; they are
+// a disclosure now, which is the only reason the count was worth printing.
+//
+// Amber appears here and nowhere else on this screen, so it means exactly one thing:
+// this path is a system path.
+function ManifestCard({ app, icon, index }: { app: DryRunApp; icon?: string; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? app.files : app.files.slice(0, 5);
+  const hidden = app.files.length - visible.length;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: EASE, delay: index > 5 ? 0 : index * 0.045 }}
+    >
+      <Card className={LIST_CARD}>
+        <div className="mb-3 flex items-center gap-3">
+          <AppIcon icon={icon} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-bold text-slate-950 dark:text-slate-100">{app.name}</div>
+            <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{app.size}</div>
+          </div>
+          <CheckCircle className="h-5 w-5 shrink-0 text-accent-success" aria-hidden="true" />
+        </div>
+
+        {app.files.length > 0 && (
+          <div className="ml-11 space-y-1">
+            {visible.map((file, fileIndex) => (
+              <div
+                key={`${file.path}-${fileIndex}`}
+                className={`flex items-center gap-2 text-sm ${
+                  file.isSystem ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                {file.isSystem ? (
+                  <>
+                    <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span className="select-text truncate font-mono text-xs">{file.path}</span>
+                    <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-bold">System</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span className="select-text truncate font-mono text-xs">
+                      {file.path.replace(/^\/Users\/[^/]+/, '~')}
+                    </span>
+                  </>
+                )}
+              </div>
+            ))}
+
+            {(hidden > 0 || expanded) && (
+              <button
+                type="button"
+                onClick={() => setExpanded(previous => !previous)}
+                aria-expanded={expanded}
+                className="mt-1 inline-flex items-center gap-1.5 rounded-full text-xs font-bold text-[var(--page-accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--page-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
+              >
+                {expanded ? 'Show fewer files' : `Show ${hidden} more ${hidden === 1 ? 'file' : 'files'}`}
+                <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        )}
+      </Card>
+    </motion.div>
+  );
+}
 
 function getScrollShadows(element: HTMLDivElement | null) {
   if (!element) return { top: false, bottom: false };
@@ -664,14 +743,22 @@ export function UninstallPage() {
   const [executeOutput, setExecuteOutput] = usePersistentState<string[]>('mole-uninstall-execute-output', []);
   const [error, setError] = usePersistentState<{ title: string; message: string } | null>('mole-uninstall-error', null);
   const [result, setResult] = usePersistentState<CommandResult | null>('mole-uninstall-result', null);
-  const [showAllApps, setShowAllApps] = usePersistentState('mole-uninstall-show-all-apps', false);
-  const [analysisProgress, setAnalysisProgress] = usePersistentState('mole-uninstall-analysis-progress', 0);
+  // Deliberately not persisted. The value is a random walk used to keep the bar
+  // moving, not a measurement, and persisting it alongside `stage` produced a
+  // confirmation screen that restored frozen at some arbitrary percentage with no
+  // interval running and no way forward.
+  const [analysisProgress, setAnalysisProgress] = useState(0);
   const [searchQuery, setSearchQuery] = usePersistentState('mole-uninstall-search-query', '');
   const [sortBy, setSortBy] = usePersistentState<'name' | 'size'>('mole-uninstall-sort-by', 'size');
   const [skipFinalConfirmation, setSkipFinalConfirmation] = usePersistentState('mole-uninstall-skip-final-confirmation', false);
   const [isRefreshingApps, setIsRefreshingApps] = useState(false);
+  // `isAnalyzing` was derived purely from "did the output parse", which cannot tell
+  // "still running" apart from "finished and produced nothing". A dry run that
+  // returns no summary line left the primary button disabled forever.
+  const [dryRunFailed, setDryRunFailed] = useState(false);
   const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
   const [dontShowFinalConfirmationAgain, setDontShowFinalConfirmationAgain] = useState(false);
+  const [armedWithoutDialog, setArmedWithoutDialog] = useState(false);
   const selectedApps = new Set(selectedAppIndexes);
 
   const dryRunListRef = useRef<HTMLDivElement>(null);
@@ -684,6 +771,10 @@ export function UninstallPage() {
   const settleAttemptsRef = useRef(0);
   const stageRef = useRef(stage);
   const didAutoRefreshRef = useRef(false);
+  // Set synchronously, before the await, so React's development double-invoke of
+  // mount effects cannot start two dry runs.
+  const dryRunInFlightRef = useRef(false);
+  const didRecoverDryRunRef = useRef(false);
   // Mirror live state so a deferred background refresh (settle timer or the
   // on-open auto-refresh) reads current apps/selection rather than the stale
   // closure of the render that scheduled it.
@@ -1002,9 +1093,28 @@ export function UninstallPage() {
         uninstall_name: app.uninstall_name,
         source: app.source,
       })));
-      if (iconLoadRunRef.current !== runId || !result.ok) return;
+      if (iconLoadRunRef.current !== runId) return;
 
-      setAppIcons(currentIcons => ({ ...currentIcons, ...result.icons }));
+      // Batch lookup is deliberately best effort. A failed bundle lookup must
+      // not make an icon permanently disappear, because the request set used to
+      // mark it as handled before the result returned. Retry only unresolved
+      // apps by their exact path, which also keeps the macOS icon bridge small.
+      const batchIcons = result?.ok ? result.icons : {};
+      const unresolved = appsToLoad.filter(app => !batchIcons[app.path]);
+      const fallbackIcons = await Promise.all(unresolved.map(async app => {
+        try {
+          const fallback = await window.moleDesktop.uninstall.getAppIcon(app.path);
+          return fallback.ok && fallback.icon ? { path: app.path, icon: fallback.icon } : null;
+        } catch {
+          return null;
+        }
+      }));
+      if (iconLoadRunRef.current !== runId) return;
+      const resolved = { ...batchIcons };
+      fallbackIcons.forEach(icon => {
+        if (icon) resolved[icon.path] = icon.icon;
+      });
+      setAppIcons(currentIcons => ({ ...currentIcons, ...resolved }));
     } catch {
       if (iconLoadRunRef.current !== runId) return;
 
@@ -1049,14 +1159,14 @@ export function UninstallPage() {
     setSelectedAppIndexes([]);
   };
 
-  const proceedToConfirmation = async () => {
-    if (selectedApps.size === 0) return;
-
-    setStage('confirmation');
+  const runDryRun = async (appNames: string[]) => {
+    if (dryRunInFlightRef.current) return;
+    dryRunInFlightRef.current = true;
+    setDryRunFailed(false);
     setDryRunOutput([]);
     setAnalysisProgress(0);
 
-    const selectedAppNames = Array.from(selectedApps).map(i => apps[i].uninstall_name);
+    const selectedAppNames = appNames;
 
     console.log('[UninstallPage] Starting dry-run for:', selectedAppNames);
 
@@ -1084,6 +1194,14 @@ export function UninstallPage() {
           message: result.stderr || 'Unknown error occurred'
         });
         setStage('error');
+        return;
+      }
+
+      // The command succeeded but produced nothing the parser recognised. That is
+      // not an error stage, it is a screen that cannot be acted on, so say so and
+      // leave the primary action disabled.
+      if (!parseDryRunOutput(result.stdout ? result.stdout.split('\n') : []).summary) {
+        setDryRunFailed(true);
       }
     } catch (error: any) {
       console.error('[UninstallPage] Dry-run error:', error);
@@ -1093,8 +1211,36 @@ export function UninstallPage() {
         message: error.message
       });
       setStage('error');
+    } finally {
+      dryRunInFlightRef.current = false;
     }
   };
+
+  const proceedToConfirmation = async () => {
+    if (selectedApps.size === 0) return;
+    setStage('confirmation');
+    await runDryRun(Array.from(selectedApps).map(i => apps[i].uninstall_name));
+  };
+
+  // `stage` and `dryRunOutput` both persist, so reloading mid-analysis restores a
+  // confirmation screen with output, no summary, and nothing running. Re-issue the
+  // dry run once. This is safe against index drift because the on-open re-list and
+  // the size-settle re-list are both gated to the selection stage, so `apps` and
+  // the selection cannot be remapped underneath it while this stage is showing.
+  useEffect(() => {
+    if (stage !== 'confirmation' || didRecoverDryRunRef.current) return;
+    didRecoverDryRunRef.current = true;
+    if (dryRunInFlightRef.current) return;
+    if (parseDryRunOutput(dryRunOutput).summary) return;
+    const names = selectedAppIndexesRef.current.map(index => appsRef.current[index]?.uninstall_name).filter(Boolean);
+    if (names.length === 0) {
+      setStage('selection');
+      return;
+    }
+    void runDryRun(names as string[]);
+    // Runs once per mount; the refs carry current values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const executeUninstall = async () => {
     if (!requireSubscription('Uninstall')) return;
@@ -1139,6 +1285,7 @@ export function UninstallPage() {
   };
 
   const cancelConfirmation = () => {
+    setArmedWithoutDialog(false);
     setStage('selection');
     setDryRunOutput([]);
     setAnalysisProgress(0);
@@ -1158,8 +1305,8 @@ export function UninstallPage() {
     setExecuteOutput([]);
     setError(null);
     setResult(null);
-    setShowAllApps(false);
     setShowFinalConfirmation(false);
+    setArmedWithoutDialog(false);
     setDontShowFinalConfirmationAgain(false);
     setAnalysisProgress(0);
     setSearchQuery('');
@@ -1621,285 +1768,338 @@ export function UninstallPage() {
 
   if (stage === 'confirmation') {
     const parsedDryRun = parseDryRunOutput(dryRunOutput);
-    const isAnalyzing = dryRunOutput.length === 0 || !parsedDryRun.summary;
+    const isAnalyzing = !dryRunFailed && (dryRunOutput.length === 0 || !parsedDryRun.summary);
 
     const selectedAppsArray = sortAppIndexesBySize(Array.from(selectedApps));
-    const hasMoreApps = selectedAppsArray.length > 3;
-    const displayedApps = showAllApps ? selectedAppsArray : selectedAppsArray.slice(0, 3);
+    const selectedAppRecords = selectedAppsArray
+      .map(index => apps[index])
+      .filter((app): app is App => Boolean(app));
+    const brewCount = selectedAppRecords.filter(app => app.source === 'Homebrew').length;
+
+    // The app count comes from the selection, which is the same set the removal is
+    // sent, so the header and the button can never disagree. Only the file count is
+    // read from the dry run, and it counts every file it listed rather than the five
+    // per app the manifest renders.
+    const listedFileCount = parsedDryRun.apps.reduce((total, app) => total + app.files.length, 0);
+    const unlistedApps = parsedDryRun.summary
+      ? selectedAppRecords.filter(app => !parsedDryRun.apps.some(parsed => parsed.name === app.name)).length
+      : 0;
 
     return (
       <div className={UNINSTALL_SHELL} style={uninstallAccentStyle}>
         <div className={UNINSTALL_ACCENT_BG} />
-        <div className="relative flex h-full min-h-0 flex-col gap-2">
-          <motion.div
-            className="px-4 pb-4 pt-3"
+
+        <p role="status" aria-live="polite" className="sr-only">
+          {isAnalyzing
+            ? 'Listing files to remove'
+            : dryRunFailed
+              ? 'Mole could not list the files'
+              : `Found ${listedFileCount} files across ${selectedApps.size} apps`}
+        </p>
+
+        <div className="relative flex h-full min-h-0 flex-col gap-3">
+          <motion.header
+            className="flex flex-wrap items-start justify-between gap-4 px-4 pt-3"
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: EASE }}
           >
-            <div className="flex items-start gap-4 mb-4">
-              <div className="p-3 rounded-2xl bg-amber-100/40 dark:bg-amber-500/15">
-                <AlertTriangle className="w-6 h-6 text-amber-500" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 dark:text-slate-100 mb-1">
+            <div className="flex min-w-0 items-start gap-3.5">
+              <span
+                className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[rgba(var(--page-accent-rgb),0.14)] text-[var(--page-accent)]"
+                aria-hidden="true"
+              >
+                <ShieldAlert className="h-6 w-6" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-3xl font-black tracking-[-0.045em] text-slate-950 dark:text-slate-100">
                   Confirm Uninstallation
                 </h2>
-                <p className="font-medium text-slate-600 dark:text-slate-300 mb-4">
-                  The following applications and their associated files will be removed:
+                <p className="mt-1.5 max-w-2xl font-medium leading-relaxed text-slate-600 dark:text-slate-300">
+                  Review everything Mole found before anything is removed. Nothing is removed until you confirm.
                 </p>
-
-                {/* Tags list for selected apps */}
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {displayedApps.map((index, chipIndex) => {
-                      const app = apps[index];
-                      return (
-                        <motion.div
-                          key={index}
-                          initial={{ opacity: 0, y: 8, scale: 0.94 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          transition={{ duration: 0.35, ease: EASE, delay: Math.min(0.08 + chipIndex * 0.045, 0.45) }}
-                          className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-white/60 dark:border-white/10 bg-white/40 dark:bg-slate-950/35 shadow-inner shadow-white/30 dark:shadow-white/10 backdrop-blur-xl transition-all hover:bg-white/55 dark:hover:bg-white/10"
-                        >
-                          <AppIcon icon={appIcons[app.path]} size="sm" />
-                          <span className="font-semibold text-slate-950 dark:text-slate-100 text-sm">{app.name}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500">•</span>
-                          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{app.size}</span>
-                          {app.source === 'Homebrew' && (
-                            <>
-                              <span className="text-xs text-slate-400 dark:text-slate-500">•</span>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 dark:text-red-400 font-semibold">
-                                Brew
-                              </span>
-                            </>
-                          )}
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-
-                  {hasMoreApps && (
-                    <button
-                      onClick={() => setShowAllApps(!showAllApps)}
-                      className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-semibold text-[var(--page-accent)] hover:bg-[rgba(var(--page-accent-rgb),0.10)] transition-colors"
-                    >
-                      {showAllApps ? (
-                        <>
-                          Show less
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                          </svg>
-                        </>
-                      ) : (
-                        <>
-                          Show {selectedAppsArray.length - 3} more
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
               </div>
             </div>
-          </motion.div>
 
-          <div className="flex-1 rounded-[1.75rem] p-2 overflow-y-hidden">
-            <motion.div
-              className="mb-4"
+            <Button variant="glass" icon={ArrowLeft} onClick={cancelConfirmation} className="shrink-0">
+              Back to selection
+            </Button>
+          </motion.header>
+
+          <div className="grid min-h-0 flex-1 gap-3 px-2 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(22rem,1.2fr)]">
+            <motion.section
+              className={`flex min-h-0 flex-col p-5 ${SOFT_CARD}`}
+              aria-labelledby="uninstall-ledger-heading"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: EASE, delay: 0.1 }}
+              transition={{ duration: 0.4, ease: EASE, delay: 0.06 }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-slate-950 dark:text-slate-100">
-                  {isAnalyzing ? 'Analyzing files...' : 'Files to be removed'}
+              <h3 id="uninstall-ledger-heading" className="sr-only">
+                What will be removed
+              </h3>
+
+              <div className="text-[clamp(2.2rem,4.2vw,3.2rem)] font-black leading-none tracking-[-0.05em] text-slate-950 dark:text-slate-100">
+                {selectedApps.size} {selectedApps.size === 1 ? 'app' : 'apps'}
+              </div>
+              {isAnalyzing ? (
+                <div className="mole-skeleton mt-2 h-4 w-24 rounded-full" aria-hidden="true" />
+              ) : (
+                <div className="mt-1.5 text-sm font-bold text-slate-600 dark:text-slate-300">
+                  {listedFileCount.toLocaleString()} {listedFileCount === 1 ? 'file' : 'files'} listed
+                </div>
+              )}
+
+              {/* The size is the shell's own figure, printed as it wrote it. A
+                  second total computed here from the inventory's display strings
+                  would disagree with it, and the inventory measures bundles only. */}
+              {parsedDryRun.summary && (
+                <p className="mt-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  {parsedDryRun.summary}
+                  <span className="text-slate-400 dark:text-slate-500"> Space is freed when you empty the Trash.</span>
+                </p>
+              )}
+              {dryRunFailed && (
+                <p className="mt-3 text-sm font-semibold text-amber-700 dark:text-amber-300">
+                  Mole could not list the files. Go back and try again.
+                </p>
+              )}
+              {unlistedApps > 0 && (
+                <p className="mt-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
+                  Mole could not list files for {unlistedApps} of these.
+                </p>
+              )}
+
+              <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+                <div className="flex flex-wrap gap-2">
+                  {selectedAppRecords.map((app, chipIndex) => (
+                    <motion.div
+                      key={app.path}
+                      initial={{ opacity: 0, y: 8, scale: 0.94 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.32, ease: EASE, delay: chipIndex > 5 ? 0 : chipIndex * 0.045 }}
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-2 ${MUTED_PILL}`}
+                    >
+                      <AppIcon icon={appIcons[app.path]} size="sm" />
+                      <span className="text-sm font-bold text-slate-950 dark:text-slate-100">{app.name}</span>
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{app.size}</span>
+                      {app.source === 'Homebrew' && (
+                        <span
+                          className="rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-bold text-red-500 dark:text-red-400"
+                          title="Removed by Homebrew, not moved to the Trash"
+                        >
+                          Brew
+                          <span className="sr-only">. Removed by Homebrew, not moved to the Trash.</span>
+                        </span>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-1.5 border-t border-white/55 pt-3 dark:border-white/10">
+                <p className="flex items-start gap-2 text-xs font-semibold leading-snug text-slate-500 dark:text-slate-400">
+                  <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  Mole moves app files to the Trash, so a mistake is recoverable. Saved settings are cleared outright
+                  and do not go to the Trash.
+                </p>
+                {brewCount > 0 && (
+                  <p className="pl-6 text-xs font-semibold leading-snug text-slate-500 dark:text-slate-400">
+                    {brewCount} of these {brewCount === 1 ? 'is a Homebrew app' : 'are Homebrew apps'}. Homebrew removes
+                    {brewCount === 1 ? ' it' : ' them'} permanently, including{' '}
+                    {brewCount === 1 ? 'its' : 'their'} settings, so {brewCount === 1 ? 'it' : 'those'} cannot be
+                    restored.
+                  </p>
+                )}
+              </div>
+            </motion.section>
+
+            <motion.section
+              className="flex min-h-0 flex-col"
+              aria-labelledby="uninstall-manifest-heading"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: EASE, delay: 0.12 }}
+            >
+              <div className="flex items-center justify-between gap-3 px-2 pb-2">
+                <h3
+                  id="uninstall-manifest-heading"
+                  className="text-[0.7rem] font-bold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500"
+                >
+                  Files to be removed
                 </h3>
                 {isAnalyzing && (
-                  <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                    <Loader className="w-4 h-4 animate-spin" />
-                    <span>Scanning...</span>
-                  </div>
+                  <span className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                    <Loader className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    Scanning
+                  </span>
                 )}
               </div>
 
               {isAnalyzing && (
-                <div className="space-y-2">
-                  <div className="h-2 bg-white/45 dark:bg-white/10 rounded-full overflow-hidden shadow-inner shadow-white/40 dark:shadow-white/10">
-                    <div
-                      className="h-full bg-gradient-to-r from-[rgba(var(--page-accent-rgb),0.70)] to-[var(--page-accent)] transition-all duration-300 ease-out"
-                      style={{ width: `${analysisProgress}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
-                    <span>Scanning application files and dependencies...</span>
-                    <span>{Math.round(analysisProgress)}%</span>
-                  </div>
+                <div
+                  role="progressbar"
+                  aria-label="Listing files to remove"
+                  aria-valuetext="Scanning"
+                  className="mx-2 mb-3 h-1.5 overflow-hidden rounded-full bg-white/45 dark:bg-white/10"
+                >
+                  {/* No percentage is shown, visibly or programmatically: the value
+                      moves on a timer rather than tracking real work, so a number
+                      would be a claim the page cannot support. */}
+                  <div
+                    aria-hidden="true"
+                    className="h-full rounded-full bg-gradient-to-r from-[rgba(var(--page-accent-rgb),0.70)] to-[var(--page-accent)] transition-all duration-300 ease-out"
+                    style={{ width: `${Math.max(8, analysisProgress)}%` }}
+                  />
                 </div>
               )}
-              {parsedDryRun.summary && (
-                <Card className={`${LIST_CARD} border-rose-200/60 dark:border-rose-500/25`}>
-                  <div className="flex items-center gap-3">
-                    <Info className="w-5 h-5 text-[var(--page-accent)]" />
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{parsedDryRun.summary}</span>
-                  </div>
-                </Card>
-              )}
-            </motion.div>
 
-            <div ref={dryRunListRef} className="space-y-4 max-h-full overflow-auto pb-[15rem]">
-              {parsedDryRun.apps.map((app, appIndex) => {
-                const selectedApp = getAppByName(app.name);
-                return (
-                  <motion.div
-                    key={appIndex}
-                    initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, ease: EASE }}
-                  >
-                  <Card className={LIST_CARD}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <AppIcon icon={selectedApp ? appIcons[selectedApp.path] : undefined} />
-                      <div className="flex-1">
-                        <div className="font-bold text-slate-950 dark:text-slate-100">{app.name}</div>
-                        <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{app.size}</div>
-                      </div>
-                      <CheckCircle className="w-5 h-5 text-accent-success" />
-                    </div>
-
-                    {app.files.length > 0 && (
-                      <div className="space-y-1 ml-11">
-                        {app.files.slice(0, 5).map((file, fileIndex) => (
-                          <div
-                            key={fileIndex}
-                            className={`text-sm flex items-center gap-2 ${file.isSystem ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'
-                              }`}
-                          >
-                            {file.isSystem ? (
-                              <>
-                                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                                <span className="font-mono text-xs truncate">{file.path}</span>
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 font-semibold">System</span>
-                              </>
-                            ) : (
-                              <>
-                                <Check className="w-3 h-3 flex-shrink-0" />
-                                <span className="font-mono text-xs truncate">
-                                  {file.path.replace(/^\/Users\/[^\/]+/, '~')}
-                                </span>
-                              </>
-                            )}
+              <div
+                ref={dryRunListRef}
+                aria-busy={isAnalyzing}
+                aria-live="off"
+                className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-2 pb-2 custom-scrollbar"
+              >
+                {isAnalyzing
+                  ? [0, 1, 2].map(index => (
+                      <div key={index} className={`${LIST_CARD}`} aria-hidden="true">
+                        <div className="flex items-center gap-3">
+                          <div className="mole-skeleton h-10 w-10 rounded-xl" />
+                          <div className="flex-1 space-y-2">
+                            <div className="mole-skeleton h-3.5 w-40 rounded-full" />
+                            <div className="mole-skeleton h-3 w-24 rounded-full" />
                           </div>
-                        ))}
-                        {app.files.length > 5 && (
-                          <div className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-5">
-                            + {app.files.length - 5} more files
-                          </div>
-                        )}
+                        </div>
+                        <div className="mt-3 space-y-1.5 pl-13">
+                          <div className="mole-skeleton h-2.5 w-full rounded-full" />
+                          <div className="mole-skeleton h-2.5 w-4/5 rounded-full" />
+                          <div className="mole-skeleton h-2.5 w-2/3 rounded-full" />
+                        </div>
                       </div>
-                    )}
-                  </Card>
-                  </motion.div>
-                );
-              })}
-
-
-            </div>
+                    ))
+                  : parsedDryRun.apps.map((app, appIndex) => (
+                      <ManifestCard
+                        key={`${app.name}-${appIndex}`}
+                        app={app}
+                        icon={(() => {
+                          const record = getAppByName(app.name);
+                          return record ? appIcons[record.path] : undefined;
+                        })()}
+                        index={appIndex}
+                      />
+                    ))}
+              </div>
+            </motion.section>
           </div>
 
           <motion.div
-            className="mx-2 mb-2 flex items-center justify-between rounded-[1.5rem] border border-white/55 dark:border-white/10 bg-white/45 dark:bg-slate-900/55 px-4 py-3 shadow-[0_18px_44px_rgba(109,93,252,0.10),inset_0_1px_0_rgba(255,255,255,0.6)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-2xl"
+            className={`mx-2 mb-2 flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${GLASS_BAR}`}
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, ease: EASE, delay: 0.16 }}
           >
-            <Button variant="ghost" onClick={cancelConfirmation} className="gap-2 rounded-full px-4 text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400">
-              <X className="w-4 h-4" />
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={requestExecuteUninstall}
-              disabled={isAnalyzing}
-              className="gap-2 rounded-full bg-[var(--page-accent)] shadow-[0_18px_40px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]"
-            >
-              <Trash2 className="w-4 h-4" />
-              Uninstall {selectedApps.size} App{selectedApps.size > 1 ? 's' : ''}
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                onClick={cancelConfirmation}
+                className="gap-2 rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400"
+              >
+                <X className="h-4 w-4" />
+                Cancel
+              </Button>
+              {skipFinalConfirmation && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSkipFinalConfirmation(false);
+                    setArmedWithoutDialog(false);
+                  }}
+                  className="rounded-full px-3 py-1.5 text-xs font-bold text-slate-500 underline decoration-dotted underline-offset-4 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
+                >
+                  Ask me again next time
+                </button>
+              )}
+            </div>
+
+            {/* With the confirmation dialog dismissed for good, the destructive
+                action would otherwise be one click from permanent removal. It gets
+                the same two-step arm the repo archive uses. */}
+            {skipFinalConfirmation && armedWithoutDialog ? (
+              <div className="flex items-center gap-2">
+                <Button variant="glass" onClick={() => setArmedWithoutDialog(false)} className="rounded-full">
+                  Keep them
+                </Button>
+                <Button
+                  variant="glass-danger"
+                  onClick={confirmExecuteUninstall}
+                  disabled={isAnalyzing || dryRunFailed}
+                  className="gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Yes, remove {selectedApps.size === 1 ? 'it' : 'them'} now
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="glass-danger"
+                onClick={() => {
+                  if (skipFinalConfirmation) {
+                    setArmedWithoutDialog(true);
+                    return;
+                  }
+                  requestExecuteUninstall();
+                }}
+                disabled={isAnalyzing || dryRunFailed}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Uninstall {selectedApps.size} {selectedApps.size === 1 ? 'app' : 'apps'}
+              </Button>
+            )}
           </motion.div>
 
-          {showFinalConfirmation && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-              <motion.div
-                className="absolute inset-0 bg-slate-950/30 backdrop-blur-md"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.25, ease: EASE }}
-                onClick={() => setShowFinalConfirmation(false)}
-                aria-hidden="true"
+          <Sheet
+            open={showFinalConfirmation}
+            onClose={() => setShowFinalConfirmation(false)}
+            role="alertdialog"
+            title="Are you sure?"
+            description="This cannot be undone from inside Mole. The selected applications and their related files will be removed."
+            initialFocus="[data-confirm-cancel]"
+            footer={
+              <div className="flex items-center justify-end gap-3">
+                <Button
+                  variant="ghost"
+                  data-confirm-cancel
+                  onClick={() => setShowFinalConfirmation(false)}
+                  className="rounded-full px-4 text-slate-500 hover:bg-red-500/10 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400"
+                >
+                  Cancel
+                </Button>
+                <Button variant="glass-danger" onClick={confirmExecuteUninstall}>
+                  Uninstall
+                </Button>
+              </div>
+            }
+          >
+            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-white/60 bg-white/45 px-4 py-3 shadow-inner shadow-white/30 dark:border-white/10 dark:bg-slate-900/50 dark:shadow-white/10">
+              <input
+                type="checkbox"
+                checked={dontShowFinalConfirmationAgain}
+                onChange={(event) => setDontShowFinalConfirmationAgain(event.target.checked)}
+                className="sr-only"
               />
-              <motion.div
-                role="alertdialog"
-                aria-modal="true"
-                aria-label="Confirm uninstall"
-                className="relative w-full max-w-lg"
-                initial={{ opacity: 0, y: 18, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.35, ease: EASE }}
+              <span
+                aria-hidden="true"
+                className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
+                  dontShowFinalConfirmationAgain
+                    ? 'border-[var(--page-accent)] bg-[var(--page-accent)] text-white'
+                    : 'border-slate-300 bg-white/70 text-transparent dark:border-slate-600 dark:bg-slate-900/70'
+                }`}
               >
-              <Card className="w-full rounded-[2rem] border border-white/60 dark:border-white/10 bg-white/90 dark:bg-slate-900/90 p-6 shadow-[0_36px_120px_rgba(15,23,42,0.32),0_16px_48px_rgba(244,63,94,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)] dark:shadow-[0_36px_120px_rgba(0,0,0,0.6),0_16px_48px_rgba(244,63,94,0.18),inset_0_1px_1px_rgba(255,255,255,0.08)]">
-                <div className="flex items-start gap-4">
-                  <div className="rounded-2xl border border-rose-200/70 dark:border-rose-500/25 bg-rose-100/40 dark:bg-rose-500/15 p-3 shadow-[0_14px_32px_rgba(244,63,94,0.16)]">
-                    <AlertTriangle className="h-6 w-6 text-[var(--page-accent)]" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-2xl font-black tracking-[-0.04em] text-slate-950 dark:text-slate-100">
-                      Are you sure?
-                    </h3>
-                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600 dark:text-slate-300">
-                      Do you really want to do this? This action is irreversible and the selected applications and related files will be removed.
-                    </p>
-                  </div>
-                </div>
-
-                <label className="mt-6 flex cursor-pointer items-center gap-3 rounded-2xl border border-white/60 dark:border-white/10 bg-white/45 dark:bg-slate-900/50 px-4 py-3 shadow-inner shadow-white/30 dark:shadow-white/10">
-                  <input
-                    type="checkbox"
-                    checked={dontShowFinalConfirmationAgain}
-                    onChange={(event) => setDontShowFinalConfirmationAgain(event.target.checked)}
-                    className="sr-only"
-                  />
-                  <span className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${dontShowFinalConfirmationAgain
-                      ? 'border-[var(--page-accent)] bg-[var(--page-accent)] text-white'
-                      : 'border-slate-300 dark:border-slate-600 bg-white/70 dark:bg-slate-900/70 text-transparent'
-                    }`}>
-                    <Check className="h-3.5 w-3.5" />
-                  </span>
-                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Don't show again</span>
-                </label>
-
-                <div className="mt-6 flex items-center justify-end gap-3">
-                  <Button
-                    variant="ghost"
-                    onClick={() => setShowFinalConfirmation(false)}
-                    className="rounded-full px-4 text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="danger"
-                    onClick={confirmExecuteUninstall}
-                    className="rounded-full bg-[var(--page-accent)] shadow-[0_18px_40px_var(--page-accent-glow)] hover:bg-[var(--page-accent-hover)]"
-                  >
-                    Uninstall
-                  </Button>
-                </div>
-              </Card>
-              </motion.div>
-            </div>
-          )}
+                <Check className="h-3.5 w-3.5" />
+              </span>
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Don't show again</span>
+            </label>
+          </Sheet>
         </div>
       </div>
     );

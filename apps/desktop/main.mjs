@@ -1,5 +1,6 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, screen, session, shell } from "electron";
-import { execFile, execFileSync, spawn } from "node:child_process";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerMonitor, screen, session, shell } from "electron";
+import electronUpdater from "electron-updater";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
@@ -13,6 +14,7 @@ const isDev = !app.isPackaged;
 // default Vite port (30736) is taken by another project. Defaults to 30736.
 const DEV_SERVER_URL = process.env.MOLE_DEV_URL || "http://localhost:30736";
 const appIconPath = path.join(__dirname, "public", "assets", "base", "molui-purple.png");
+const { autoUpdater } = electronUpdater;
 
 // Packaged builds serve the renderer over a loopback HTTP origin
 // (http://localhost:<port>) instead of file:// or a custom app:// scheme.
@@ -162,6 +164,7 @@ function startRendererServer() {
 const MY_MAC_METRICS_FILE = "my-mac-metrics.json";
 const THEME_PREFS_FILE = "theme-prefs.json";
 const BACKGROUND_SYSTEMS_FILE = "background-systems.json";
+const AUTOMATIONS_FILE = "automations.json";
 const BATTERY_SAMPLE_INTERVAL_MS = 6 * 60 * 1000;
 const MAX_BATTERY_HISTORY = 24 * 60;
 const MAX_CLI_MONITOR_EVENTS = 1200;
@@ -170,9 +173,16 @@ const MAIN_WINDOW_SIZE = { width: 1400, height: 900, minWidth: 1240, minHeight: 
 const LOGIN_WINDOW_SIZE = { width: 880, height: 640, minWidth: 760, minHeight: 560 };
 const BILLING_WINDOW_SHOW_TIMEOUT_MS = 900;
 
-app.commandLine.appendSwitch("ignore-gpu-blocklist");
-app.commandLine.appendSwitch("enable-gpu-rasterization");
-app.commandLine.appendSwitch("enable-zero-copy");
+const disableGpuFallback = process.argv.includes("--disable-gpu");
+if (disableGpuFallback) {
+  // `--disable-gpu` is the explicit recovery path for the macOS Electron GPU
+  // worker SIGTRAP. Do not counteract it with the normal acceleration switches.
+  app.disableHardwareAcceleration();
+} else {
+  app.commandLine.appendSwitch("ignore-gpu-blocklist");
+  app.commandLine.appendSwitch("enable-gpu-rasterization");
+  app.commandLine.appendSwitch("enable-zero-copy");
+}
 app.setName("Moleui Desktop");
 
 // Theme preference ("system" | "light" | "dark"). The renderer owns the UI and
@@ -255,6 +265,28 @@ function macAppBundlePath() {
   return bundle.endsWith(".app") ? bundle : null;
 }
 
+let developerIdSignatureCache = null;
+
+// Squirrel.Mac only accepts updates signed by the same stable identity as the
+// running application. An ad-hoc signature is enough to launch a local build,
+// but it has no Developer ID authority and cannot establish that continuity.
+function hasDeveloperIdSignature() {
+  if (developerIdSignatureCache !== null) return developerIdSignatureCache;
+  const bundle = macAppBundlePath();
+  if (!bundle) {
+    developerIdSignatureCache = false;
+    return developerIdSignatureCache;
+  }
+
+  const result = spawnSync("codesign", ["--display", "--verbose=4", bundle], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const details = `${result.stdout || ""}\n${result.stderr || ""}`;
+  developerIdSignatureCache = result.status === 0 && /Authority=Developer ID Application:/i.test(details);
+  return developerIdSignatureCache;
+}
+
 // The icon asset the installed bundle currently advertises: CFBundleIconName
 // (Assets.car, macOS 26 appearances) with CFBundleIconFile as the pre-Tahoe
 // fallback. null when it cannot be determined (dev, or unreadable plist).
@@ -308,6 +340,13 @@ let bundleIconHelper = null;
 
 function armBundleIconSync() {
   if (isDev || process.platform !== "darwin") return false;
+  // Re-signing a Developer ID build ad-hoc would sever the identity continuity
+  // required by Squirrel.Mac. The selected icon still applies to the running
+  // Dock tile on every launch; only the on-disk Finder icon stays unchanged.
+  if (hasDeveloperIdSignature()) {
+    disarmBundleIconSync();
+    return false;
+  }
   const selected = selectedAppIcon();
   const bundle = macAppBundlePath();
   if (!bundle) return false;
@@ -370,6 +409,151 @@ function disarmBundleIconSync() {
     }
     bundleIconHelper = null;
   }
+}
+
+// ─── Application updates ────────────────────────────────────────────────────
+
+const UPDATE_CHECK_DELAY_MS = 20_000;
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let appUpdateCheck = null;
+let appUpdaterConfigured = false;
+let appUpdateState = {
+  status: "disabled",
+  currentVersion: app.getVersion(),
+  availableVersion: null,
+  progress: null,
+  message: "Updates are available in installed release builds.",
+  lastCheckedAt: null,
+};
+
+function appUpdatePayload() {
+  return { ...appUpdateState };
+}
+
+function broadcastAppUpdateState() {
+  const payload = appUpdatePayload();
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send("mole:updates:state", payload);
+  }
+}
+
+function setAppUpdateState(patch) {
+  appUpdateState = { ...appUpdateState, ...patch };
+  broadcastAppUpdateState();
+}
+
+function updaterUnavailableMessage() {
+  if (isDev) return "Updates are available in installed release builds.";
+  if (process.platform !== "darwin") return "Automatic updates are currently available on macOS.";
+  if (!hasDeveloperIdSignature()) {
+    return "This build cannot update automatically because it does not have a Developer ID signature.";
+  }
+  return null;
+}
+
+function updateErrorMessage(error) {
+  const message = error instanceof Error ? error.message : String(error || "Update failed");
+  return message.split("\n", 1)[0].trim() || "Update failed";
+}
+
+function configureAppUpdater() {
+  if (appUpdaterConfigured) return;
+  appUpdaterConfigured = true;
+
+  const unavailable = updaterUnavailableMessage();
+  if (unavailable) {
+    setAppUpdateState({ status: "disabled", message: unavailable });
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
+  // Release builds publish one channel manifest per architecture so parallel CI
+  // jobs cannot overwrite each other's latest-mac.yml.
+  autoUpdater.channel = process.arch;
+  autoUpdater.logger = {
+    info: (...args) => console.log("[updater]", ...args),
+    warn: (...args) => console.warn("[updater]", ...args),
+    error: (...args) => console.error("[updater]", ...args),
+    debug: (...args) => console.debug("[updater]", ...args),
+  };
+
+  autoUpdater.on("checking-for-update", () => {
+    setAppUpdateState({ status: "checking", progress: null, message: "Checking for updates…" });
+  });
+  autoUpdater.on("update-available", (info) => {
+    setAppUpdateState({
+      status: "available",
+      availableVersion: info.version,
+      progress: 0,
+      message: `Downloading Moleui ${info.version}…`,
+      lastCheckedAt: new Date().toISOString(),
+    });
+  });
+  autoUpdater.on("update-not-available", () => {
+    setAppUpdateState({
+      status: "up-to-date",
+      availableVersion: null,
+      progress: null,
+      message: "Moleui is up to date.",
+      lastCheckedAt: new Date().toISOString(),
+    });
+  });
+  autoUpdater.on("download-progress", (progress) => {
+    const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
+    setAppUpdateState({
+      status: "downloading",
+      progress: Math.round(percent * 10) / 10,
+      message: `Downloading update… ${Math.round(percent)}%`,
+    });
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    setAppUpdateState({
+      status: "downloaded",
+      availableVersion: info.version,
+      progress: 100,
+      message: `Moleui ${info.version} is ready. Restart to finish updating.`,
+    });
+  });
+  autoUpdater.on("error", (error) => {
+    setAppUpdateState({ status: "error", progress: null, message: updateErrorMessage(error) });
+  });
+
+  setAppUpdateState({ status: "idle", message: "Moleui checks for updates automatically." });
+  const firstCheck = setTimeout(() => void checkForAppUpdate(), UPDATE_CHECK_DELAY_MS);
+  firstCheck.unref();
+  const periodicCheck = setInterval(() => void checkForAppUpdate(), UPDATE_CHECK_INTERVAL_MS);
+  periodicCheck.unref();
+}
+
+async function checkForAppUpdate() {
+  const unavailable = updaterUnavailableMessage();
+  if (unavailable) {
+    setAppUpdateState({ status: "disabled", message: unavailable });
+    return appUpdatePayload();
+  }
+  if (appUpdateCheck) return appUpdateCheck;
+
+  appUpdateCheck = (async () => {
+    try {
+      await autoUpdater.checkForUpdates();
+    } catch (error) {
+      setAppUpdateState({ status: "error", progress: null, message: updateErrorMessage(error) });
+    } finally {
+      appUpdateCheck = null;
+    }
+    return appUpdatePayload();
+  })();
+  return appUpdateCheck;
+}
+
+function installAppUpdate() {
+  if (appUpdateState.status !== "downloaded") {
+    return { ok: false, message: "No downloaded update is ready to install." };
+  }
+  setImmediate(() => autoUpdater.quitAndInstall());
+  return { ok: true };
 }
 
 // Store active processes for cancellation
@@ -435,16 +619,29 @@ async function getAppIconData(appPath) {
     return appIconCache.get(appPath);
   }
 
-  const thumbnailIcon = await getAppThumbnailIconData(appPath);
-  if (thumbnailIcon.ok) {
-    appIconCache.set(appPath, thumbnailIcon);
-    return thumbnailIcon;
+  const isMacAppBundle = process.platform === "darwin" && path.extname(appPath) === ".app";
+  // Electron 35's asynchronous thumbnail/file-icon bridge can crash inside
+  // NSImage on macOS 27 when My Mac resolves many .app icons concurrently.
+  // App bundles already carry an icns resource, so read that directly and keep
+  // the unstable ThreadPool path for ordinary files only.
+  if (!isMacAppBundle) {
+    const thumbnailIcon = await getAppThumbnailIconData(appPath);
+    if (thumbnailIcon.ok) {
+      appIconCache.set(appPath, thumbnailIcon);
+      return thumbnailIcon;
+    }
   }
 
   const bundleIcon = getMacAppBundleIconData(appPath);
   if (bundleIcon.ok) {
     appIconCache.set(appPath, bundleIcon);
     return bundleIcon;
+  }
+
+  if (isMacAppBundle) {
+    const result = { ok: false, icon: "", message: "Bundle icon file not found" };
+    appIconCache.set(appPath, result);
+    return result;
   }
 
   try {
@@ -815,6 +1012,123 @@ function runMole(args, options = {}) {
   });
 }
 
+// The renderer talks to one local operations module instead of learning every
+// CLI flag and stdout format. The Electron main process remains the authority
+// for validation, process ownership, cancellation, and runtime compatibility.
+const DESKTOP_OPERATION_DEFINITIONS = Object.freeze([
+  { id: "status", label: "System status", capabilities: ["status"] },
+  { id: "clean", label: "Cleanup", capabilities: ["execute", "cancel", "stream"] },
+  { id: "optimize", label: "Performance", capabilities: ["plan", "execute", "cancel", "stream"] },
+  { id: "analyze", label: "Storage analysis", capabilities: ["execute", "cancel", "stream"] },
+  { id: "uninstall", label: "Uninstall", capabilities: ["plan", "execute", "cancel", "stream"] },
+  { id: "repos", label: "Repositories", capabilities: ["status", "plan", "execute", "cancel", "stream"] },
+]);
+
+function desktopOperationsStatus() {
+  return {
+    version: 1,
+    runtime: {
+      packaged: app.isPackaged,
+      path: runtimeDir(),
+    },
+    operations: DESKTOP_OPERATION_DEFINITIONS.map((definition) => ({
+      ...definition,
+      state: activeProcesses.has(definition.id) ? "running" : "idle",
+    })),
+  };
+}
+
+function operationResultError(operation, result, fallback) {
+  return {
+    ok: false,
+    operation,
+    error: (result?.stderr || result?.stdout || fallback).trim(),
+  };
+}
+
+async function loadOptimizePlan() {
+  const result = await runMole(["optimize", "--plan-json"], {
+    commandLabel: "mole optimize --plan-json",
+  });
+  if (!result.ok) return operationResultError("optimize", result, "Unable to build optimization plan");
+
+  try {
+    const plan = JSON.parse(result.stdout);
+    if (
+      plan?.version !== 1 ||
+      plan?.operation !== "optimize" ||
+      !Array.isArray(plan?.tasks)
+    ) {
+      throw new Error("Unsupported optimization plan schema");
+    }
+    return { ok: true, operation: "optimize", plan };
+  } catch (error) {
+    return {
+      ok: false,
+      operation: "optimize",
+      error: error instanceof Error ? error.message : "Invalid optimization plan",
+    };
+  }
+}
+
+function emitOperationEvent(sender, event) {
+  if (!sender.isDestroyed()) {
+    sender.send("mole:operations:event", {
+      at: new Date().toISOString(),
+      ...event,
+    });
+  }
+}
+
+async function executeOptimizeOperation(event, request = {}) {
+  const planResult = await loadOptimizePlan();
+  if (!planResult.ok) {
+    return {
+      ok: false,
+      command: "mole optimize",
+      exitCode: null,
+      stdout: "",
+      stderr: planResult.error,
+    };
+  }
+
+  const availableIds = new Set(planResult.plan.tasks.map((task) => task.id));
+  const requestedIds = Array.isArray(request.taskIds)
+    ? [...new Set(request.taskIds.map((taskId) => String(taskId || "").trim()).filter(Boolean))]
+    : [];
+  const invalidIds = requestedIds.filter((taskId) => !availableIds.has(taskId));
+  if (invalidIds.length > 0) {
+    return {
+      ok: false,
+      command: "mole optimize",
+      exitCode: null,
+      stdout: "",
+      stderr: `Unknown optimization task IDs: ${invalidIds.join(", ")}`,
+    };
+  }
+
+  const args = ["optimize"];
+  for (const taskId of requestedIds) args.push("--task-id", taskId);
+
+  emitOperationEvent(event.sender, { operation: "optimize", type: "start", taskIds: requestedIds });
+  const result = await runMole(args, {
+    processId: "optimize",
+    onStdout: (text) => {
+      emitOperationEvent(event.sender, { operation: "optimize", type: "stdout", text });
+    },
+    onStderr: (text) => {
+      emitOperationEvent(event.sender, { operation: "optimize", type: "stderr", text });
+    },
+  });
+  emitOperationEvent(event.sender, {
+    operation: "optimize",
+    type: result.killed ? "cancelled" : "complete",
+    ok: result.ok,
+    exitCode: result.exitCode,
+  });
+  return result;
+}
+
 function myMacMetricsPath() {
   return path.join(app.getPath("userData"), MY_MAC_METRICS_FILE);
 }
@@ -893,6 +1207,7 @@ function getBackgroundSystems() {
   const runsBySystem = readBackgroundSystemRuns();
   const batteryRuns = runsBySystem["battery-sampler"] || [];
   const loginRuns = runsBySystem["login-item"] || [];
+  const automationRuns = runsBySystem["automation-scheduler"] || [];
 
   return [
     {
@@ -914,6 +1229,16 @@ function getBackgroundSystems() {
       schedule: "On macOS login",
       lastRun: loginRuns[0] || null,
       recentRuns: loginRuns.slice(0, 3),
+    },
+    {
+      id: "automation-scheduler",
+      name: "Automation scheduler",
+      description: "Runs enabled automation recipes while Moleui is open, on AC power and idle.",
+      enabled: Boolean(automationSchedulerInterval),
+      active: automationRunInFlight,
+      schedule: "Checks every minute",
+      lastRun: automationRuns[0] || null,
+      recentRuns: automationRuns.slice(0, 3),
     },
   ];
 }
@@ -1070,6 +1395,551 @@ function startBatterySampler() {
   batterySamplerInterval = setInterval(() => {
     void sampleBatteryMetrics();
   }, BATTERY_SAMPLE_INTERVAL_MS);
+}
+
+// ─── Automations ─────────────────────────────────────────────────────────────
+// Recipes are pure data. A recipe names an action kind and, for `clean`, a set
+// of section labels drawn from a fixed allowlist below. No user-supplied path,
+// glob, or script ever reaches this execution path: every run is the same
+// `mole clean --section ...` / `mole installer` invocation the Cleanup page
+// already drives, so Trash routing, path protection, and operation logging stay
+// exactly where they are in the shell.
+//
+// `purge` is deliberately NOT automatable. It presents an interactive TTY menu
+// and has no --yes flag, so an unattended run would either hang forever or act
+// on a selection the user never made. Only `clean` and `installer` are here.
+//
+// The excluded clean sections are excluded on purpose: System / User essentials
+// / Developer tools / App leftovers need sudo (silent no-ops or auth prompts in
+// a background run), Time Machine and Device backups & firmware touch backup
+// data, and Large files / System Data clues / Project artifacts are report-only
+// hints that reclaim nothing.
+const AUTOMATION_ALLOWED_CLEAN_SECTIONS = Object.freeze([
+  "App caches",
+  "Browsers",
+  "Cloud & Office",
+  "Applications",
+  "Application Support",
+  "Virtualization",
+  "Apple Silicon",
+]);
+const AUTOMATION_ALLOWED_CLEAN_SECTION_SET = new Set(AUTOMATION_ALLOWED_CLEAN_SECTIONS);
+const AUTOMATION_ALLOWED_ACTION_KINDS = Object.freeze(["clean", "installer"]);
+const AUTOMATION_ALLOWED_ACTION_KIND_SET = new Set(AUTOMATION_ALLOWED_ACTION_KINDS);
+const AUTOMATION_FREQUENCIES = new Set(["daily", "weekly"]);
+
+const AUTOMATIONS_VERSION = 1;
+const AUTOMATION_MAX_RECIPES = 24;
+const AUTOMATION_MAX_RUNS = 100;
+const AUTOMATION_TICK_INTERVAL_MS = 60 * 1000;
+const AUTOMATION_SCHEDULER_START_DELAY_MS = 45_000;
+// A run more than this far past its slot is skipped, not caught up: a Mac that
+// was asleep for two days should not wake into a burst of stale cleanups.
+const AUTOMATION_CATCH_UP_WINDOW_MS = 6 * 60 * 60 * 1000;
+const AUTOMATION_MIN_RUN_GAP_MS = 6 * 60 * 60 * 1000;
+const AUTOMATION_MAX_JITTER_MS = 120_000;
+const AUTOMATION_IDLE_THRESHOLD_SECONDS = 120;
+const AUTOMATION_RUN_TIMEOUT_MS = 30 * 60 * 1000;
+const AUTOMATION_PROCESS_ID = "automation";
+
+let automationSchedulerInterval = null;
+let automationRunInFlight = false;
+let automationTickInFlight = false;
+// Advancing `lastRunAt` / `nextRunAt` only sticks if the state file write lands.
+// A failed write would otherwise leave the slot due and let the scheduler re-run
+// the same recipe on the next tick, forever. The last real run is therefore also
+// held in memory and consulted by the due check alongside the persisted value.
+const automationLastRunMs = new Map();
+
+function automationsPath() {
+  return path.join(app.getPath("userData"), AUTOMATIONS_FILE);
+}
+
+function defaultAutomationsState() {
+  return { version: AUTOMATIONS_VERSION, paused: false, recipes: [], runs: [] };
+}
+
+function clampInt(value, min, max, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const rounded = Math.trunc(parsed);
+  if (rounded < min || rounded > max) return fallback;
+  return rounded;
+}
+
+// Normalizes an action to the allowlisted shape, or returns null when nothing
+// safe can be recovered. An empty clean section list is treated as unrecoverable
+// because bare `mole clean` would run every section, including the excluded ones.
+function normalizeAutomationAction(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const kind = String(raw.kind || "");
+  if (!AUTOMATION_ALLOWED_ACTION_KIND_SET.has(kind)) return null;
+
+  if (kind === "installer") return { kind: "installer", sections: [] };
+
+  const requested = Array.isArray(raw.sections) ? raw.sections : [];
+  const sections = [];
+  for (const entry of requested) {
+    const section = String(entry || "").trim();
+    if (!AUTOMATION_ALLOWED_CLEAN_SECTION_SET.has(section)) continue;
+    if (!sections.includes(section)) sections.push(section);
+  }
+
+  if (sections.length === 0) return null;
+  return { kind: "clean", sections };
+}
+
+// Identifies what the user actually dry-ran. Editing the action changes the
+// fingerprint, which invalidates the stored dry-run pass and re-arms the gate.
+function automationActionFingerprint(action) {
+  if (!action) return "";
+  if (action.kind === "installer") return "installer";
+  return `clean:${[...action.sections].sort().join("|")}`;
+}
+
+function normalizeAutomationSchedule(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const frequency = AUTOMATION_FREQUENCIES.has(source.frequency) ? source.frequency : "weekly";
+
+  return {
+    frequency,
+    hour: clampInt(source.hour, 0, 23, 3),
+    minute: clampInt(source.minute, 0, 59, 0),
+    weekday: clampInt(source.weekday, 0, 6, 0),
+  };
+}
+
+function computeAutomationNextRunAt(schedule, fromMs) {
+  const next = new Date(fromMs);
+  next.setHours(schedule.hour, schedule.minute, 0, 0);
+
+  if (schedule.frequency === "weekly") {
+    const dayDelta = (schedule.weekday - next.getDay() + 7) % 7;
+    next.setDate(next.getDate() + dayDelta);
+    if (next.getTime() <= fromMs) next.setDate(next.getDate() + 7);
+    return next.getTime();
+  }
+
+  if (next.getTime() <= fromMs) next.setDate(next.getDate() + 1);
+  return next.getTime();
+}
+
+// Stable per-recipe, per-slot offset so several recipes due at 03:00 do not all
+// start in the same second. Deterministic so it survives ticks and restarts.
+function automationJitterMs(recipeId, nextRunAt) {
+  const key = `${recipeId}:${nextRunAt}`;
+  let hash = 0;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) >>> 0;
+  }
+  return hash % AUTOMATION_MAX_JITTER_MS;
+}
+
+// The pending slot has to be persisted, not recomputed from "now" on each read:
+// recomputing would always return a strictly future time, so a slot could never
+// be observed as due. A slot missed by more than the catch-up window rolls
+// forward instead, so a Mac that slept through Sunday does not run on Tuesday.
+function resolveAutomationNextRunAt(raw, schedule, enabled, nowMs) {
+  if (!enabled) return null;
+
+  const stored = typeof raw.nextRunAt === "string" ? Date.parse(raw.nextRunAt) : NaN;
+  if (Number.isFinite(stored) && nowMs - stored <= AUTOMATION_CATCH_UP_WINDOW_MS) {
+    return new Date(stored).toISOString();
+  }
+
+  return new Date(computeAutomationNextRunAt(schedule, nowMs)).toISOString();
+}
+
+function normalizeAutomationRecipe(raw, nowMs) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const id = String(raw.id || "").trim();
+  if (!id) return null;
+
+  const action = normalizeAutomationAction(raw.action);
+  const schedule = normalizeAutomationSchedule(raw.schedule);
+  const requestedAction = raw.action && typeof raw.action === "object" ? raw.action : {};
+  const requestedSections = Array.isArray(requestedAction.sections) ? requestedAction.sections.length : 0;
+  // Data we could not fully recover: keep the row visible so the user can fix or
+  // delete it, but it can never be enabled and can never be executed.
+  const invalid = !action ||
+    (action.kind === "clean" && action.sections.length !== requestedSections);
+
+  const fingerprint = automationActionFingerprint(action);
+  const storedFingerprint = typeof raw.dryRunFingerprint === "string" ? raw.dryRunFingerprint : "";
+  const dryRunPassedAt = typeof raw.dryRunPassedAt === "string" && storedFingerprint === fingerprint && !invalid
+    ? raw.dryRunPassedAt
+    : null;
+
+  const lastRunAt = typeof raw.lastRunAt === "string" ? raw.lastRunAt : null;
+  const enabled = raw.enabled === true && !invalid && Boolean(dryRunPassedAt);
+
+  return {
+    id,
+    catalogId: typeof raw.catalogId === "string" ? raw.catalogId : "custom",
+    name: String(raw.name || "Automation").slice(0, 80),
+    enabled,
+    invalid,
+    action: action || { kind: "clean", sections: [] },
+    schedule,
+    dryRunPassedAt,
+    dryRunFingerprint: dryRunPassedAt ? fingerprint : "",
+    lastRunAt,
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(nowMs).toISOString(),
+    nextRunAt: resolveAutomationNextRunAt(raw, schedule, enabled, nowMs),
+  };
+}
+
+function normalizeAutomationRun(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.startedAt !== "string" || typeof raw.ok !== "boolean") return null;
+
+  return {
+    id: String(raw.id || `${raw.startedAt}-${raw.recipeId || ""}`),
+    recipeId: String(raw.recipeId || ""),
+    recipeName: String(raw.recipeName || ""),
+    startedAt: raw.startedAt,
+    finishedAt: typeof raw.finishedAt === "string" ? raw.finishedAt : raw.startedAt,
+    ok: raw.ok,
+    durationMs: clampInt(raw.durationMs, 0, Number.MAX_SAFE_INTEGER, 0),
+    dryRun: raw.dryRun === true,
+    trigger: raw.trigger === "manual" ? "manual" : "scheduled",
+    message: String(raw.message || "").slice(0, 400),
+  };
+}
+
+// Unparsable state is moved aside rather than left in place to be overwritten by
+// the next write: the file is the only record of what the user scheduled, so a
+// stray syntax error should cost them a rename, not the recipes themselves.
+function quarantineAutomationsFile(filePath) {
+  const backupPath = `${filePath}.bak`;
+  try {
+    fs.renameSync(filePath, backupPath);
+    console.error(`Quarantined unreadable automations state to ${backupPath}`);
+  } catch (error) {
+    console.error("Failed to quarantine automations state:", error);
+  }
+}
+
+// Any unreadable or unparsable file yields the empty default: zero recipes means
+// the scheduler has nothing to run. Corrupt state must never fall through to a
+// run with unknown parameters.
+function readAutomationsState() {
+  const nowMs = Date.now();
+
+  try {
+    const filePath = automationsPath();
+    if (!fs.existsSync(filePath)) return defaultAutomationsState();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    } catch (parseError) {
+      console.error("Failed to parse automations state:", parseError);
+      quarantineAutomationsFile(filePath);
+      return defaultAutomationsState();
+    }
+
+    if (!parsed || typeof parsed !== "object") {
+      quarantineAutomationsFile(filePath);
+      return defaultAutomationsState();
+    }
+
+    const recipes = (Array.isArray(parsed.recipes) ? parsed.recipes : [])
+      .map((recipe) => normalizeAutomationRecipe(recipe, nowMs))
+      .filter(Boolean)
+      .slice(0, AUTOMATION_MAX_RECIPES);
+
+    const runs = (Array.isArray(parsed.runs) ? parsed.runs : [])
+      .map(normalizeAutomationRun)
+      .filter(Boolean)
+      .slice(0, AUTOMATION_MAX_RUNS);
+
+    return {
+      version: AUTOMATIONS_VERSION,
+      paused: parsed.paused === true,
+      recipes,
+      runs,
+    };
+  } catch (error) {
+    console.error("Failed to read automations state:", error);
+    return defaultAutomationsState();
+  }
+}
+
+// Temp file plus rename: a crash or a full disk mid-write leaves the previous
+// state intact instead of a truncated file that the next read would quarantine.
+function writeAutomationsState(state) {
+  try {
+    const filePath = automationsPath();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+    const tempPath = `${filePath}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tempPath, JSON.stringify(state, null, 2), "utf8");
+      fs.renameSync(tempPath, filePath);
+    } catch (error) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // Nothing to clean up when the temp file was never created.
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error("Failed to write automations state:", error);
+  }
+  return state;
+}
+
+// Read, mutate, re-normalize, write. Normalizing on the way out means a mutation
+// can never persist a state the read path would have rejected.
+function updateAutomationsState(mutate) {
+  const state = readAutomationsState();
+  mutate(state);
+
+  const nowMs = Date.now();
+  const normalized = {
+    version: AUTOMATIONS_VERSION,
+    paused: state.paused === true,
+    recipes: (Array.isArray(state.recipes) ? state.recipes : [])
+      .map((recipe) => normalizeAutomationRecipe(recipe, nowMs))
+      .filter(Boolean)
+      .slice(0, AUTOMATION_MAX_RECIPES),
+    runs: (Array.isArray(state.runs) ? state.runs : [])
+      .map(normalizeAutomationRun)
+      .filter(Boolean)
+      .slice(0, AUTOMATION_MAX_RUNS),
+  };
+
+  return writeAutomationsState(normalized);
+}
+
+function automationsPayload() {
+  const state = readAutomationsState();
+
+  return {
+    ...state,
+    allowlist: {
+      cleanSections: [...AUTOMATION_ALLOWED_CLEAN_SECTIONS],
+      actionKinds: [...AUTOMATION_ALLOWED_ACTION_KINDS],
+    },
+    scheduler: {
+      running: Boolean(automationSchedulerInterval),
+      active: automationRunInFlight,
+    },
+  };
+}
+
+// The single choke point between a stored recipe and a spawned process. Every
+// argument is either a literal or a string that passed set membership against
+// AUTOMATION_ALLOWED_CLEAN_SECTIONS. Returns null when nothing may be run.
+function buildAutomationArgs(action, dryRun) {
+  if (!action || !AUTOMATION_ALLOWED_ACTION_KIND_SET.has(action.kind)) return null;
+
+  // `--all --yes` is required even for a dry run: without --all the installer
+  // command falls through to its interactive TTY selector, which blocks forever
+  // on a piped stdin. --dry-run still makes the run non-destructive.
+  if (action.kind === "installer") {
+    const args = ["installer"];
+    if (dryRun) args.push("--dry-run");
+    args.push("--all", "--yes");
+    return args;
+  }
+
+  const sections = Array.isArray(action.sections) ? action.sections : [];
+  if (sections.length === 0) return null;
+  if (!sections.every((section) => AUTOMATION_ALLOWED_CLEAN_SECTION_SET.has(section))) return null;
+
+  const args = ["clean"];
+  if (dryRun) args.push("--dry-run");
+  for (const section of sections) args.push("--section", section);
+  return args;
+}
+
+function recordAutomationRun(recipe, { startedAt, ok, dryRun, trigger, message }) {
+  const finishedAt = Date.now();
+
+  return updateAutomationsState((state) => {
+    state.runs = [
+      {
+        id: `${finishedAt}-${Math.random().toString(36).slice(2)}`,
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+        startedAt: new Date(startedAt).toISOString(),
+        finishedAt: new Date(finishedAt).toISOString(),
+        ok,
+        durationMs: finishedAt - startedAt,
+        dryRun,
+        trigger,
+        message,
+      },
+      ...state.runs,
+    ].slice(0, AUTOMATION_MAX_RUNS);
+
+    if (!dryRun) {
+      const target = state.recipes.find((entry) => entry.id === recipe.id);
+      if (target) {
+        target.lastRunAt = new Date(finishedAt).toISOString();
+        // Advance past the slot we just consumed so the next tick does not
+        // observe it as still due.
+        target.nextRunAt = new Date(computeAutomationNextRunAt(target.schedule, finishedAt)).toISOString();
+      }
+    }
+  });
+}
+
+// Scheduled runs happen with no renderer involvement, so tell any open window to
+// refresh rather than leaving stale next-run times on screen.
+function broadcastAutomationsChanged() {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send("mole:automations:changed");
+  }
+}
+
+async function executeAutomationRecipe(recipe, { dryRun, trigger }) {
+  const args = buildAutomationArgs(recipe.action, dryRun);
+  if (!args) {
+    return { ok: false, stdout: "", stderr: "Recipe action is not automatable", exitCode: null };
+  }
+
+  if (automationRunInFlight) {
+    return { ok: false, stdout: "", stderr: "Another automation is already running", exitCode: null };
+  }
+
+  automationRunInFlight = true;
+  const startedAt = Date.now();
+  // Claim the slot in memory before the process starts. If persisting the run
+  // fails later, this is what keeps the next tick from seeing the recipe as
+  // still due and running it again a minute from now.
+  if (!dryRun) automationLastRunMs.set(recipe.id, startedAt);
+  // Announce the run at the start, not only at the end, so an open window can
+  // show it as active and offer Stop while the process is still alive.
+  broadcastAutomationsChanged();
+
+  try {
+    const result = await runMole(args, {
+      processId: AUTOMATION_PROCESS_ID,
+      timeoutMs: AUTOMATION_RUN_TIMEOUT_MS,
+      commandLabel: `automation ${recipe.name}: mole ${args.join(" ")}`,
+    });
+
+    const message = result.ok
+      ? `${dryRun ? "Dry run" : "Run"} completed for ${recipe.name}`
+      : (result.stderr || `Exited with code ${result.exitCode}`).trim().slice(0, 400);
+
+    recordAutomationRun(recipe, { startedAt, ok: result.ok, dryRun, trigger, message });
+    recordBackgroundSystemRun(
+      "automation-scheduler",
+      makeBackgroundRun(startedAt, result.ok, `${recipe.name}: ${message}`),
+    );
+
+    return result;
+  } catch (error) {
+    recordAutomationRun(recipe, { startedAt, ok: false, dryRun, trigger, message: error.message });
+    recordBackgroundSystemRun(
+      "automation-scheduler",
+      makeBackgroundRun(startedAt, false, `${recipe.name}: ${error.message}`),
+    );
+    return { ok: false, stdout: "", stderr: error.message, exitCode: null };
+  } finally {
+    if (!dryRun) automationLastRunMs.set(recipe.id, Date.now());
+    automationRunInFlight = false;
+    broadcastAutomationsChanged();
+  }
+}
+
+// Environment guards, evaluated per tick. Returns null when it is safe to run,
+// or a short reason string that the caller logs and the UI can surface.
+function automationBlockReason() {
+  if (automationRunInFlight) return "another automation is running";
+  if (activeProcesses.has("clean")) return "a cleanup is already running";
+
+  try {
+    if (powerMonitor.isOnBatteryPower()) return "on battery power";
+  } catch {
+    // powerMonitor is unavailable on some platforms; treat as not blocking.
+  }
+
+  try {
+    if (powerMonitor.getSystemIdleTime() < AUTOMATION_IDLE_THRESHOLD_SECONDS) return "Mac is in use";
+  } catch {
+    // Same as above: absence of idle information should not block forever.
+  }
+
+  if (detectFullDiskAccess() === "denied") return "Full Disk Access is denied";
+  return null;
+}
+
+// The persisted timestamp and the in-memory one can disagree in exactly one
+// direction: a run happened but the write that recorded it failed. Taking the
+// later of the two makes the minimum gap hold either way.
+function automationLastRunAtMs(recipe) {
+  const persisted = recipe.lastRunAt ? Date.parse(recipe.lastRunAt) : NaN;
+  const remembered = automationLastRunMs.get(recipe.id);
+
+  const known = [persisted, remembered].filter((value) => Number.isFinite(value));
+  return known.length > 0 ? Math.max(...known) : null;
+}
+
+function isAutomationRecipeDue(recipe, nowMs) {
+  if (!recipe.enabled || recipe.invalid) return false;
+  if (!recipe.nextRunAt) return false;
+
+  const slot = Date.parse(recipe.nextRunAt);
+  if (!Number.isFinite(slot)) return false;
+
+  const dueAt = slot + automationJitterMs(recipe.id, slot);
+  if (nowMs < dueAt) return false;
+  // Missed by more than the catch-up window: let it roll to the next slot.
+  if (nowMs - dueAt > AUTOMATION_CATCH_UP_WINDOW_MS) return false;
+
+  const lastRun = automationLastRunAtMs(recipe);
+  if (lastRun !== null && nowMs - lastRun < AUTOMATION_MIN_RUN_GAP_MS) return false;
+
+  return true;
+}
+
+async function tickAutomationScheduler() {
+  if (automationTickInFlight) return;
+  automationTickInFlight = true;
+
+  try {
+    const state = readAutomationsState();
+    if (state.paused) return;
+
+    const nowMs = Date.now();
+    // Serial by design: one automation per tick, never a parallel burst.
+    const dueRecipe = state.recipes.find((recipe) => isAutomationRecipeDue(recipe, nowMs));
+    if (!dueRecipe) return;
+
+    const blockReason = automationBlockReason();
+    if (blockReason) {
+      console.log(`Automation "${dueRecipe.name}" deferred: ${blockReason}`);
+      return;
+    }
+
+    // executeAutomationRecipe broadcasts on both edges of the run, so an open
+    // window already sees the start, the finish, and the new next-run time.
+    await executeAutomationRecipe(dueRecipe, { dryRun: false, trigger: "scheduled" });
+  } catch (error) {
+    console.error("Automation scheduler tick failed:", error);
+  } finally {
+    automationTickInFlight = false;
+  }
+}
+
+function startAutomationScheduler() {
+  if (automationSchedulerInterval) return;
+
+  setTimeout(() => {
+    void tickAutomationScheduler();
+  }, AUTOMATION_SCHEDULER_START_DELAY_MS);
+
+  automationSchedulerInterval = setInterval(() => {
+    void tickAutomationScheduler();
+  }, AUTOMATION_TICK_INTERVAL_MS);
 }
 
 function configureMacStartupService() {
@@ -2211,8 +3081,17 @@ ipcMain.handle("mole:appIcon:set", async (_event, iconId) => {
   // Packaged: rewrite the bundle's icon after quit so Finder, the pinned Dock
   // tile, and the macOS 26 appearances all follow the choice permanently.
   const appliesOnQuit = armBundleIconSync();
-  return { ok: true, icon: selected.id, appliesOnQuit };
+  const message = hasDeveloperIdSignature()
+    ? "The Dock icon will follow this choice. The Finder icon stays unchanged so secure updates keep working."
+    : undefined;
+  return { ok: true, icon: selected.id, appliesOnQuit, message };
 });
+
+ipcMain.handle("mole:updates:state", async () => appUpdatePayload());
+
+ipcMain.handle("mole:updates:check", async () => checkForAppUpdate());
+
+ipcMain.handle("mole:updates:install", async () => installAppUpdate());
 
 ipcMain.handle("mole:theme:get", async () => ({ theme: nativeTheme.themeSource }));
 
@@ -2400,7 +3279,7 @@ ipcMain.handle("mole:uninstall:execute", async (event, appNames) => {
 });
 
 // Clean command handlers
-ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
+async function executeCleanOperation(event, options = {}, useOperationsEvents = false) {
   const command = String(options.command || "clean");
   const args = [command];
 
@@ -2411,6 +3290,20 @@ ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
       exitCode: null,
       stdout: "",
       stderr: `Unsupported clean command: ${command}`,
+    };
+  }
+
+  // The other half of `automationBlockReason`: an automation defers to a UI
+  // cleanup, so a UI cleanup must also refuse to start on top of an automation.
+  // Scans are refused too, because their results would describe files the
+  // automation is deleting underneath them.
+  if (automationRunInFlight) {
+    return {
+      ok: false,
+      command: `mole ${command}`,
+      exitCode: null,
+      stdout: "",
+      stderr: "An automation run is in progress. Wait for it to finish, or stop it on the Automations page.",
     };
   }
 
@@ -2430,12 +3323,18 @@ ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
   return runMole(args, {
     processId: "clean",
     onStdout: (text) => {
-      event.sender.send("mole:clean:stdout", text);
+      if (useOperationsEvents) emitOperationEvent(event.sender, { operation: "clean", type: "stdout", text });
+      else event.sender.send("mole:clean:stdout", text);
     },
     onStderr: (text) => {
-      event.sender.send("mole:clean:stderr", text);
+      if (useOperationsEvents) emitOperationEvent(event.sender, { operation: "clean", type: "stderr", text });
+      else event.sender.send("mole:clean:stderr", text);
     }
   });
+}
+
+ipcMain.handle("mole:clean:execute", async (event, options = {}) => {
+  return executeCleanOperation(event, options);
 });
 
 ipcMain.handle("mole:clean:kill", async () => {
@@ -2449,6 +3348,202 @@ ipcMain.handle("mole:clean:kill", async () => {
     return { ok: true, message: "Clean process terminated" };
   }
   return { ok: false, message: "No active clean process" };
+});
+
+// ─── Automations IPC ─────────────────────────────────────────────────────────
+// Every handler re-validates against the main-process allowlist. The renderer's
+// copy of the catalog is a convenience for rendering only; nothing it sends is
+// trusted here.
+
+ipcMain.handle("mole:automations:list", async () => automationsPayload());
+
+ipcMain.handle("mole:automations:save-recipe", async (_event, input = {}) => {
+  const action = normalizeAutomationAction(input.action);
+  if (!action) {
+    return { ok: false, message: "Recipe action is not automatable", state: automationsPayload() };
+  }
+
+  const current = readAutomationsState();
+  const existing = current.recipes.find((recipe) => recipe.id === input.id);
+  if (!existing && current.recipes.length >= AUTOMATION_MAX_RECIPES) {
+    return { ok: false, message: "Recipe limit reached", state: automationsPayload() };
+  }
+
+  const id = String(input.id || "").trim() || `recipe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const schedule = normalizeAutomationSchedule(input.schedule);
+  const fingerprint = automationActionFingerprint(action);
+  // Editing the action invalidates the previous dry run, which re-arms the
+  // enable gate. A recipe can never be enabled while the gate is armed.
+  const keepDryRun = existing && existing.dryRunFingerprint === fingerprint ? existing.dryRunPassedAt : null;
+
+  updateAutomationsState((draft) => {
+    const next = {
+      id,
+      catalogId: String(input.catalogId || existing?.catalogId || "custom"),
+      name: String(input.name || existing?.name || "Automation"),
+      enabled: keepDryRun ? Boolean(existing?.enabled) : false,
+      action,
+      schedule,
+      dryRunPassedAt: keepDryRun,
+      dryRunFingerprint: keepDryRun ? fingerprint : "",
+      lastRunAt: existing?.lastRunAt || null,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+    };
+
+    const index = draft.recipes.findIndex((recipe) => recipe.id === id);
+    if (index >= 0) draft.recipes[index] = next;
+    else draft.recipes.push(next);
+  });
+
+  return { ok: true, id, state: automationsPayload() };
+});
+
+ipcMain.handle("mole:automations:delete-recipe", async (_event, recipeId) => {
+  const id = String(recipeId || "");
+  updateAutomationsState((draft) => {
+    draft.recipes = draft.recipes.filter((recipe) => recipe.id !== id);
+  });
+  automationLastRunMs.delete(id);
+  return { ok: true, state: automationsPayload() };
+});
+
+ipcMain.handle("mole:automations:set-enabled", async (_event, recipeId, enabled) => {
+  const id = String(recipeId || "");
+  const recipe = readAutomationsState().recipes.find((entry) => entry.id === id);
+
+  if (!recipe) {
+    return { ok: false, message: "Recipe not found", state: automationsPayload() };
+  }
+
+  if (enabled) {
+    if (recipe.invalid || !buildAutomationArgs(recipe.action, true)) {
+      return { ok: false, message: "Recipe action is not automatable", state: automationsPayload() };
+    }
+    // The dry-run gate. `dryRunPassedAt` only survives normalization when its
+    // fingerprint still matches the current action, so this also rejects a
+    // recipe whose sections changed since the last successful dry run.
+    if (!recipe.dryRunPassedAt) {
+      return {
+        ok: false,
+        message: "Run a dry run for this recipe before enabling it",
+        state: automationsPayload(),
+      };
+    }
+  }
+
+  updateAutomationsState((draft) => {
+    const target = draft.recipes.find((entry) => entry.id === id);
+    if (target) target.enabled = enabled === true;
+  });
+
+  return { ok: true, state: automationsPayload() };
+});
+
+ipcMain.handle("mole:automations:set-paused", async (_event, paused) => {
+  updateAutomationsState((draft) => {
+    draft.paused = paused === true;
+  });
+  return { ok: true, state: automationsPayload() };
+});
+
+ipcMain.handle("mole:automations:dry-run", async (_event, recipeId) => {
+  const id = String(recipeId || "");
+  const recipe = readAutomationsState().recipes.find((entry) => entry.id === id);
+
+  if (!recipe) {
+    return { ok: false, message: "Recipe not found", state: automationsPayload() };
+  }
+
+  const result = await executeAutomationRecipe(recipe, { dryRun: true, trigger: "manual" });
+
+  if (result.ok) {
+    updateAutomationsState((draft) => {
+      const target = draft.recipes.find((entry) => entry.id === id);
+      if (!target) return;
+      target.dryRunPassedAt = new Date().toISOString();
+      target.dryRunFingerprint = automationActionFingerprint(target.action);
+    });
+  }
+
+  return { ok: result.ok, message: result.ok ? "" : (result.stderr || "Dry run failed"), output: result.stdout, state: automationsPayload() };
+});
+
+ipcMain.handle("mole:automations:run-now", async (_event, recipeId) => {
+  const id = String(recipeId || "");
+  const recipe = readAutomationsState().recipes.find((entry) => entry.id === id);
+
+  if (!recipe) {
+    return { ok: false, message: "Recipe not found", state: automationsPayload() };
+  }
+
+  // A manual run is still a real deletion, so it clears the same gate as a
+  // scheduled one: the user must have dry-run this exact action first.
+  if (recipe.invalid || !recipe.dryRunPassedAt) {
+    return {
+      ok: false,
+      message: "Run a dry run for this recipe first",
+      state: automationsPayload(),
+    };
+  }
+
+  if (activeProcesses.has("clean")) {
+    return { ok: false, message: "A cleanup is already running", state: automationsPayload() };
+  }
+
+  const result = await executeAutomationRecipe(recipe, { dryRun: false, trigger: "manual" });
+  return { ok: result.ok, message: result.ok ? "" : (result.stderr || "Run failed"), output: result.stdout, state: automationsPayload() };
+});
+
+ipcMain.handle("mole:automations:cancel", async () => {
+  const child = activeProcesses.get(AUTOMATION_PROCESS_ID);
+  if (child && !child.killed) {
+    if (child.__killMoleProcess) child.__killMoleProcess();
+    else child.kill("SIGTERM");
+    return { ok: true, message: "Automation run terminated" };
+  }
+  return { ok: false, message: "No active automation run" };
+});
+
+// Versioned local operations interface. New desktop surfaces should use this
+// seam; command-specific handlers below remain as compatibility adapters while
+// the other pages migrate incrementally.
+ipcMain.handle("mole:operations:status", async () => desktopOperationsStatus());
+
+ipcMain.handle("mole:operations:plan", async (_event, operation) => {
+  if (operation === "optimize") return loadOptimizePlan();
+  return { ok: false, operation, error: `Planning is not available for ${String(operation || "unknown")}` };
+});
+
+ipcMain.handle("mole:operations:execute", async (event, operation, request = {}) => {
+  if (operation === "optimize") return executeOptimizeOperation(event, request);
+  if (operation === "clean") {
+    emitOperationEvent(event.sender, { operation: "clean", type: "start" });
+    const result = await executeCleanOperation(event, request, true);
+    emitOperationEvent(event.sender, {
+      operation: "clean",
+      type: result.killed ? "cancelled" : "complete",
+      ok: result.ok,
+      exitCode: result.exitCode,
+    });
+    return result;
+  }
+  return {
+    ok: false,
+    command: `mole ${String(operation || "")}`.trim(),
+    exitCode: null,
+    stdout: "",
+    stderr: `Execution is not available through the operations interface for ${String(operation || "unknown")}`,
+  };
+});
+
+ipcMain.handle("mole:operations:cancel", async (_event, operation) => {
+  const process = activeProcesses.get(String(operation || ""));
+  if (process && !process.killed) {
+    if (process.__killMoleProcess) process.__killMoleProcess();
+    else process.kill("SIGTERM");
+    return { ok: true, message: `${operation} process terminated` };
+  }
+  return { ok: false, message: `No active ${String(operation || "operation")} process` };
 });
 
 // Optimize command handlers
@@ -2524,6 +3619,353 @@ ipcMain.handle("mole:analyze:kill", async () => {
   }
   return { ok: false, message: "No active analyze process" };
 });
+
+// ─── Repos ───────────────────────────────────────────────────────────────────
+// Repository inventory, pushing, and archiving. Scans exec the Go binary
+// directly; mutations go through the shell entrypoint so removals keep running
+// through Mole's audited Trash helpers.
+
+const REPOS_PREFS_FILE = "repos-prefs.json";
+
+function reposBinaryPath() {
+  return path.join(runtimeDir(), "bin", "repos-go");
+}
+
+function reposPrefsPath() {
+  return path.join(app.getPath("userData"), REPOS_PREFS_FILE);
+}
+
+function readReposPrefs() {
+  try {
+    const prefs = JSON.parse(fs.readFileSync(reposPrefsPath(), "utf8"));
+    return prefs && typeof prefs === "object" ? prefs : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeReposPrefs(next) {
+  try {
+    fs.writeFileSync(reposPrefsPath(), JSON.stringify(next), "utf8");
+    return true;
+  } catch (error) {
+    console.error("Failed to write repo preferences:", error);
+    return false;
+  }
+}
+
+function defaultRepoRoots() {
+  const dev = path.join(os.homedir(), "Dev");
+  try {
+    if (fs.statSync(dev).isDirectory()) return [dev];
+  } catch {
+    // No ~/Dev on this machine; fall through to the home directory.
+  }
+  return [os.homedir()];
+}
+
+function readRepoRoots() {
+  const roots = sanitizeRepoPaths(readReposPrefs().roots).filter((p) => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+  if (roots.length > 0) return roots;
+  return defaultRepoRoots();
+}
+
+function writeRepoRoots(roots) {
+  const clean = sanitizeRepoPaths(roots);
+  return writeReposPrefs({ ...readReposPrefs(), roots: clean }) ? clean : readRepoRoots();
+}
+
+function githubProfiles() {
+  try {
+    const result = spawnSync("gh", ["auth", "status", "--hostname", "github.com", "--json", "hosts"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    const accounts = JSON.parse(result.stdout || "{}")?.hosts?.["github.com"];
+    if (!Array.isArray(accounts)) return [];
+    return accounts
+      .filter((account) => typeof account?.login === "string" && account.state === "success")
+      .map((account) => ({ login: account.login, active: Boolean(account.active) }));
+  } catch {
+    return [];
+  }
+}
+
+function repoSyncPreferences() {
+  const prefs = readReposPrefs();
+  return {
+    profile: typeof prefs.profile === "string" ? prefs.profile : "",
+    askBeforeCreate: prefs.askBeforeCreate !== false,
+  };
+}
+
+// sanitizeRepoPaths is the trust boundary between the renderer and a command
+// line that can delete directories. Only absolute, single-line paths survive,
+// so a value shaped like a flag ("--vault", "-n") or carrying a newline can
+// never reach the shell as an option.
+function sanitizeRepoPaths(input) {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of input) {
+    if (typeof raw !== "string") continue;
+    const value = raw.trim();
+    if (!value || !value.startsWith("/")) continue;
+    if (value.includes("\n") || value.includes("\r") || value.includes("\0")) continue;
+    const normalized = path.normalize(value);
+    if (normalized.startsWith("-") || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function repoScanArgs(options = {}) {
+  const args = ["--json"];
+  if (options.verify) args.push("--verify");
+
+  const coldDays = Number(options.coldDays);
+  if (Number.isInteger(coldDays) && coldDays >= 0 && coldDays <= 3650) {
+    args.push("--cold-days", String(coldDays));
+  }
+
+  const roots = sanitizeRepoPaths(options.roots);
+  args.push(...(roots.length > 0 ? roots : readRepoRoots()));
+  return args;
+}
+
+function reposUnavailableResult(command) {
+  return {
+    ok: false,
+    command,
+    exitCode: null,
+    stdout: "",
+    stderr:
+      "The repo scanner is missing from the Mole runtime. Run `bun run desktop:dev` " +
+      "or reinstall the app to rebuild it.",
+  };
+}
+
+ipcMain.handle("mole:repos:scan", async (event, options = {}) => {
+  const binary = reposBinaryPath();
+  if (!fs.existsSync(binary)) return reposUnavailableResult("repos --json");
+
+  const args = repoScanArgs(options);
+  return runMole(args, {
+    processId: "repos:scan",
+    executable: binary,
+    commandLabel: `repos ${args.join(" ")}`,
+    // Verification contacts every distinct remote. The ceiling is generous
+    // because a large machine with slow remotes is normal, not a hang.
+    timeoutMs: options.verify ? 15 * 60 * 1000 : 5 * 60 * 1000,
+    onStdout: (text) => {
+      event.sender.send("mole:repos:scan:stdout", text);
+    },
+  });
+});
+
+ipcMain.handle("mole:repos:scan:kill", async () => killTrackedProcess("repos:scan", "scan"));
+
+ipcMain.handle("mole:repos:gate", async (_event, repoPath, waivers = []) => {
+  const binary = reposBinaryPath();
+  if (!fs.existsSync(binary)) return reposUnavailableResult("repos --gate");
+
+  const [target] = sanitizeRepoPaths([repoPath]);
+  if (!target) {
+    return {
+      ok: false,
+      command: "repos --gate",
+      exitCode: null,
+      stdout: "",
+      stderr: "A repository path must be absolute.",
+    };
+  }
+
+  const args = ["--gate", target];
+  // The binary itself refuses anything outside this set; filtering here keeps a
+  // malformed request from even reaching it.
+  const allowedWaivers = new Set(["no_local_only_files", "cold"]);
+  if (Array.isArray(waivers)) {
+    for (const waiver of waivers) {
+      if (allowedWaivers.has(waiver)) args.push("--ignore-gate", waiver);
+    }
+  }
+
+  return runMole(args, {
+    executable: binary,
+    commandLabel: `repos --gate ${target}`,
+    timeoutMs: 3 * 60 * 1000,
+  });
+});
+
+ipcMain.handle("mole:repos:push", async (event, paths, options = {}) => {
+  const targets = sanitizeRepoPaths(paths);
+  const args = ["repos", "push", "--yes"];
+  if (options.dryRun) args.push("--dry-run");
+  args.push(...targets);
+
+  return runMole(args, {
+    processId: "repos:push",
+    commandLabel: `repos push${options.dryRun ? " --dry-run" : ""} (${targets.length || "all"})`,
+    timeoutMs: 30 * 60 * 1000,
+    onStdout: (text) => {
+      event.sender.send("mole:repos:push:stdout", text);
+    },
+    onStderr: (text) => {
+      event.sender.send("mole:repos:push:stderr", text);
+    },
+  });
+});
+
+ipcMain.handle("mole:repos:push:kill", async () => killTrackedProcess("repos:push", "push"));
+
+ipcMain.handle("mole:repos:sync", async (event, paths, options = {}) => {
+  const targets = sanitizeRepoPaths(paths);
+  const profiles = githubProfiles();
+  const requestedProfile = typeof options.profile === "string" ? options.profile : "";
+  const profile = profiles.find((candidate) => candidate.login === requestedProfile)?.login;
+  if (!profile) {
+    return {
+      ok: false,
+      command: "repos sync",
+      exitCode: null,
+      stdout: "",
+      stderr: "Choose a signed-in GitHub profile before syncing.",
+    };
+  }
+
+  // `gh auth switch` is intentionally only performed after the renderer named
+  // one of the accounts reported by the local GitHub CLI. It never accepts an
+  // arbitrary string as a command argument.
+  const switched = spawnSync("gh", ["auth", "switch", "--hostname", "github.com", "--user", profile], {
+    encoding: "utf8",
+    timeout: 10000,
+  });
+  if (switched.status !== 0) {
+    return {
+      ok: false,
+      command: "repos sync",
+      exitCode: switched.status,
+      stdout: switched.stdout || "",
+      stderr: switched.stderr || `Could not switch to ${profile}.`,
+    };
+  }
+
+  const args = ["repos", "sync", "--yes", "--profile", profile];
+  if (options.dryRun) args.push("--dry-run");
+  if (options.createMissing) args.push("--create-missing");
+  args.push(...targets);
+
+  return runMole(args, {
+    processId: "repos:sync",
+    commandLabel: `repos sync${options.dryRun ? " --dry-run" : ""} (${targets.length || "all"})`,
+    timeoutMs: 30 * 60 * 1000,
+    onStdout: (text) => event.sender.send("mole:repos:sync:stdout", text),
+    onStderr: (text) => event.sender.send("mole:repos:sync:stderr", text),
+  });
+});
+
+ipcMain.handle("mole:repos:sync:kill", async () => killTrackedProcess("repos:sync", "sync"));
+
+ipcMain.handle("mole:repos:archive", async (event, paths, options = {}) => {
+  const targets = sanitizeRepoPaths(paths);
+
+  // Archiving is the one destructive action here, so it never runs against an
+  // implicit "everything" set from the UI. The CLI still supports that for
+  // deliberate terminal use.
+  if (targets.length === 0) {
+    return {
+      ok: false,
+      command: "repos archive",
+      exitCode: null,
+      stdout: "",
+      stderr: "Select at least one repository to archive.",
+    };
+  }
+
+  const args = ["repos", "archive", "--yes"];
+  if (options.dryRun) args.push("--dry-run");
+  if (options.vault) args.push("--vault");
+  if (options.allowWarm) args.push("--allow-warm");
+  args.push(...targets);
+
+  return runMole(args, {
+    processId: "repos:archive",
+    commandLabel: `repos archive${options.dryRun ? " --dry-run" : ""} (${targets.length})`,
+    timeoutMs: 30 * 60 * 1000,
+    onStdout: (text) => {
+      event.sender.send("mole:repos:archive:stdout", text);
+    },
+    onStderr: (text) => {
+      event.sender.send("mole:repos:archive:stderr", text);
+    },
+  });
+});
+
+ipcMain.handle("mole:repos:archive:kill", async () => killTrackedProcess("repos:archive", "archive"));
+
+ipcMain.handle("mole:repos:get-roots", async () => ({ ok: true, roots: readRepoRoots() }));
+
+ipcMain.handle("mole:repos:profiles", async () => {
+  const profiles = githubProfiles();
+  const preferences = repoSyncPreferences();
+  return {
+    ok: true,
+    profiles,
+    profile: profiles.some((candidate) => candidate.login === preferences.profile)
+      ? preferences.profile
+      : profiles.find((candidate) => candidate.active)?.login || "",
+    askBeforeCreate: preferences.askBeforeCreate,
+  };
+});
+
+ipcMain.handle("mole:repos:sync-preferences", async (_event, next = {}) => {
+  const profiles = githubProfiles();
+  const profile = typeof next.profile === "string" && profiles.some((candidate) => candidate.login === next.profile)
+    ? next.profile
+    : repoSyncPreferences().profile;
+  const askBeforeCreate = typeof next.askBeforeCreate === "boolean"
+    ? next.askBeforeCreate
+    : repoSyncPreferences().askBeforeCreate;
+  writeReposPrefs({ ...readReposPrefs(), profile, askBeforeCreate });
+  return { ok: true, profile, askBeforeCreate };
+});
+
+ipcMain.handle("mole:repos:set-roots", async (_event, roots) => ({
+  ok: true,
+  roots: writeRepoRoots(roots),
+}));
+
+ipcMain.handle("mole:repos:choose-root", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Choose a folder to scan for repositories",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (result.canceled || result.filePaths.length === 0) return { ok: false, roots: readRepoRoots() };
+
+  const merged = sanitizeRepoPaths([...readRepoRoots(), ...result.filePaths]);
+  return { ok: true, roots: writeRepoRoots(merged) };
+});
+
+// killTrackedProcess terminates one of the named long-running children.
+function killTrackedProcess(processId, label) {
+  const child = activeProcesses.get(processId);
+  if (child && !child.killed) {
+    if (child.__killMoleProcess) {
+      child.__killMoleProcess();
+    } else {
+      child.kill("SIGTERM");
+    }
+    return { ok: true, message: `Repo ${label} terminated` };
+  }
+  return { ok: false, message: `No active repo ${label}` };
+}
 
 ipcMain.handle("mole:runtime", async () => ({
   packaged: app.isPackaged,
@@ -2746,6 +4188,8 @@ app.whenReady().then(async () => {
     void warmApplicationSearchIndex();
   });
   startBatterySampler();
+  startAutomationScheduler();
+  configureAppUpdater();
 
   const openedAsHidden = wasOpenedAsHiddenLoginItem();
   openedAsHiddenLoginItem = openedAsHidden;

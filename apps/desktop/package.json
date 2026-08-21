@@ -9,12 +9,12 @@
     "dev": "node scripts/prepare-runtime.mjs && bunx concurrently \"vite\" \"sleep 2 && env -u ELECTRON_RUN_AS_NODE electron .\"",
     "build": "tsc && vite build && cp -r public/assets dist/",
     "preview": "vite preview",
-    "dist": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip",
-    "dist:arm64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --arm64",
-    "dist:amd64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --x64",
-    "dist:signed": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip -c.forceCodeSigning=true",
-    "dist:signed:arm64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --arm64 -c.forceCodeSigning=true",
-    "dist:signed:amd64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --x64 -c.forceCodeSigning=true",
+    "dist": "bun run build && node scripts/prepare-runtime.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip",
+    "dist:arm64": "bun run build && node scripts/prepare-runtime.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --arm64",
+    "dist:amd64": "bun run build && node scripts/prepare-runtime.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --x64",
+    "dist:signed": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip -c.mac.notarize=true -c.forceCodeSigning=true",
+    "dist:signed:arm64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --arm64 -c.publish.channel=arm64 -c.mac.notarize=true -c.forceCodeSigning=true",
+    "dist:signed:amd64": "bun run build && node scripts/prepare-runtime.mjs && electron-builder --mac dmg zip --x64 -c.publish.channel=x64 -c.mac.notarize=true -c.forceCodeSigning=true",
     "type-check": "tsc --noEmit",
     "diagnose": "node scripts/diagnose.mjs"
   },
@@ -23,6 +23,7 @@
     "clsx": "^2.1.1",
     "convex": "^1.17.4",
     "d3-force": "^3.0.0",
+    "electron-updater": "^6.8.5",
     "lucide-react": "^0.468.0",
     "motion": "^12.40.0",
     "react": "^18.3.1",
@@ -61,6 +62,11 @@
       "output": "dist-electron"
     },
     "afterPack": "./scripts/after-pack.cjs",
+    "publish": {
+      "provider": "github",
+      "owner": "stwgabriel",
+      "repo": "moleui"
+    },
     "files": [
       "dist/**/*",
       "main.mjs",
@@ -76,7 +82,6 @@
     ],
     "mac": {
       "category": "public.app-category.utilities",
-      "identity": null,
       "notarize": false,
       "target": [
         "dmg",

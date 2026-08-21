@@ -125,6 +125,7 @@ jobs:
             apps/desktop/dist-electron/*.dmg
             apps/desktop/dist-electron/*.zip
             apps/desktop/dist-electron/*.blockmap
+            apps/desktop/dist-electron/*-mac.yml
           retention-days: 1
 
   release:
@@ -167,7 +168,7 @@ jobs:
           fi
 
           # Also include desktop artifacts in checksums
-          for f in ../desktop/*.dmg ../desktop/*.zip; do
+          for f in ../desktop/*.dmg ../desktop/*.zip ../desktop/*.blockmap ../desktop/*-mac.yml; do
             if [[ -f "$f" ]]; then
               cp "$f" .
               release_files+=("$(basename "$f")")

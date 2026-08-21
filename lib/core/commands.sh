@@ -9,6 +9,7 @@ MOLE_COMMANDS=(
     "status:Monitor system health"
     "history:Review cleanup activity"
     "purge:Remove old project artifacts"
+    "repos:Track git repos and their backups"
     "installer:Find and remove installer files"
     "touchid:Configure Touch ID for sudo"
     "completion:Setup shell tab completion"

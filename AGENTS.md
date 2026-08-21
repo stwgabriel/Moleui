@@ -17,9 +17,11 @@ Mole is a macOS system cleanup and optimization tool with shell and Go component
 - `lib/optimize/` - optimization tasks.
 - `lib/check/` - health, diagnostics, and dev environment checks.
 - `lib/uninstall/` - app uninstall flows and package-manager removal helpers.
+- `lib/repos/` - repo push and archive helpers. `archive.sh` re-checks the archive gate through `bin/repos-go --gate` immediately before every removal and routes the removal through `mole_delete` in trash mode; `push.sh` pushes existing commits and never creates them.
 - `lib/ui/` - reusable menus and app selectors.
 - `cmd/analyze/` - Go disk-analysis TUI. `main.go` is bootstrap only; `model.go` holds types and accessor methods; `update.go` holds the Bubble Tea Update chain.
 - `cmd/status/` - Go status dashboard.
+- `cmd/repos/` - Go repo inventory scanner. Read-only: it classifies repositories, verifies refs against remotes, and evaluates the archive gate. `model.go` holds the JSON schema mirrored by `apps/desktop/src/types/index.ts`; `gate.go` owns the archive preconditions; `discover.go` owns filesystem discovery and sizing.
 - `tests/` - Bats and shell test coverage. `tests/fuzz_corpus/` holds property-test corpora consumed by `path_validation_fuzz.bats`.
 - `scripts/` - check, test, build, and release helpers. `audit_bundle_drift.sh` backs the monthly bundle audit; per-PR perf is covered by `tests/core_performance.bats`.
 - `docs/SECURITY_DESIGN.md` - design doc for the path validation / app protection / # SAFE annotation contract.
@@ -54,6 +56,7 @@ Public docs and examples should prefer the installed `mo` command. Use `./mole` 
 - Any new direct use of `sudo`, `osascript`, or `launchctl` must have a `MOLE_TEST_MODE` / `MOLE_TEST_NO_AUTH` guard or be fully mocked in tests.
 - Do not change ESC timeout behavior in `lib/core/ui.sh` unless explicitly requested.
 - Preserve operation logging to the project log path unless the user explicitly asks to change `MO_NO_OPLOG` behavior.
+- **Repo archiving must never trust a cached scan.** `lib/repos/archive.sh` calls `bin/repos-go --gate` immediately before each removal, and that mode always verifies against the network. Never skip the re-check, never widen the waivable-gate set, and never compare local and remote branches by ahead-count alone: a remote-tracking ref survives locally after the remote branch is deleted, so `ahead=0` can mean either "pushed" or "the only copy is here". Only an `ls-remote` SHA comparison (plus an ancestry check for branches that are merely behind) can tell those apart.
 - **AI-generated PRs touching destructive sinks need line-by-line review.** Any PR touching `find_app_files`, `mole_delete`, `remove_file_list`, Group Container / `~/Library/Containers` traversal, `TeamID.*.prefix*` style wildcards, or any `find` recursion that ends in deletion must be audited per branch (fallback branches often regress to broad globs even when the primary branch looks correct), per protected-path coverage (does `should_protect_path` already include the new entry point?), and per user-confirmation step (does the PR silently skip an existing prompt?). When the PR is plausibly AI-generated, raise the bar: ask the contributor to narrow matchers to the exact bundle ID or app path before merge; do not approve "this looks fine." PR #874 (Group Container + diagnostic discovery) and PR #875 (interactive file selector) were merged and then reverted (`6ea1987`, `b4e9205`) precisely because a TeamID-prefix wildcard in a fallback branch matched far more than intended. Same shape, same revert risk.
 
 ## Working Rules
@@ -77,6 +80,7 @@ These files are intentionally large. Do not start by splitting them. Keep edits 
 - `lib/clean/project.sh` owns purge discovery, project artifact filtering, purge menus, and purge config. Run `MOLE_TEST_NO_AUTH=1 bats tests/purge.bats tests/purge_config_paths.bats`.
 - `bin/uninstall.sh` owns uninstall command orchestration, app inventory, metadata refresh, and list/json output. Run `MOLE_TEST_NO_AUTH=1 bats tests/uninstall.bats tests/uninstall_scan_bash32.bats`.
 - `lib/clean/dev.sh` owns developer-tool cleanup, language/toolchain caches, AI agent caches, and Codex runtime handling. Run `MOLE_TEST_NO_AUTH=1 bats tests/clean_dev_caches.bats tests/dev_extended.bats`.
+- `cmd/repos/gate.go` owns every archive precondition. A repository is archivable only when all gates pass, and only two of them (`no_local_only_files`, `cold`) may ever be waived, because both can genuinely be resolved beforehand. Do not add a waiver for any gate that establishes the code exists off this machine. Run `go test ./cmd/repos` and `MOLE_TEST_NO_AUTH=1 bats tests/repos.bats`.
 - `lib/optimize/tasks.sh` owns optimize task registration and system maintenance actions. Run `MOLE_TEST_NO_AUTH=1 bats tests/optimize.bats tests/optimize_db.bats`.
 - `bin/clean.sh` owns clean command orchestration, section output, and safe cleanup execution. Run `MOLE_TEST_NO_AUTH=1 bats tests/clean_core.bats tests/clean_apps.bats tests/cli.bats`.
 - `cmd/analyze/update.go` owns the Bubble Tea `Update` chain and message handlers (Init, scanCmd, updateKey, goBack, switchToOverviewMode, enterSelectedDir). This is the largest file in `cmd/analyze/` and the natural landing spot for new key bindings, message types, or navigation behavior. Run `go test ./cmd/analyze`. `cmd/analyze/main.go` is bootstrap only (flag parsing, `main()`, helpers); `cmd/analyze/model.go` holds types and the model struct.
@@ -90,6 +94,7 @@ These files are intentionally large. Do not start by splitting them. Keep edits 
 - `mo analyze` / `mo analyse` - Go disk explorer; safer for ad hoc cleanup because it uses Trash routing.
 - `mo status` - live health dashboard and JSON output for automation.
 - `mo purge` - project build artifact cleanup, with configurable scan paths through `mo purge --paths`.
+- `mo repos` - git repository inventory. `--verify` confirms every branch and tag against the remote, `mo repos push` sends unpushed commits, `mo repos archive` moves fully pushed idle repositories to the Trash, `mo repos plan` prints a proposed layout without moving anything.
 - `mo installer` - installer-file discovery and cleanup.
 - `mo completion`, `mo touchid`, `mo update`, and `mo remove` manage shell integration, sudo auth convenience, updates, and uninstalling Mole itself.
 
@@ -101,6 +106,7 @@ These files are intentionally large. Do not start by splitting them. Keep edits 
 - File operation changes: run `MOLE_TEST_NO_AUTH=1 bats tests/file_ops_mole_delete.bats tests/user_file_ops.bats`.
 - Installer changes: run `MOLE_TEST_NO_AUTH=1 bats tests/installer.bats tests/installer_fd.bats tests/installer_zip.bats`.
 - Purge changes: run `MOLE_TEST_NO_AUTH=1 bats tests/purge.bats tests/purge_config_paths.bats`.
+- Repo management changes: run `go test ./cmd/repos` and `MOLE_TEST_NO_AUTH=1 bats tests/repos.bats`. Verify archive behaviour with `MOLE_DRY_RUN=1 ./bin/repos.sh archive --dry-run` before any real run.
 - Whitelist or management changes: run `MOLE_TEST_NO_AUTH=1 bats tests/manage_whitelist.bats tests/manage_sudo.bats`.
 - Uninstall changes: run `MOLE_TEST_NO_AUTH=1 bats tests/uninstall.bats tests/uninstall_remove_file_list.bats`.
 - Documentation-only changes: check links and commands.
