@@ -363,6 +363,7 @@ export interface MoleDesktopAPI {
   analyze: {
     execute: (path: string, options?: { fresh?: boolean }) => Promise<MoleResult>;
     kill: () => Promise<{ ok: boolean; message: string }>;
+    volumes: () => Promise<{ ok: boolean; volumes: StorageVolume[]; message?: string }>;
     onStdout: (callback: (data: string) => void) => void;
     onStderr: (callback: (data: string) => void) => void;
     removeListeners: () => void;
@@ -520,6 +521,22 @@ export interface CleanCategory {
 }
 
 export type PageId = 'mymac' | 'clean' | 'automations' | 'uninstall' | 'optimize' | 'analyze' | 'repos';
+
+// ─── Storage volumes ─────────────────────────────────────────────────────────
+// Mirrors jsonVolume in cmd/analyze/volumes.go. Only browsable local volumes
+// reach here; the helper volumes macOS hides from Finder are filtered out
+// before the JSON is written.
+
+export interface StorageVolume {
+  name: string;
+  path: string;
+  fs_type: string;
+  total: number;
+  free: number;
+  used: number;
+  is_root: boolean;
+  read_only: boolean;
+}
 
 // ─── Repos ───────────────────────────────────────────────────────────────────
 // Mirrors the JSON emitted by cmd/repos. Keep field names in sync with the Go

@@ -153,6 +153,7 @@ function mockMoleDesktop(metrics: SystemMetrics) {
     analyze: {
       execute: vi.fn(),
       kill: vi.fn(),
+      volumes: vi.fn().mockResolvedValue({ ok: true, volumes: [] }),
       onStdout: vi.fn(),
       onStderr: vi.fn(),
       removeListeners: vi.fn(),

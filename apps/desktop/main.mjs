@@ -632,7 +632,7 @@ async function getAppIconData(appPath) {
     }
   }
 
-  const bundleIcon = getMacAppBundleIconData(appPath);
+  const bundleIcon = await getMacAppBundleIconData(appPath);
   if (bundleIcon.ok) {
     appIconCache.set(appPath, bundleIcon);
     return bundleIcon;
@@ -682,40 +682,227 @@ async function getAppThumbnailIconData(appPath) {
   }
 }
 
-function getMacAppBundleIconData(appPath) {
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
+// Icon sizes inside an .icns, best first. ic08/ic09 (256px/512px) downscale to
+// the 128px the UI wants without softening; the smaller entries are there so a
+// sparse icns still yields something.
+const ICNS_PNG_TYPES = ["ic08", "ic09", "ic13", "ic07", "ic14", "ic10", "ic12", "ic11", "icp6", "icp5", "icp4"];
+
+// readIcnsPng pulls a PNG straight out of an .icns container.
+//
+// This exists because nativeImage.createFromPath() no longer decodes .icns at
+// all: on macOS 27 / Electron 35 it returns an empty image for every app icon
+// on the machine, which is why the Storage, Uninstall and My Mac screens all
+// showed generic placeholders instead of real icons. An .icns is a flat list of
+// 8-byte-headed chunks, and since OS X 10.7 the useful sizes are stored as
+// ordinary PNGs, so reading one out needs no image framework.
+function readIcnsPng(icnsPath) {
+  const buffer = fs.readFileSync(icnsPath);
+  if (buffer.length < 8 || buffer.toString("ascii", 0, 4) !== "icns") return null;
+
+  // The header length can disagree with the file on truncated bundles; trust
+  // whichever is smaller so a bad length cannot walk off the end.
+  const declaredLength = buffer.readUInt32BE(4);
+  const end = Math.min(declaredLength || buffer.length, buffer.length);
+  const pngChunks = new Map();
+
+  let offset = 8;
+  while (offset + 8 <= end) {
+    const chunkType = buffer.toString("ascii", offset, offset + 4);
+    const chunkLength = buffer.readUInt32BE(offset + 4);
+    // A chunk shorter than its own header, or one that overruns the file, means
+    // the container is malformed. Keep what was read rather than guessing.
+    if (chunkLength < 8 || offset + chunkLength > end) break;
+
+    const chunkData = buffer.subarray(offset + 8, offset + chunkLength);
+    if (chunkData.subarray(0, 4).equals(PNG_SIGNATURE)) pngChunks.set(chunkType, chunkData);
+    offset += chunkLength;
+  }
+
+  if (pngChunks.size === 0) return null;
+
+  for (const chunkType of ICNS_PNG_TYPES) {
+    const chunk = pngChunks.get(chunkType);
+    if (chunk) return chunk;
+  }
+
+  // An icns with only unfamiliar PNG chunk types: take the biggest.
+  return [...pngChunks.values()].sort((a, b) => b.length - a.length)[0];
+}
+
+// The fallback for every image Chromium will not decode.
+//
+// Two groups need it. Older .icns files store their sizes as JPEG 2000 or as
+// legacy RLE bitmaps with no PNG to lift out (Microsoft Outlook, OpenVPN
+// Connect, Proton Mail Bridge on the test machine). iOS app icons are CgBI
+// PNGs, Apple's private variant, which Chromium reads as an empty image
+// (Comgas Virtual, Proton Authenticator). sips ships with macOS and converts
+// both, and running it out of process keeps image decoding away from the
+// NSImage bridge that made the in-process APIs unstable.
+function convertImageToPng(sourcePath) {
+  return new Promise((resolve) => {
+    const outputPath = path.join(
+      os.tmpdir(),
+      `mole-icon-${Date.now()}-${Math.random().toString(36).slice(2)}.png`
+    );
+
+    execFile(
+      "sips",
+      ["-s", "format", "png", "-Z", "256", sourcePath, "--out", outputPath],
+      { timeout: 4000 },
+      (error) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        try {
+          resolve(fs.readFileSync(outputPath));
+        } catch {
+          resolve(null);
+        } finally {
+          try {
+            fs.unlinkSync(outputPath);
+          } catch {
+            // Best effort: a leftover temp file is harmless.
+          }
+        }
+      }
+    );
+  });
+}
+
+// bundleIcnsCandidates lists the .icns files worth trying, best guess first.
+//
+// CFBundleIconFile is the authoritative answer but is not always readable:
+// several shipping apps store Info.plist as a binary plist, where the XML regex
+// finds nothing, and some omit the key entirely. Rather than shelling out to
+// plutil per app, fall back to whatever .icns files sit in Resources, ordered
+// by how likely each name is to be the app icon rather than a document icon.
+function bundleIcnsCandidates(appPath) {
+  const resourcesPath = path.join(appPath, "Contents", "Resources");
+  const candidates = [];
+
+  const addCandidate = (iconPath) => {
+    if (iconPath && !candidates.includes(iconPath) && fs.existsSync(iconPath)) candidates.push(iconPath);
+  };
+
+  try {
+    const infoPlist = fs.readFileSync(path.join(appPath, "Contents", "Info.plist"), "utf8");
+    const iconFileMatch = infoPlist.match(/<key>CFBundleIconFile<\/key>\s*<string>([^<]+)<\/string>/);
+    if (iconFileMatch) {
+      const rawIconName = iconFileMatch[1].trim();
+      const iconNames = path.extname(rawIconName) ? [rawIconName] : [`${rawIconName}.icns`, rawIconName];
+      iconNames.forEach((iconName) => addCandidate(path.join(resourcesPath, iconName)));
+    }
+  } catch {
+    // No readable Info.plist: the Resources scan below is the only route left.
+  }
+
+  try {
+    const appName = path.basename(appPath).replace(/\.app$/i, "").toLowerCase();
+    const icnsFiles = fs.readdirSync(resourcesPath).filter((name) => name.toLowerCase().endsWith(".icns"));
+    const rank = (name) => {
+      const base = name.toLowerCase().replace(/\.icns$/, "");
+      if (base === appName) return 0;
+      if (base === "appicon" || base === "app" || base === "icon") return 1;
+      if (base === "electron") return 2;
+      // Document-type icons live alongside the app icon and must lose to it.
+      if (base.includes("document") || base.includes("file")) return 4;
+      return 3;
+    };
+    icnsFiles
+      .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+      .forEach((name) => addCandidate(path.join(resourcesPath, name)));
+  } catch {
+    // Unreadable Resources directory: nothing more to offer.
+  }
+
+  return candidates;
+}
+
+// iPhone and iPad apps installed on Apple Silicon are wrapped: the outer bundle
+// holds only Wrapper/<App>.app plus a WrappedBundle symlink, and the icon is a
+// plain PNG (AppIcon60x60@2x.png) inside the wrapped bundle rather than an
+// .icns. Three of the 95 apps on the test machine were in this shape, and all
+// three fell through to the generic placeholder.
+function wrappedIosAppIconPath(appPath) {
+  const wrapperDir = path.join(appPath, "Wrapper");
+  let wrappedBundle = "";
+
+  try {
+    wrappedBundle = fs.realpathSync(path.join(appPath, "WrappedBundle"));
+  } catch {
+    try {
+      const inner = fs.readdirSync(wrapperDir).find((name) => name.endsWith(".app"));
+      if (!inner) return "";
+      wrappedBundle = path.join(wrapperDir, inner);
+    } catch {
+      return "";
+    }
+  }
+
+  try {
+    const icons = fs.readdirSync(wrappedBundle)
+      .filter((name) => /^AppIcon.*\.png$/i.test(name))
+      .map((name) => ({ name, size: fs.statSync(path.join(wrappedBundle, name)).size }))
+      // No pixel dimensions without decoding, and the biggest file is reliably
+      // the biggest icon among variants of the same artwork.
+      .sort((a, b) => b.size - a.size);
+    return icons.length > 0 ? path.join(wrappedBundle, icons[0].name) : "";
+  } catch {
+    return "";
+  }
+}
+
+async function getMacAppBundleIconData(appPath) {
   if (process.platform !== "darwin" || path.extname(appPath) !== ".app") {
     return { ok: false, icon: "", message: "Not a macOS app bundle" };
   }
 
-  try {
-    const infoPlistPath = path.join(appPath, "Contents", "Info.plist");
-    const resourcesPath = path.join(appPath, "Contents", "Resources");
-    const infoPlist = fs.readFileSync(infoPlistPath, "utf8");
-    const iconFileMatch = infoPlist.match(/<key>CFBundleIconFile<\/key>\s*<string>([^<]+)<\/string>/);
-
-    if (!iconFileMatch) {
-      return { ok: false, icon: "", message: "Bundle icon key not found" };
-    }
-
-    const rawIconName = iconFileMatch[1].trim();
-    const iconNames = path.extname(rawIconName)
-      ? [rawIconName]
-      : [`${rawIconName}.icns`, rawIconName];
-
-    for (const iconName of iconNames) {
-      const iconPath = path.join(resourcesPath, iconName);
-      if (!fs.existsSync(iconPath)) continue;
-
-      const image = nativeImage.createFromPath(iconPath);
+  const candidates = bundleIcnsCandidates(appPath);
+  if (candidates.length === 0) {
+    const wrappedIcon = wrappedIosAppIconPath(appPath);
+    if (wrappedIcon) {
+      const image = nativeImage.createFromPath(wrappedIcon);
       if (!image.isEmpty()) {
         return { ok: true, icon: image.resize({ width: 128, height: 128 }).toDataURL() };
       }
+      // Empty means a CgBI PNG. sips reads those.
+      const convertedIcon = await convertImageToPng(wrappedIcon);
+      if (convertedIcon) {
+        const convertedImage = nativeImage.createFromBuffer(convertedIcon);
+        if (!convertedImage.isEmpty()) {
+          return { ok: true, icon: convertedImage.resize({ width: 128, height: 128 }).toDataURL() };
+        }
+      }
     }
-
     return { ok: false, icon: "", message: "Bundle icon file not found" };
-  } catch (error) {
-    return { ok: false, icon: "", message: error.message };
   }
+
+  for (const iconPath of candidates) {
+    try {
+      const pngData = readIcnsPng(iconPath);
+      if (!pngData) continue;
+      const image = nativeImage.createFromBuffer(pngData);
+      if (!image.isEmpty()) {
+        return { ok: true, icon: image.resize({ width: 128, height: 128 }).toDataURL() };
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  // Every candidate was a legacy container. Convert the best guess.
+  const pngData = await convertImageToPng(candidates[0]);
+  if (pngData) {
+    const image = nativeImage.createFromBuffer(pngData);
+    if (!image.isEmpty()) {
+      return { ok: true, icon: image.resize({ width: 128, height: 128 }).toDataURL() };
+    }
+  }
+
+  return { ok: false, icon: "", message: "Bundle icon file not readable" };
 }
 
 function parsePlistString(plist, key) {
@@ -3607,6 +3794,36 @@ ipcMain.handle("mole:analyze:execute", async (event, path = "/", options = {}) =
   });
 });
 
+// Mounted volumes for the storage page's disk switcher. This is a statfs read
+// with no scan behind it, so it does not go through the shared "analyze"
+// process slot: a volume list must still answer while a scan is running.
+ipcMain.handle("mole:analyze:volumes", async () => {
+  const binary = analyzeBinaryPath();
+  const useBinary = fs.existsSync(binary);
+  const args = useBinary ? ["--volumes"] : ["analyze", "--volumes"];
+
+  const result = await runMole(args, {
+    executable: useBinary ? binary : undefined,
+    commandLabel: "analyze --volumes",
+    // Defence in depth. The binary bounds its own /Volumes read, but a stalled
+    // disk can wedge any syscall, and without a deadline here the renderer's
+    // promise never settles and the disk switcher spins forever. Listing mounts
+    // is a kernel-table read, so anything past a couple of seconds is broken.
+    timeoutMs: 4000,
+  });
+
+  if (!result.ok) {
+    return { ok: false, volumes: [], message: result.stderr || "Failed to list volumes" };
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout || "{}");
+    return { ok: true, volumes: Array.isArray(parsed.volumes) ? parsed.volumes : [] };
+  } catch (error) {
+    return { ok: false, volumes: [], message: error.message };
+  }
+});
+
 ipcMain.handle("mole:analyze:kill", async () => {
   const process = activeProcesses.get("analyze");
   if (process && !process.killed) {
@@ -4117,6 +4334,47 @@ ipcMain.handle("mole:open-path-in-finder", async (_event, inputPath) => {
   return openNewFinderWindow(filePath);
 });
 
+// Locations the storage map can now reach but must never delete from.
+//
+// A scan of "/" lists /System and /private, and its biggest-files list reaches
+// into /private/var/log and /private/var/folders. Those are writable by the
+// user, so trashItem would succeed and break running services; SIP only covers
+// /System. Before the root scan covered these trees nothing in the UI could
+// name a path inside them, so the "/" and $HOME check below was enough.
+const SYSTEM_OWNED_PREFIXES = [
+  "/System",
+  "/private",
+  "/usr",
+  "/bin",
+  "/sbin",
+  "/etc",
+  "/var",
+  "/tmp",
+  "/dev",
+  "/cores",
+  "/opt/homebrew",
+  "/Library/Apple",
+];
+
+function isSystemOwnedPath(filePath) {
+  const matchesPrefix = (candidate) => SYSTEM_OWNED_PREFIXES.some(
+    (prefix) => candidate === prefix || candidate.startsWith(`${prefix}/`)
+  );
+
+  if (matchesPrefix(filePath)) return true;
+
+  // Check the resolved target too, so a symlink cannot be used to reach a
+  // protected tree under a name that does not match any prefix.
+  try {
+    const resolvedPath = fs.realpathSync(filePath);
+    if (resolvedPath !== filePath && matchesPrefix(resolvedPath)) return true;
+  } catch {
+    // Unresolvable path: the prefix check above is the answer.
+  }
+
+  return false;
+}
+
 ipcMain.handle("mole:delete-path", async (_event, inputPath) => {
   const filePath = existingFileActionPath(inputPath);
   if (!filePath) {
@@ -4126,6 +4384,9 @@ ipcMain.handle("mole:delete-path", async (_event, inputPath) => {
   const protectedPaths = new Set(["/", app.getPath("home")]);
   if (protectedPaths.has(filePath)) {
     return { ok: false, message: "This location cannot be deleted" };
+  }
+  if (isSystemOwnedPath(filePath)) {
+    return { ok: false, message: "This is a system location and cannot be deleted from here" };
   }
 
   try {
