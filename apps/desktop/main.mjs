@@ -3807,9 +3807,14 @@ ipcMain.handle("mole:analyze:volumes", async () => {
     commandLabel: "analyze --volumes",
     // Defence in depth. The binary bounds its own /Volumes read, but a stalled
     // disk can wedge any syscall, and without a deadline here the renderer's
-    // promise never settles and the disk switcher spins forever. Listing mounts
-    // is a kernel-table read, so anything past a couple of seconds is broken.
-    timeoutMs: 4000,
+    // promise never settles and the disk switcher spins forever.
+    //
+    // Generous on purpose. Repeat runs finish in under 10ms, but the first
+    // execution of a freshly signed binary pays for Gatekeeper validating it,
+    // measured at 2.8s right after an install, which is exactly when the user
+    // first opens the app. The binary's own 400ms deadline is what actually
+    // prevents a hang; this only has to catch a wedged process.
+    timeoutMs: 15000,
   });
 
   if (!result.ok) {
