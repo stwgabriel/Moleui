@@ -17,12 +17,20 @@ import (
 )
 
 var (
-	jsonMode  = flag.Bool("json", false, "output analysis as JSON instead of TUI")
-	freshMode = flag.Bool("fresh", false, "ignore cached analysis data")
+	jsonMode    = flag.Bool("json", false, "output analysis as JSON instead of TUI")
+	freshMode   = flag.Bool("fresh", false, "ignore cached analysis data")
+	volumesMode = flag.Bool("volumes", false, "output the browsable mounted volumes as JSON and exit")
 )
 
 func main() {
 	flag.Parse()
+
+	// Volume enumeration is a statfs read with no scan behind it, so it answers
+	// before any path resolution or cache pruning happens.
+	if *volumesMode {
+		runVolumesMode()
+		return
+	}
 
 	target := os.Getenv("MO_ANALYZE_PATH")
 	if target == "" && len(flag.Args()) > 0 {

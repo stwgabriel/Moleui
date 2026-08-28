@@ -230,6 +230,22 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 	for _, child := range children {
 		fullPath := filepath.Join(root, child.Name())
 
+		if isRootDir {
+			// Applies to files as well as directories: ".file" is a zero-byte
+			// stub, not a folder.
+			if skipSystemDirs[child.Name()] {
+				continue
+			}
+			// Every symlink at "/" is a macOS compatibility link: var, tmp and
+			// etc point into private/, home and .VolumeIcon.icns point into
+			// /System/Volumes/Data. Their bytes are already counted under the
+			// real entries, so listing them only adds 11-byte rows that push
+			// real results out of the map.
+			if child.Type()&fs.ModeSymlink != 0 {
+				continue
+			}
+		}
+
 		// Skip symlinks to avoid following unexpected targets.
 		if child.Type()&fs.ModeSymlink != 0 {
 			targetInfo, err := os.Stat(fullPath)
@@ -262,8 +278,35 @@ func scanPathConcurrentWithLimiterAndCache(root string, filesScanned, dirsScanne
 				continue
 			}
 
-			// Skip system dirs at root.
-			if isRootDir && skipSystemDirs[child.Name()] {
+			if isFirmlinkVolumesDir(fullPath) {
+				continue
+			}
+
+			// Heavy system roots: one du, one entry, no expansion. See
+			// rootSizeOnlyDirs in constants.go for why each one is listed.
+			if isRootDir && rootSizeOnlyDirs[child.Name()] {
+				processSizeOnly := func(name, path string) {
+					size, err := measureRootDirSizeCached(path, useCache)
+					if err != nil || size <= 0 {
+						return
+					}
+					atomic.AddInt64(&total, size)
+					atomic.AddInt64(bytesScanned, size)
+					atomic.AddInt64(dirsScanned, 1)
+
+					trySend(entryChan, dirEntry{
+						Name:       name,
+						Path:       path,
+						Size:       size,
+						IsDir:      true,
+						LastAccess: time.Time{},
+					}, scanSendTimeout)
+				}
+				duQueueSem <- struct{}{}
+				wg.Go(func() {
+					defer func() { <-duQueueSem }()
+					processSizeOnly(child.Name(), fullPath)
+				})
 				continue
 			}
 
@@ -578,6 +621,9 @@ func calculateDirSizeFastWithLimiter(root string, limiter *scanLimiter, filesSca
 		for _, entry := range entries {
 			if entry.IsDir() {
 				subDir := filepath.Join(dirPath, entry.Name())
+				if isFirmlinkVolumesDir(subDir) {
+					continue
+				}
 				atomic.AddInt64(dirsScanned, 1)
 
 				select {
@@ -729,6 +775,10 @@ func calculateDirSizeConcurrent(root string, largeFileChan chan<- fileEntry, lar
 		}
 
 		if child.IsDir() {
+			if isFirmlinkVolumesDir(fullPath) {
+				continue
+			}
+
 			localDirsScanned++
 
 			if shouldFoldDirWithPath(child.Name(), fullPath) {
@@ -847,6 +897,54 @@ func measureOverviewSize(path string) (int64, error) {
 	}
 
 	return 0, fmt.Errorf("unable to measure directory size with fast methods")
+}
+
+// isFirmlinkVolumesDir reports whether path is the directory holding this Mac's
+// firmlinked data volume.
+//
+// On APFS, /System/Volumes/Data re-exposes the whole data volume: descending
+// into it counts /Users, /Applications and /Library a second time and roughly
+// doubles the reported total. `du -x` does not stop there either, because
+// `stat -f %d` reports the same device id for "/" and /System/Volumes/Data.
+// Its siblings (Preboot, Recovery, Update, VM, xarts, iSCPreboot, Hardware) are
+// separate volumes that are not part of this volume's usage, so excluding the
+// whole directory is both correct and cheaper than special-casing Data.
+func isFirmlinkVolumesDir(path string) bool {
+	return filepath.Clean(path) == "/System/Volumes"
+}
+
+// measureRootDirSize sizes one top-level system directory without expanding it.
+func measureRootDirSize(path string) (int64, error) {
+	if isFirmlinkVolumesDir(filepath.Join(path, "Volumes")) {
+		// /System, measured with `du -I Volumes` so du never descends into the
+		// firmlinked data volume. The exclude-path route is wrong here: it runs
+		// one du per child and gives up as soon as one fails, and /System has
+		// several children this process cannot read. `-I` is name-based, but
+		// /System/Volumes is the only "Volumes" under /System, and BSD du still
+		// prints a usable aggregate when descendants are unreadable.
+		// Measured on macOS 15: 19.3 GB in ~10s, versus a 30s du timeout and no
+		// number at all when Volumes is walked.
+		return getDirectorySizeFromDuWithExcludeAndIgnores(path, "", []string{"Volumes"})
+	}
+	return getDirectorySizeFromDu(path)
+}
+
+// measureRootDirSizeCached reuses the 7-day overview snapshot for system roots.
+// /System and /usr only change on OS updates, so re-running du on every scan of
+// "/" costs about ten seconds for a number that did not move.
+func measureRootDirSizeCached(path string, useCache bool) (int64, error) {
+	if useCache {
+		if cached, err := loadStoredOverviewSize(path); err == nil && cached > 0 {
+			return cached, nil
+		}
+	}
+
+	size, err := measureRootDirSize(path)
+	if err != nil || size <= 0 {
+		return size, err
+	}
+	_ = storeOverviewSize(path, size)
+	return size, nil
 }
 
 func getDirectorySizeFromDu(path string) (int64, error) {

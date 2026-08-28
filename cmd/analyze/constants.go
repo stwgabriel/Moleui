@@ -6,7 +6,7 @@ import "time"
 
 const (
 	maxEntries             = 30
-	maxLargeFiles          = 20
+	maxLargeFiles          = 100
 	barWidth               = 24
 	spotlightMinFileSize   = 100 << 20
 	largeFileWarmupMinSize = 1 << 20
@@ -180,28 +180,64 @@ var foldDirs = map[string]bool{
 	"temp":       true,
 }
 
+// skipSystemDirs names top-level entries that a scan of "/" must not descend
+// into or count. Everything left out of this map is either walked normally or
+// sized through rootSizeOnlyDirs, so the root view adds up to the whole volume.
+//
+// Only three reasons to be in here:
+//   - virtual or automounted filesystems that hold no real bytes (dev, net,
+//     home, Network)
+//   - other volumes, which get their own entry in the volume switcher rather
+//     than folding into this volume's total (Volumes)
+//   - filesystem metadata and kernel stubs the user cannot act on (.vol,
+//     .file, .nofollow, .resolve, .Spotlight-V100, .fseventsd,
+//     .DocumentRevisions-V100, .TemporaryItems, .MobileBackups)
+//
+// tmp/var/etc are symlinks into private/ on stock macOS, so they never reach
+// this check (see the root symlink rule in scanner.go). They stay listed as
+// documentation of where their bytes actually live: under /private.
 var skipSystemDirs = map[string]bool{
 	"dev":                     true,
-	"tmp":                     true,
-	"private":                 true,
-	"cores":                   true,
 	"net":                     true,
 	"home":                    true,
-	"System":                  true,
-	"sbin":                    true,
-	"bin":                     true,
-	"etc":                     true,
-	"var":                     true,
-	"opt":                     false,
-	"usr":                     false,
 	"Volumes":                 true,
 	"Network":                 true,
+	"tmp":                     true,
+	".file":                   true,
+	".nofollow":               true,
+	".resolve":                true,
+	"etc":                     true,
+	"var":                     true,
 	".vol":                    true,
 	".Spotlight-V100":         true,
 	".fseventsd":              true,
 	".DocumentRevisions-V100": true,
 	".TemporaryItems":         true,
 	".MobileBackups":          true,
+}
+
+// rootSizeOnlyDirs names top-level directories that a scan of "/" measures with
+// du and lists as a single entry, without expanding their children.
+//
+// These trees are permission-dense: /System and /private/var hold hundreds of
+// thousands of entries the app cannot stat, and walking them concurrently is
+// exactly the workload that exhausted the per-user OS thread limit in #765
+// (fatal "runtime: failed to create new OS thread", no recovery). The root view
+// only needs one number per tile, and drilling into the tile runs a normal
+// scan of that path alone.
+//
+// Before this map they were skipped outright, which made a scan of "/" report
+// roughly 33 GB less than the volume actually held on a stock macOS 15 install
+// (19.3 GB under /System, 13.6 GB under /private).
+var rootSizeOnlyDirs = map[string]bool{
+	"System":  true,
+	"private": true,
+	"usr":     true,
+	"opt":     true,
+	"bin":     true,
+	"sbin":    true,
+	"cores":   true,
+	"pkg":     true,
 }
 
 var defaultSkipDirs = map[string]bool{
