@@ -2,11 +2,10 @@ import { useEffect, useMemo, useRef, useState, useCallback, type MouseEvent } fr
 import { createPortal } from 'react-dom';
 import {
   HardDrive, FolderOpen, File, BarChart3, Search,
-  RefreshCw, X, ChevronRight, ChevronUp, Home, Download,
+  RefreshCw, X, ChevronRight, ChevronUp,
   AlertCircle, ArrowLeft, Folder, Trash2, ExternalLink,
-  ListFilter,
+  ListFilter, ChevronDown, Layers,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { StartScreen } from '@/components/common/StartScreen';
 import { StageTransition } from '@/components/common/StageTransition';
@@ -16,11 +15,9 @@ import { featureAccentVars } from '@/lib/featureAccents';
 import { formatBytes, stripAnsi } from '@/utils/format';
 import { usePersistentState } from '@/utils/persistentState';
 import { usePaywall } from '@/hooks/usePaywall';
-import type { PageConfig } from '@/types';
+import type { PageConfig, StorageVolume } from '@/types';
 
 type Stage = 'idle' | 'scanning' | 'results' | 'error';
-type AnalyzeMode = 'disk' | 'home' | 'downloads' | 'custom';
-type QuickAnalyzeMode = Exclude<AnalyzeMode, 'custom'>;
 type NavigationAnimationDirection = 'down' | 'up';
 
 const analyzeAccentStyle = featureAccentVars('analyze');
@@ -47,6 +44,7 @@ interface FileActionItem {
   path: string;
   size: number;
   is_dir?: boolean;
+  systemOwned?: boolean;
 }
 
 interface ContextMenuState {
@@ -84,18 +82,44 @@ interface TreemapRect extends TreemapItem {
 
 type AppIconMap = Record<string, string>;
 
-const QUICK_PATHS: Array<{ mode: QuickAnalyzeMode; label: string; path: string; icon: LucideIcon }> = [
-  { mode: 'disk', label: 'Entire Disk', path: '/', icon: HardDrive },
-  { mode: 'home', label: 'Home Folder', path: '~', icon: Home },
-  { mode: 'downloads', label: 'Downloads', path: '~/Downloads', icon: Download },
-];
-
 const TREEMAP_COLORS = [
   '#fb923c', '#0ea5e9', '#ef4444', '#3b82f6',
   '#a855f7', '#14b8a6', '#f59e0b', '#ec4899',
   '#22c55e', '#64748b', '#f97316', '#06b6d4',
 ];
-const SMALL_FILE_GROUP_THRESHOLD = 1024 * 1024;
+// A treemap tile below roughly 0.4% of the total renders as a sliver a few
+// pixels wide: too small to label, too small to aim at. Everything under that
+// folds into a single tile so the tiles that matter stay legible.
+//
+// The threshold is a share of the parent total rather than a byte count. The
+// old fixed 1 MB cut-off was noise inside a 500 GB volume and, in a source
+// folder, larger than every file in it.
+const TINY_TILE_SHARE = 0.004;
+// The map subdivides down to slivers happily, so a handful of small tiles is
+// fine to draw. Only a flood needs folding, and 12 is where the labels stop
+// fitting and the map stops being readable.
+const MIN_TINY_TILE_GROUP = 12;
+
+// Size bands inside the small-items modal, biggest first. Absolute rather than
+// relative: once you are looking at the folded pile, "under 1 MB" is the
+// question you are actually asking.
+// Size tiers for the folded pile, largest first. They nest rather than sit side
+// by side: a level draws its own items plus one tile standing for everything
+// smaller, and that tile zooms open into the next tier. Showing all four at once
+// put a 200 MB file and a 4 KB file in the same picture, where the 4 KB file is
+// a sliver either way.
+const SMALL_ITEM_TIERS = [
+  { key: 'gte100', label: '100 MB and up', min: 100 * 1024 * 1024 },
+  { key: 'under100', label: 'Under 100 MB', min: 10 * 1024 * 1024 },
+  { key: 'under10', label: 'Under 10 MB', min: 1024 * 1024 },
+  { key: 'under1', label: 'Under 1 MB', min: 0 },
+] as const;
+
+const ZOOM_EASING = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
+const ZOOM_DURATION_MS = 420;
+// The list renders every entry, but not all at once: a home folder with 8,000
+// files was building 8,000 buttons on the first paint.
+const LIST_PAGE_SIZE = 250;
 
 function isApplicationsPath(path: string) {
   const cleanPath = path.replace(/\/+$/, '') || '/';
@@ -106,13 +130,32 @@ function isMacAppEntry(entry: Pick<AnalyzeEntry, 'path' | 'is_dir'>) {
   return entry.is_dir && entry.path.endsWith('.app');
 }
 
-function pathForAnalyzeMode(mode: AnalyzeMode, customPath: string) {
-  if (mode === 'custom') return customPath.trim() || '/';
-  return QUICK_PATHS.find((item) => item.mode === mode)?.path ?? '/';
+// System locations the storage map can reach once a scan of "/" covers the whole
+// OS. Trashing anything in here breaks the machine, so these rows get Finder
+// access and nothing else. main.mjs refuses them too; this only keeps the menu
+// from offering an action that would be rejected.
+const SYSTEM_OWNED_PREFIXES = [
+  '/System', '/private', '/usr', '/bin', '/sbin', '/etc', '/var', '/tmp',
+  '/dev', '/cores', '/opt/homebrew', '/Library/Apple',
+];
+
+function isSystemOwnedPath(path: string) {
+  return SYSTEM_OWNED_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
-function modeForPath(path: string): AnalyzeMode {
-  return QUICK_PATHS.find((item) => item.path === path)?.mode ?? 'custom';
+// The top of a volume: "/" for the startup disk, "/Volumes/<name>" for the rest.
+// Only there does comparing the scan total against the volume's used space mean
+// anything.
+function isVolumeRootPath(path: string) {
+  const clean = path.replace(/\/+$/, '');
+  return clean === '' || /^\/Volumes\/[^/]+$/.test(clean);
+}
+
+// Which volume a path belongs to, by longest matching mount point.
+function volumeForPath(path: string, volumes: StorageVolume[]) {
+  return volumes
+    .filter((volume) => path === volume.path || path.startsWith(volume.path === '/' ? '/' : `${volume.path}/`))
+    .sort((a, b) => b.path.length - a.path.length)[0];
 }
 
 function getPathDepth(path: string) {
@@ -123,21 +166,73 @@ function sumSizes(items: Array<{ size: number }>) {
   return items.reduce((sum, item) => sum + Math.max(0, item.size), 0);
 }
 
-function groupSmallFiles(entries: AnalyzeEntry[], resultPath: string): AnalyzeEntry[] {
-  const smallFiles = entries.filter((entry) => !entry.is_dir && entry.size > 0 && entry.size < SMALL_FILE_GROUP_THRESHOLD);
+// groupTinyEntries folds unrenderably small entries into one tile. It applies to
+// the map only. The list on the right keeps every entry, so nothing disappears:
+// the previous version collapsed the list too, which meant a folder's small
+// files could not be seen, sorted, or right-clicked at all.
+//
+// Directories count as well as files. A folder of a thousand tiny subfolders
+// flooded the map exactly like a folder of tiny files, and only the files were
+// ever grouped.
+function groupTinyEntries(entries: AnalyzeEntry[], totalSize: number, resultPath: string) {
+  const threshold = totalSize * TINY_TILE_SHARE;
+  if (threshold <= 0) return { entries, groupedMembers: [] as AnalyzeEntry[] };
 
-  if (smallFiles.length < 2) return entries;
+  const tiny = entries.filter((entry) => entry.size > 0 && entry.size < threshold);
+  if (tiny.length < MIN_TINY_TILE_GROUP) return { entries, groupedMembers: [] as AnalyzeEntry[] };
 
-  const smallFilePaths = new Set(smallFiles.map((entry) => entry.path));
+  const tinyPaths = new Set(tiny.map((entry) => entry.path));
   const groupedEntry: AnalyzeEntry = {
-    name: 'Files under 1 MB',
-    path: `${resultPath.replace(/\/$/, '') || '/'}/.mole-small-files`,
-    size: sumSizes(smallFiles),
+    name: `${tiny.length.toLocaleString()} small items`,
+    path: `${resultPath.replace(/\/$/, '') || '/'}/.mole-small-items`,
+    size: sumSizes(tiny),
     is_dir: false,
     isGroupedSmallFiles: true,
   };
 
-  return [...entries.filter((entry) => !smallFilePaths.has(entry.path)), groupedEntry];
+  return {
+    entries: [...entries.filter((entry) => !tinyPaths.has(entry.path)), groupedEntry],
+    groupedMembers: [...tiny].sort((a, b) => b.size - a.size),
+  };
+}
+
+interface SmallItemTier {
+  key: string;
+  label: string;
+  items: AnalyzeEntry[];
+}
+
+// Builds the tier chain the modal zooms through, dropping empty tiers so no
+// level is a single full-screen tile that exists only to be clicked past.
+function buildSmallItemTiers(items: AnalyzeEntry[]): SmallItemTier[] {
+  return SMALL_ITEM_TIERS
+    .map((tier, index) => {
+      const ceiling = index === 0 ? Infinity : SMALL_ITEM_TIERS[index - 1].min;
+      return {
+        key: tier.key,
+        label: tier.label,
+        items: items
+          .filter((item) => item.size >= tier.min && item.size < ceiling)
+          .sort((a, b) => b.size - a.size),
+      };
+    })
+    .filter((tier) => tier.items.length > 0);
+}
+
+// Start transforms for the zoom. Both directions map a tile rect to the full
+// view, so entering and leaving a level are the same motion reversed.
+//
+// transform-origin sits at 0 0 and translate percentages resolve against the
+// element's own box, which is the full container, so a translate of R.x% moves
+// by R.x% of the container width.
+function zoomInTransform(rect: { x: number; y: number; width: number; height: number }) {
+  return `translate(${rect.x}%, ${rect.y}%) scale(${rect.width / 100}, ${rect.height / 100})`;
+}
+
+function zoomOutTransform(rect: { x: number; y: number; width: number; height: number }) {
+  const scaleX = 100 / Math.max(rect.width, 0.01);
+  const scaleY = 100 / Math.max(rect.height, 0.01);
+  return `translate(${-rect.x * scaleX}%, ${-rect.y * scaleY}%) scale(${scaleX}, ${scaleY})`;
 }
 
 function buildTreemapItems(
@@ -145,6 +240,7 @@ function buildTreemapItems(
   totalSize: number,
   resultPath: string,
   remainderTotal = totalSize,
+  remainderName = 'Other',
 ): TreemapItem[] {
   const visibleEntries = entries.filter((entry) => entry.size > 0);
   const visibleSize = sumSizes(visibleEntries);
@@ -157,7 +253,7 @@ function buildTreemapItems(
 
   if (remainder > totalSize * 0.01) {
     items.push({
-      name: 'Other',
+      name: remainderName,
       path: `${resultPath.replace(/\/$/, '') || '/'}/...`,
       size: remainder,
       is_dir: false,
@@ -238,12 +334,14 @@ function DiskUsageProportionGraph({
   diskTotal = 0,
   diskFree = 0,
   isLoading = false,
+  atVolumeRoot = false,
 }: {
   items: TreemapItem[];
   totalSize: number;
   diskTotal?: number;
   diskFree?: number;
   isLoading?: boolean;
+  atVolumeRoot?: boolean;
 }) {
   const visibleItems = items.filter((item) => item.size > 0).slice(0, 8);
 
@@ -273,7 +371,9 @@ function DiskUsageProportionGraph({
     })),
     ...(hasDisk && otherUsed > 0 ? [{
       key: '__disk_other__',
-      name: 'Used by other files',
+      // Inside a subfolder this really is other files. At the top of a volume
+      // there is nothing else to attribute it to, so name what it actually is.
+      name: atVolumeRoot ? 'Snapshots and folders Mole cannot read' : 'Used by other files',
       bytes: otherUsed,
       pct: (otherUsed / denominator) * 100,
       background: 'linear-gradient(135deg, rgba(100,116,139,0.50), rgba(100,116,139,0.34))',
@@ -357,6 +457,234 @@ function DiskUsageProportionGraph({
   );
 }
 
+// SmallItemsModal opens the folded tile back up, one size tier at a time.
+//
+// Each level draws the items it owns plus a single tile for everything smaller.
+// Clicking that tile zooms into it: the next level starts at the tile's exact
+// rectangle and grows to fill the view, so the tile you picked visibly becomes
+// the screen. Back reverses the same motion, and at the outermost level it
+// closes the modal, which puts you back on the folder map.
+function SmallItemsModal({
+  items,
+  parentPath,
+  originRect,
+  onClose,
+  onOpenContextMenu,
+}: {
+  items: AnalyzeEntry[];
+  parentPath: string;
+  originRect?: { x: number; y: number; width: number; height: number };
+  onClose: () => void;
+  onOpenContextMenu: (event: MouseEvent, item: FileActionItem) => void;
+}) {
+  const tiers = useMemo(() => buildSmallItemTiers(items), [items]);
+  const [depth, setDepth] = useState(0);
+  // The transform a level starts from. Cleared on the next frame, which is what
+  // makes the transition run.
+  const [zoomFrom, setZoomFrom] = useState<string | null>(
+    originRect ? zoomInTransform(originRect) : null,
+  );
+  // The rect each level was entered through, so leaving a level shrinks back
+  // out through the same rectangle. The current level's own nested tile is a
+  // different rect and would zoom out through the wrong place.
+  const enteredThroughRef = useRef<Array<{ x: number; y: number; width: number; height: number }>>([]);
+
+  const tier = tiers[Math.min(depth, Math.max(tiers.length - 1, 0))];
+  const deeperTiers = tiers.slice(depth + 1);
+  const nestedSize = sumSizes(deeperTiers.flatMap((entry) => entry.items));
+  const nestedCount = deeperTiers.reduce((count, entry) => count + entry.items.length, 0);
+  const nestedLabel = tiers[depth + 1]?.label ?? '';
+
+  const rects = useMemo(() => {
+    if (!tier) return [];
+
+    const source: TreemapItem[] = tier.items.map((item, index) => ({
+      ...item,
+      color: TREEMAP_COLORS[index % TREEMAP_COLORS.length],
+      percentage: 0,
+    }));
+
+    if (nestedCount > 0) {
+      source.push({
+        name: nestedLabel,
+        path: `${parentPath}#${tiers[depth + 1].key}`,
+        size: nestedSize,
+        is_dir: false,
+        isGroupedSmallFiles: true,
+        color: '#64748b',
+        percentage: 0,
+      });
+    }
+
+    const total = sumSizes(source) || 1;
+    return createTreemapLayout(source.map((item) => ({ ...item, percentage: (item.size / total) * 100 })));
+  }, [depth, nestedCount, nestedLabel, nestedSize, parentPath, tier, tiers]);
+
+  // Two frames: the first paints the start transform with transitions off, the
+  // second clears it so the browser animates back to identity.
+  useEffect(() => {
+    if (!zoomFrom) return;
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => setZoomFrom(null)));
+    return () => cancelAnimationFrame(frame);
+  }, [zoomFrom]);
+
+  const goDeeper = (rect: { x: number; y: number; width: number; height: number }) => {
+    if (nestedCount === 0) return;
+    enteredThroughRef.current.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+    setZoomFrom(zoomInTransform(rect));
+    setDepth((current) => current + 1);
+  };
+
+  // Back unwinds one tier, or leaves the modal entirely at the outermost one, so
+  // repeated Back always ends up on the folder map.
+  const goBack = () => {
+    if (depth === 0) {
+      onClose();
+      return;
+    }
+    const enteredThrough = enteredThroughRef.current.pop();
+    setZoomFrom(zoomOutTransform(enteredThrough ?? { x: 0, y: 0, width: 100, height: 100 }));
+    setDepth((current) => current - 1);
+  };
+
+  // No dependency array on purpose: goBack closes over depth, and re-subscribing
+  // each render is what keeps Escape unwinding from the level actually on screen.
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') goBack();
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  });
+
+  if (!tier) return null;
+
+  const shownSize = sumSizes(tier.items) + nestedSize;
+  const shownCount = tier.items.length + nestedCount;
+  const trail = tiers.slice(0, depth + 1);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-sm dark:bg-slate-950/65"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-label="Small items"
+        className="flex h-[min(46rem,88vh)] w-[min(64rem,92vw)] flex-col rounded-[1.75rem] border border-white/60 bg-white/92 p-5 shadow-[0_30px_90px_rgba(15,23,42,0.28)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/90 dark:shadow-[0_30px_90px_rgba(0,0,0,0.65)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={goBack}
+            data-testid="small-items-back"
+            title={depth === 0 ? 'Back to folder' : `Back to ${tiers[depth - 1].label}`}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-900/5 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1 text-[0.66rem] font-black uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
+              <span className="shrink-0">{parentPath === '/' ? 'Disk' : parentPath.split('/').filter(Boolean).slice(-1)[0]}</span>
+              {trail.map((entry) => (
+                <span key={entry.key} className="flex shrink-0 items-center gap-1">
+                  <ChevronRight className="h-3 w-3 opacity-60" />
+                  <span>{entry.label}</span>
+                </span>
+              ))}
+            </div>
+            <div className="mt-0.5 truncate text-xl font-black text-slate-950 dark:text-slate-100">
+              {shownCount.toLocaleString()} items
+              <span className="ml-2 font-mono text-sm font-black text-[var(--page-accent)]">{formatBytes(shownSize)}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close small items"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-900/5 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[1.35rem]">
+          <div
+            className="absolute inset-0"
+            style={{
+              transformOrigin: '0 0',
+              transform: zoomFrom ?? 'translate(0%, 0%) scale(1, 1)',
+              opacity: zoomFrom ? 0.2 : 1,
+              transition: zoomFrom
+                ? 'none'
+                : `transform ${ZOOM_DURATION_MS}ms ${ZOOM_EASING}, opacity ${Math.round(ZOOM_DURATION_MS * 0.8)}ms ease-out`,
+            }}
+          >
+            {rects.map((rect) => {
+              const isNested = Boolean(rect.isGroupedSmallFiles);
+              const showLabel = rect.width > 13 && rect.height > 10;
+              const iconCategory = getFileIconCategory(rect);
+              const RectIcon = iconCategory.icon;
+
+              return (
+                <button
+                  key={rect.path}
+                  type="button"
+                  data-testid={isNested ? 'small-items-nested' : 'small-items-entry'}
+                  onContextMenu={(event) => {
+                    if (isNested) return;
+                    onOpenContextMenu(event, { name: rect.name, path: rect.path, size: rect.size, is_dir: rect.is_dir });
+                  }}
+                  onClick={() => {
+                    if (isNested) goDeeper(rect);
+                  }}
+                  className={`group absolute overflow-hidden rounded-[0.9rem] border-[2px] border-white/72 p-2 text-left transition-transform duration-200 hover:z-10 dark:border-slate-950/60 ${isNested ? 'hover:scale-[1.01]' : 'cursor-default'}`}
+                  style={{
+                    left: `${rect.x}%`,
+                    top: `${rect.y}%`,
+                    width: `${rect.width}%`,
+                    height: `${rect.height}%`,
+                    background: isNested
+                      ? 'linear-gradient(145deg, rgba(100,116,139,0.92), rgba(71,85,105,0.92))'
+                      : `linear-gradient(145deg, ${rect.color}, ${rect.color}df)`,
+                  }}
+                  title={isNested
+                    ? `${rect.name} - ${formatBytes(rect.size)} - ${nestedCount.toLocaleString()} items, click to zoom in`
+                    : `${rect.name} - ${formatBytes(rect.size)}`}
+                >
+                  {showLabel && (
+                    <span className="flex h-full flex-col items-center justify-center gap-1 text-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]">
+                      <span className="flex max-w-full items-center gap-1.5">
+                        {isNested ? <Layers className="h-3.5 w-3.5 shrink-0" /> : <RectIcon className="h-3.5 w-3.5 shrink-0" />}
+                        <span className="truncate text-xs font-black">{rect.name}</span>
+                      </span>
+                      <span className="font-mono text-[11px] font-black">{formatBytes(rect.size)}</span>
+                      {isNested && rect.width > 22 && rect.height > 18 && (
+                        <span className="text-[10px] font-black uppercase tracking-[0.18em] opacity-80">
+                          {nestedCount.toLocaleString()} items
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <p className="mt-3 shrink-0 px-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          {nestedCount > 0
+            ? `Right-click an item for Finder or Trash. Open ${nestedLabel} to zoom into the smaller ones.`
+            : 'Right-click an item to reveal it in Finder or move it to the Trash.'}
+        </p>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function AnalyzePanelLoadingOverlay() {
   return (
     <div className="analyze-panel-loading-overlay absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-[1.35rem] p-6 text-center" aria-live="polite">
@@ -403,7 +731,6 @@ export function AnalyzePage() {
   const [currentFile, setCurrentFile] = usePersistentState('mole-analyze-current-file', '');
   const [error, setError] = usePersistentState<string | null>('mole-analyze-error', null);
   const [pathInput, setPathInput] = usePersistentState('mole-analyze-path-input', '/');
-  const [selectedMode, setSelectedMode] = usePersistentState<AnalyzeMode>('mole-analyze-selected-mode', 'disk');
   // 'start' = StartScreen, 'pick' = path picker, rest handled by stage
   const [view, setView] = usePersistentState<'start' | 'pick'>('mole-analyze-view', 'start');
 
@@ -420,8 +747,15 @@ export function AnalyzePage() {
   const [showFolders, setShowFolders] = usePersistentState('mole-analyze-show-folders', true);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [appIcons, setAppIcons] = useState<AppIconMap>({});
+  // Paths already asked about, resolved or not. See the icon effect below.
+  const attemptedAppIconsRef = useRef<Set<string>>(new Set());
   const fileListScrollRef = useRef<HTMLDivElement | null>(null);
   const [fileListScrollShadows, setFileListScrollShadows] = useState({ top: false, bottom: false });
+  const [volumes, setVolumes] = useState<StorageVolume[]>([]);
+  const [isVolumeMenuOpen, setIsVolumeMenuOpen] = useState(false);
+  const [isSmallItemsOpen, setIsSmallItemsOpen] = useState(false);
+  const [panelMode, setPanelMode] = usePersistentState<'map' | 'files'>('mole-analyze-panel-mode', 'map');
+  const [visibleListCount, setVisibleListCount] = useState(LIST_PAGE_SIZE);
   const [enteringResultPath, setEnteringResultPath] = useState<string | null>(null);
   const [enteringResultDirection, setEnteringResultDirection] = useState<NavigationAnimationDirection>('down');
 
@@ -477,6 +811,49 @@ export function AnalyzePage() {
     };
   }, [contextMenu]);
 
+  // Volume list for the disk switcher. This is a statfs read, so it is cheap
+  // enough to refresh whenever the page comes back to results and pick up a
+  // drive the user plugged in while looking at something else.
+  useEffect(() => {
+    if (stage !== 'results' && !(stage === 'idle' && view === 'pick')) return;
+
+    let cancelled = false;
+    void window.moleDesktop?.analyze?.volumes?.()
+      ?.then((res) => {
+        if (cancelled || !res?.ok) return;
+        setVolumes(res.volumes);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stage, view, result?.path]);
+
+  useEffect(() => {
+    setVisibleListCount(LIST_PAGE_SIZE);
+    setIsSmallItemsOpen(false);
+  }, [result?.path, showFiles, showFolders]);
+
+  useEffect(() => {
+    if (!isVolumeMenuOpen) return;
+
+    const closeMenu = () => setIsVolumeMenuOpen(false);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('blur', closeMenu);
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('blur', closeMenu);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isVolumeMenuOpen]);
+
   useEffect(() => {
     if (!isFilterOpen) return;
 
@@ -517,18 +894,28 @@ export function AnalyzePage() {
     return () => window.clearTimeout(timeout);
   }, [result?.path, stage]);
 
+  // Resolve app icons for /Applications views.
+  //
+  // Every path that comes back without an icon is recorded so it is never asked
+  // for again. Without that, an app whose icon cannot be read keeps appearing in
+  // missingAppPaths, and because the effect depends on appIcons it re-fires the
+  // moment setAppIcons produces a new object. That loop ran unbounded on a
+  // folder of unreadable icons: 257,000 IPC round trips in twenty minutes.
   useEffect(() => {
     if (stage !== 'results' || !result || !isApplicationsPath(result.path)) return;
 
     const appPaths = result.entries.filter(isMacAppEntry).map((entry) => entry.path);
-    const missingAppPaths = appPaths.filter((path) => !appIcons[path]);
+    const missingAppPaths = appPaths.filter((path) => !appIcons[path] && !attemptedAppIconsRef.current.has(path));
     if (missingAppPaths.length === 0) return;
+
+    missingAppPaths.forEach((path) => attemptedAppIconsRef.current.add(path));
 
     let cancelled = false;
 
-    window.moleDesktop.uninstall.getAppIcons(missingAppPaths)
+    void window.moleDesktop.uninstall.getAppIcons(missingAppPaths)
       .then((iconResult) => {
         if (cancelled || !iconResult?.ok) return;
+        if (Object.keys(iconResult.icons).length === 0) return;
         setAppIcons((currentIcons) => ({ ...currentIcons, ...iconResult.icons }));
       })
       .catch(() => {
@@ -543,10 +930,12 @@ export function AnalyzePage() {
           }
         })).then((icons) => {
           if (cancelled) return;
+          const resolved = icons.filter((icon): icon is readonly [string, string] => icon !== null);
+          if (resolved.length === 0) return;
           setAppIcons((currentIcons) => {
             const nextIcons = { ...currentIcons };
-            icons.forEach((icon) => {
-              if (icon) nextIcons[icon[0]] = icon[1];
+            resolved.forEach(([iconPath, icon]) => {
+              nextIcons[iconPath] = icon;
             });
             return nextIcons;
           });
@@ -568,7 +957,7 @@ export function AnalyzePage() {
     }: { pushHistory?: boolean; skipCache?: boolean; display?: 'page' | 'inline' | 'background'; transitionDirection?: NavigationAnimationDirection } = {},
   ) => {
     if (!requireSubscription('Storage Analyze')) return;
-    const targetPath = path ?? pathForAnalyzeMode(selectedMode, pathInput);
+    const targetPath = path ?? (pathInput.trim() || '/');
     const scanDisplay = display ?? (stage === 'results' && result ? 'inline' : 'page');
     pendingNavigationDirectionRef.current = transitionDirection ?? (
       result?.path && getPathDepth(targetPath) < getPathDepth(result.path) ? 'up' : 'down'
@@ -585,7 +974,6 @@ export function AnalyzePage() {
     if (!skipCache) {
       const cached = resultCacheRef.current.get(targetPath);
       if (cached) {
-        setSelectedMode(modeForPath(targetPath));
         setScanPath(targetPath);
         setPathInput(targetPath);
         setResult(cached);
@@ -594,7 +982,6 @@ export function AnalyzePage() {
       }
     }
 
-    setSelectedMode(modeForPath(targetPath));
     setScanPath(targetPath);
     setPathInput(targetPath);
     setError(null);
@@ -745,20 +1132,25 @@ export function AnalyzePage() {
     return crumbs;
   }, [result?.path]);
 
-  const selectAnalyzeMode = (mode: QuickAnalyzeMode) => {
-    const nextPath = pathForAnalyzeMode(mode, pathInput);
-    setSelectedMode(mode);
+  const selectAnalyzePath = (nextPath: string) => {
     setScanPath(nextPath);
     setPathInput(nextPath);
   };
+
+  // Disks for the picker. Until the volume list arrives, offer the startup disk
+  // so the page is never empty and the primary action always works.
+  const pickerDisks: StorageVolume[] = volumes.length > 0
+    ? volumes
+    : [{ name: 'Startup disk', path: '/', fs_type: '', total: 0, free: 0, used: 0, is_root: true, read_only: false }];
 
   const openItemContextMenu = (event: MouseEvent, item: FileActionItem & { isOther?: boolean; isGroupedSmallFiles?: boolean }) => {
     if (item.isOther || item.isGroupedSmallFiles) return;
     event.preventDefault();
     event.stopPropagation();
 
+    const systemOwned = isSystemOwnedPath(item.path);
     const menuWidth = 220;
-    const menuHeight = 110;
+    const menuHeight = systemOwned ? 60 : 110;
     setContextMenu({
       x: Math.min(event.clientX, Math.max(12, window.innerWidth - menuWidth)),
       y: Math.min(event.clientY, Math.max(12, window.innerHeight - menuHeight)),
@@ -767,6 +1159,7 @@ export function AnalyzePage() {
         path: item.path,
         size: item.size,
         is_dir: item.is_dir,
+        systemOwned,
       },
     });
   };
@@ -829,12 +1222,29 @@ export function AnalyzePage() {
     const fileCount = entries.filter((entry) => !entry.is_dir).length;
     const folderCount = entries.length - fileCount;
     const filteredEntries = entries.filter((entry) => (entry.is_dir ? showFolders : showFiles));
-    const groupedEntries = groupSmallFiles(filteredEntries, result.path);
-    const sortedListEntries = [...groupedEntries].sort((a, b) => b.size - a.size);
-    const filteredSize = sumSizes(groupedEntries);
-    const treemapItems = buildTreemapItems(groupedEntries, result.total_size, result.path, filteredSize);
+    // The list keeps every entry; only the map collapses the unrenderable ones.
+    const sortedListEntries = filteredEntries;
+    const filteredSize = sumSizes(filteredEntries);
+
+    // At the top of a volume, scale the map against what the volume actually
+    // holds instead of against what the scan could read. The two differ by more
+    // than a rounding error: APFS snapshots, the recovery and swap volumes, and
+    // folders this app has no permission to open are all real used space that
+    // no scanned entry accounts for. Measured on a stock macOS 15 install, that
+    // gap was 71 GB of 209 GB used. Scaling against the scan total hid it and
+    // implied the map was complete.
+    const diskUsed = Math.max(0, (result.disk_total ?? 0) - (result.disk_free ?? 0));
+    const isVolumeRoot = isVolumeRootPath(result.path);
+    const showsUnaccounted = isVolumeRoot && diskUsed > filteredSize;
+    const remainderTotal = showsUnaccounted ? diskUsed : filteredSize;
+    const remainderName = showsUnaccounted ? 'Snapshots & unreadable' : 'Other';
+
+    const { entries: groupedEntries, groupedMembers } = groupTinyEntries(filteredEntries, remainderTotal, result.path);
+    const treemapItems = buildTreemapItems(groupedEntries, remainderTotal, result.path, remainderTotal, remainderName);
     const treemapRects = createTreemapLayout(treemapItems);
-    return { fileCount, folderCount, filteredEntries, sortedListEntries, filteredSize, treemapItems, treemapRects };
+    // The list bars divide by the same number the map does, so one entry cannot
+    // read 52% in the list and 34% in its tile.
+    return { fileCount, folderCount, filteredEntries, sortedListEntries, filteredSize, remainderTotal, groupedMembers, treemapItems, treemapRects };
   }, [stage, result, showFolders, showFiles]);
 
   // Group views so the start screen, path picker, and the scanning/results
@@ -873,27 +1283,46 @@ export function AnalyzePage() {
               Choose scan location.
             </h1>
             <p className="mt-5 max-w-[35rem] text-[clamp(1.05rem,1.55vw,1.35rem)] font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
-              Pick a starting point and Mole will build a storage map for that folder.
+              Pick a disk and Mole will map everything on it. Any folder works too, if you already know where to look.
             </p>
 
             <div className="mt-8 w-full rounded-[1.75rem] border border-white/60 bg-white/42 p-[clamp(1rem,2vw,1.4rem)] shadow-[0_24px_76px_rgba(83,76,148,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/55 dark:shadow-[0_24px_76px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {QUICK_PATHS.map(({ mode, label, path, icon: Icon }) => (
-                  <button
-                    key={mode}
-                    onClick={() => selectAnalyzeMode(mode)}
-                    className={`group flex min-h-[8.5rem] flex-col items-center justify-center gap-3 rounded-[1.35rem] border p-4 transition-all ${selectedMode === mode
-                      ? 'border-[rgba(var(--page-accent-rgb),0.42)] bg-white/78 text-[var(--page-accent)] shadow-[0_18px_48px_rgba(var(--page-accent-rgb),0.16)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)] dark:bg-slate-900/65'
-                      : 'border-white/52 bg-white/36 text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] hover:bg-white/62 hover:text-slate-800 hover:shadow-[0_14px_38px_rgba(83,76,148,0.10)] dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-400 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:hover:bg-white/10 dark:hover:text-slate-200'
-                      }`}
-                  >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] transition-transform group-hover:scale-105 dark:bg-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <span className="text-sm font-black">{label}</span>
-                    <span className="max-w-full truncate font-mono text-[11px] font-black opacity-60">{path}</span>
-                  </button>
-                ))}
+              <div className={`grid grid-cols-1 gap-3 ${pickerDisks.length > 2 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                {pickerDisks.map((disk) => {
+                  const isSelected = pathInput === disk.path;
+                  const usedPct = disk.total > 0 ? (disk.used / disk.total) * 100 : 0;
+
+                  return (
+                    <button
+                      key={disk.path}
+                      onClick={() => selectAnalyzePath(disk.path)}
+                      className={`group flex min-h-[9.5rem] flex-col items-center justify-center gap-3 rounded-[1.35rem] border p-4 transition-all ${isSelected
+                        ? 'border-[rgba(var(--page-accent-rgb),0.42)] bg-white/78 text-[var(--page-accent)] shadow-[0_18px_48px_rgba(var(--page-accent-rgb),0.16)] ring-1 ring-[rgba(var(--page-accent-rgb),0.18)] dark:bg-slate-900/65'
+                        : 'border-white/52 bg-white/36 text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] hover:bg-white/62 hover:text-slate-800 hover:shadow-[0_14px_38px_rgba(83,76,148,0.10)] dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-400 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:hover:bg-white/10 dark:hover:text-slate-200'
+                        }`}
+                    >
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] transition-transform group-hover:scale-105 dark:bg-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                        <HardDrive className="h-5 w-5" />
+                      </span>
+                      <span className="max-w-full truncate text-sm font-black">{disk.name}</span>
+                      {disk.total > 0 ? (
+                        <>
+                          <span className="h-1.5 w-4/5 overflow-hidden rounded-full bg-slate-900/10 dark:bg-white/10">
+                            <span
+                              className="block h-full rounded-full bg-current opacity-70"
+                              style={{ width: `${Math.min(100, Math.max(2, usedPct))}%` }}
+                            />
+                          </span>
+                          <span className="font-mono text-[11px] font-black opacity-60">
+                            {formatBytes(disk.free)} free of {formatBytes(disk.total)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="max-w-full truncate font-mono text-[11px] font-black opacity-60">{disk.path}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="mt-4 rounded-[1.35rem] border border-white/58 bg-white/52 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-white/10 dark:bg-slate-900/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]">
@@ -907,7 +1336,6 @@ export function AnalyzePage() {
                     value={pathInput}
                     onChange={(e) => {
                       const nextPath = e.target.value;
-                      setSelectedMode(modeForPath(nextPath));
                       setPathInput(nextPath);
                       setScanPath(nextPath);
                     }}
@@ -1010,13 +1438,18 @@ export function AnalyzePage() {
 
   // ── Results ──────────────────────────────────────────────────────────────
   if (stage === 'results' && result && resultsView) {
-    const { fileCount, folderCount, filteredEntries, sortedListEntries, filteredSize, treemapItems, treemapRects } = resultsView;
+    const { fileCount, folderCount, filteredEntries, sortedListEntries, filteredSize, remainderTotal, groupedMembers, treemapItems, treemapRects } = resultsView;
     const breadcrumbs = buildBreadcrumbs();
     const canGoUp = result.path !== '/';
     const pathParts = result.path.split('/').filter(Boolean);
     const currentPathLabel = result.path === '/' ? 'Macintosh HD' : pathParts[pathParts.length - 1] ?? result.path;
     const isViewingApplications = isApplicationsPath(result.path);
     const applicationEntries = sortedListEntries.filter(isMacAppEntry);
+    const activeVolume = volumeForPath(result.path, volumes);
+    const largeFiles = result.large_files ?? [];
+    const showingBiggestFiles = panelMode === 'files' && largeFiles.length > 0;
+    const pagedListEntries = sortedListEntries.slice(0, visibleListCount);
+    const hiddenListCount = sortedListEntries.length - pagedListEntries.length;
     const isContentEntering = enteringResultPath === result.path;
     const contentEnterClass = isContentEntering
       ? enteringResultDirection === 'up' ? 'analyze-content-enter-up' : 'analyze-content-enter-down'
@@ -1045,9 +1478,69 @@ export function AnalyzePage() {
             </button>
           )}
           <div className="mx-1 h-5 w-px shrink-0 bg-slate-300/60 dark:bg-white/15" />
-          <div className="flex shrink-0 items-center gap-2 rounded-full px-1.5 text-sm font-black text-slate-600 dark:text-slate-300">
-            <HardDrive className="h-4 w-4" />
-            {currentPathLabel}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Switch disk"
+              aria-expanded={isVolumeMenuOpen}
+              disabled={volumes.length < 2}
+              title={volumes.length < 2 ? currentPathLabel : 'Switch disk'}
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsVolumeMenuOpen((open) => !open);
+              }}
+              className="flex items-center gap-2 rounded-full px-2 py-1 text-sm font-black text-slate-600 transition hover:bg-white/45 disabled:cursor-default disabled:hover:bg-transparent dark:text-slate-300 dark:hover:bg-white/10"
+            >
+              <HardDrive className="h-4 w-4" />
+              <span className="max-w-[10rem] truncate">{activeVolume?.name ?? currentPathLabel}</span>
+              {volumes.length > 1 && <ChevronDown className="h-3.5 w-3.5 opacity-60" />}
+            </button>
+
+            {isVolumeMenuOpen && (
+              <div
+                className="absolute left-0 top-11 z-[90] w-80 rounded-[1.35rem] border border-white/65 bg-white/90 p-2 shadow-[0_24px_70px_rgba(15,23,42,0.22)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/85 dark:shadow-[0_24px_70px_rgba(0,0,0,0.55)]"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="mb-2 px-2 pt-1 text-[0.66rem] font-black uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                  Disks
+                </div>
+                {volumes.map((volume) => {
+                  const isActive = activeVolume?.path === volume.path;
+                  const usedPct = volume.total > 0 ? (volume.used / volume.total) * 100 : 0;
+
+                  return (
+                    <button
+                      key={volume.path}
+                      type="button"
+                      onClick={() => {
+                        setIsVolumeMenuOpen(false);
+                        if (isActive && result.path === volume.path) return;
+                        setNavHistory([]);
+                        void startScan(volume.path, { pushHistory: false, transitionDirection: 'up' });
+                      }}
+                      className={`mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition last:mb-0 ${isActive
+                        ? 'bg-[rgba(var(--page-accent-rgb),0.12)] text-slate-950 dark:text-slate-100'
+                        : 'text-slate-700 hover:bg-slate-900/5 dark:text-slate-200 dark:hover:bg-white/10'
+                        }`}
+                    >
+                      <HardDrive className={`h-4 w-4 shrink-0 ${isActive ? 'text-[var(--page-accent)]' : 'opacity-60'}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-black">{volume.name}</span>
+                        <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-slate-900/10 dark:bg-white/10">
+                          <span
+                            className="block h-full rounded-full bg-[var(--page-accent)]"
+                            style={{ width: `${Math.min(100, Math.max(1, usedPct))}%` }}
+                          />
+                        </span>
+                        <span className="mt-1 block font-mono text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                          {formatBytes(volume.free)} free of {formatBytes(volume.total)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="mx-1 h-5 w-px shrink-0 bg-slate-300/60 dark:bg-white/15" />
           <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
@@ -1075,6 +1568,29 @@ export function AnalyzePage() {
             })}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            {largeFiles.length > 0 && (
+              <div className="flex items-center gap-0.5 rounded-full border border-white/60 bg-white/55 p-0.5 shadow-inner shadow-white/40 dark:border-white/10 dark:bg-slate-900/55">
+                {([
+                  { mode: 'map' as const, label: 'Map', icon: BarChart3 },
+                  { mode: 'files' as const, label: 'Biggest files', icon: Layers },
+                ]).map(({ mode, label, icon: ModeIcon }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={panelMode === mode}
+                    onClick={() => setPanelMode(mode)}
+                    title={mode === 'files' ? `The ${largeFiles.length} biggest files anywhere under this folder` : 'Treemap of this folder'}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black transition ${panelMode === mode
+                      ? 'bg-white text-[var(--page-accent)] shadow-[0_6px_16px_rgba(15,23,42,0.10)] dark:bg-white/15 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                  >
+                    <ModeIcon className="h-3.5 w-3.5" />
+                    <span className="hidden lg:inline">{label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <Button
               aria-label="Rescan storage"
               title={isBackgroundRefreshing ? 'Refreshing in background' : 'Rescan storage'}
@@ -1157,7 +1673,47 @@ export function AnalyzePage() {
         <div className="grid h-[calc(100%-5.35rem)] min-h-[42rem] grid-cols-1 gap-6 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_450px]">
           <div data-testid="storage-map-panel" className="relative min-h-[34rem] overflow-hidden rounded-[1.2rem] xl:min-h-0">
             <div className={`relative h-full rounded-[1.35rem] ${contentEnterClass} ${inlineScanPath ? 'analyze-panel-content--loading' : ''}`}>
-              {filteredEntries.length === 0 ? (
+              {showingBiggestFiles ? (
+                <div className="h-full overflow-y-auto rounded-[1.35rem] border border-white/45 bg-white/25 p-3 shadow-inner shadow-white/20 custom-scrollbar dark:border-white/10 dark:bg-slate-950/[0.35] dark:shadow-black/30">
+                  <div className="mb-3 flex items-baseline justify-between gap-3 px-2">
+                    <span className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                      Biggest files, any depth
+                    </span>
+                    <span className="font-mono text-[11px] font-black text-slate-500 dark:text-slate-400">{largeFiles.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {largeFiles.map((file, index) => {
+                      const iconCategory = getFileIconCategory({ name: file.name, path: file.path, is_dir: false });
+                      const FileIconComponent = iconCategory.icon;
+                      const share = largeFiles[0].size > 0 ? (file.size / largeFiles[0].size) * 100 : 0;
+
+                      return (
+                        <div
+                          key={file.path}
+                          data-testid="biggest-file-row"
+                          onContextMenu={(event) => openItemContextMenu(event, { ...file, is_dir: false })}
+                          className="relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/50 bg-white/40 p-2.5 dark:border-white/10 dark:bg-slate-900/45"
+                          title={`${file.path} - ${formatBytes(file.size)}`}
+                        >
+                          <div
+                            className="absolute inset-y-0 left-0 bg-[rgba(var(--page-accent-rgb),0.12)]"
+                            style={{ width: `${Math.min(100, Math.max(2, share))}%` }}
+                          />
+                          <span className="relative w-6 shrink-0 text-right font-mono text-[11px] font-black text-slate-400 dark:text-slate-500">{index + 1}</span>
+                          <span className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/60 dark:border-white/10 ${iconCategory.backgroundClassName}`}>
+                            <FileIconComponent className={`h-4 w-4 ${iconCategory.iconClassName}`} />
+                          </span>
+                          <span className="relative min-w-0 flex-1">
+                            <span className="block truncate text-sm font-black text-slate-950 dark:text-slate-100">{file.name}</span>
+                            <span className="block truncate font-mono text-[10px] font-bold text-slate-500 dark:text-slate-400">{file.path}</span>
+                          </span>
+                          <span className="relative shrink-0 font-mono text-xs font-black text-slate-700 dark:text-slate-200">{formatBytes(file.size)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : filteredEntries.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center rounded-[1.35rem] border border-white/45 bg-white/25 text-center dark:border-white/10 dark:bg-slate-950/[0.35]">
                   <FolderOpen className="mb-3 h-12 w-12 text-slate-400 dark:text-slate-500" />
                   <p className="font-semibold text-slate-600 dark:text-slate-300">No entries match the current filters.</p>
@@ -1211,15 +1767,20 @@ export function AnalyzePage() {
                     <button
                       key={rect.path}
                       type="button"
-                      aria-disabled={!rect.is_dir || rect.isOther}
+                      data-testid="storage-map-tile"
+                      aria-disabled={(!rect.is_dir && !rect.isGroupedSmallFiles) || rect.isOther}
                       onContextMenu={(event) => openItemContextMenu(event, rect)}
                       onClick={() => {
+                        if (rect.isGroupedSmallFiles) {
+                          setIsSmallItemsOpen(true);
+                          return;
+                        }
                         if (rect.is_dir && !rect.isOther) {
                           setScanPath(rect.path);
                           startScan(rect.path);
                         }
                       }}
-                      className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition-transform duration-200 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] dark:border-slate-950/60 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_44px_rgba(0,0,0,0.45)] dark:hover:shadow-[0_24px_62px_rgba(0,0,0,0.55)] ${!rect.is_dir || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
+                      className={`group absolute overflow-hidden rounded-[1.05rem] border-[2px] border-white/72 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_16px_44px_rgba(15,23,42,0.10)] transition-transform duration-200 hover:z-10 hover:scale-[1.006] hover:shadow-[0_24px_62px_rgba(15,23,42,0.18)] dark:border-slate-950/60 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_44px_rgba(0,0,0,0.45)] dark:hover:shadow-[0_24px_62px_rgba(0,0,0,0.55)] ${(!rect.is_dir && !rect.isGroupedSmallFiles) || rect.isOther ? 'cursor-default hover:scale-100' : ''}`}
                       style={{
                         left: `${rect.x}%`,
                         top: `${rect.y}%`,
@@ -1227,7 +1788,9 @@ export function AnalyzePage() {
                         height: `${rect.height}%`,
                         background: `linear-gradient(145deg, ${rect.color}, ${rect.color}df)`,
                       }}
-                      title={`${rect.name} - ${formatBytes(rect.size)} - ${rect.percentage.toFixed(1)}%`}
+                      title={rect.isGroupedSmallFiles
+                        ? `${rect.name} - ${formatBytes(rect.size)} - click to open them by size`
+                        : `${rect.name} - ${formatBytes(rect.size)} - ${rect.percentage.toFixed(1)}%`}
                     >
                       <div className="absolute inset-0 bg-[radial-gradient(circle_at_26%_18%,rgba(255,255,255,0.26),transparent_42%)] opacity-90" />
                       {!showLargeLabel && (
@@ -1261,6 +1824,7 @@ export function AnalyzePage() {
               diskTotal={result.disk_total ?? 0}
               diskFree={result.disk_free ?? 0}
               isLoading={Boolean(inlineScanPath)}
+              atVolumeRoot={isVolumeRootPath(result.path)}
             />
 
             <div className="relative min-h-[31rem] flex-1 overflow-hidden rounded-[1.35rem] xl:min-h-0">
@@ -1284,11 +1848,12 @@ export function AnalyzePage() {
                         </div>
                       ) : (
                         <div className="space-y-2.5 pb-2">
-                          {sortedListEntries.map((entry) => {
-                            const percentage = result.total_size > 0 ? (entry.size / result.total_size) * 100 : 0;
+                          {pagedListEntries.map((entry) => {
+                            const percentage = remainderTotal > 0 ? (entry.size / remainderTotal) * 100 : 0;
                             const entryDate = formatEntryDate(entry);
                             const iconCategory = getFileIconCategory(entry);
                             const EntryIcon = iconCategory.icon;
+                            const entryAppIcon = isMacAppEntry(entry) ? appIcons[entry.path] : undefined;
                             return (
                               <button
                                 key={entry.path}
@@ -1309,8 +1874,12 @@ export function AnalyzePage() {
                                   style={{ width: `${Math.min(100, Math.max(3, percentage))}%` }}
                                 />
                                 <div className="relative flex items-center gap-3">
-                                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-inner shadow-white/30 dark:border-white/10 dark:shadow-black/30 ${iconCategory.backgroundClassName}`} title={iconCategory.label}>
-                                    <EntryIcon className={`h-[1.125rem] w-[1.125rem] ${iconCategory.iconClassName}`} />
+                                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-inner shadow-white/30 dark:border-white/10 dark:shadow-black/30 ${entryAppIcon ? 'bg-white/50 dark:bg-white/10' : iconCategory.backgroundClassName}`} title={entryAppIcon ? entry.name : iconCategory.label}>
+                                    {entryAppIcon ? (
+                                      <img src={entryAppIcon} alt="" className="h-6 w-6 object-contain" draggable={false} />
+                                    ) : (
+                                      <EntryIcon className={`h-[1.125rem] w-[1.125rem] ${iconCategory.iconClassName}`} />
+                                    )}
                                   </span>
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate text-base font-black text-slate-950 dark:text-slate-100">{entry.name}</span>
@@ -1326,6 +1895,16 @@ export function AnalyzePage() {
                               </button>
                             );
                           })}
+                          {hiddenListCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setVisibleListCount((count) => count + LIST_PAGE_SIZE)}
+                              className="w-full rounded-[1.35rem] border border-dashed border-slate-300/80 bg-white/30 p-3 text-sm font-black text-slate-600 transition hover:bg-white/55 dark:border-white/15 dark:bg-slate-950/[0.35] dark:text-slate-300 dark:hover:bg-white/10"
+                            >
+                              Show {Math.min(LIST_PAGE_SIZE, hiddenListCount).toLocaleString()} more
+                              <span className="ml-2 font-mono text-[11px] opacity-60">{hiddenListCount.toLocaleString()} left</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1343,6 +1922,18 @@ export function AnalyzePage() {
           </div>
         </div>
 
+        {isSmallItemsOpen && groupedMembers.length > 0 && (
+          <SmallItemsModal
+            items={groupedMembers}
+            parentPath={result.path}
+            // Zoom out of the tile that was clicked, so the modal grows from it
+            // rather than appearing over it.
+            originRect={treemapRects.find((rect) => rect.isGroupedSmallFiles)}
+            onClose={() => setIsSmallItemsOpen(false)}
+            onOpenContextMenu={openItemContextMenu}
+          />
+        )}
+
         {contextMenu && createPortal(
           <div
             className="fixed z-50 w-56 overflow-hidden rounded-2xl border border-white/60 bg-white/90 p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
@@ -1357,14 +1948,21 @@ export function AnalyzePage() {
               <ExternalLink className="h-4 w-4" />
               Open in Finder
             </button>
-            <button
-              type="button"
-              onClick={() => requestDelete(contextMenu.item)}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-rose-600 transition hover:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-            >
-              <Trash2 className="h-4 w-4" />
-              Move {contextMenu.item.is_dir ? 'Folder' : 'File'} to Trash
-            </button>
+            {contextMenu.item.systemOwned ? (
+              <div className="flex items-start gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                macOS owns this location. Mole will not delete from it.
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => requestDelete(contextMenu.item)}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold text-rose-600 transition hover:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+              >
+                <Trash2 className="h-4 w-4" />
+                Move {contextMenu.item.is_dir ? 'Folder' : 'File'} to Trash
+              </button>
+            )}
           </div>,
           document.body,
         )}
