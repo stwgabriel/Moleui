@@ -134,11 +134,24 @@ if command -v golangci-lint > /dev/null 2>&1; then
         exit 1
     fi
 elif command -v go > /dev/null 2>&1; then
+    # go vet is a much weaker check than the configured golangci-lint set, so a
+    # clean run here does NOT mean CI will pass. This used to print a soft
+    # warning and exit 0, which let nine modernize/revive findings sit in
+    # cmd/repos while every local check reported success and CI stayed red for
+    # three months. Set MOLE_ALLOW_VET_FALLBACK=1 to accept the weaker check.
     echo -e "${YELLOW}${ICON_WARNING} golangci-lint not installed, falling back to go vet${NC}"
-    if go vet ./...; then
-        echo -e "${GREEN}${ICON_SUCCESS} go vet passed${NC}\n"
-    else
+    if ! go vet ./...; then
         echo -e "${RED}${ICON_ERROR} go vet failed${NC}\n"
+        exit 1
+    fi
+    echo -e "${GREEN}${ICON_SUCCESS} go vet passed${NC}"
+    if [[ "${MOLE_ALLOW_VET_FALLBACK:-0}" == "1" ]]; then
+        echo -e "${YELLOW}${ICON_WARNING} Skipping golangci-lint by request; CI still runs it${NC}\n"
+    else
+        echo -e "${RED}${ICON_ERROR} golangci-lint is required and was not found.${NC}"
+        echo -e "  Install it:            ${YELLOW}brew install golangci-lint${NC}"
+        echo -e "  Or accept go vet only: ${YELLOW}MOLE_ALLOW_VET_FALLBACK=1 ./scripts/check.sh${NC}"
+        echo -e "  CI runs golangci-lint regardless, so a pass here is not a pass there.\n"
         exit 1
     fi
 else
