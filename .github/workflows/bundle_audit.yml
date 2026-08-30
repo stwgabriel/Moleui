@@ -9,6 +9,10 @@ on:
     - cron: '0 12 1 * *' # 1st of each month, 12:00 UTC
   workflow_dispatch:
 
+concurrency:
+  group: bundle-audit-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   issues: write
@@ -17,6 +21,7 @@ jobs:
   audit:
     name: Bundle drift
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
 

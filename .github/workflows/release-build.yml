@@ -1,0 +1,155 @@
+name: Release Build
+
+# Builds the desktop app on a GitHub runner and attaches it to the release.
+#
+# Triggered by `release: [published]` rather than a tag push, because the
+# release has to exist before anything can be uploaded to it. Publishing a
+# release from an existing tag is enough to fire this.
+#
+# The build is UNSIGNED and NOT notarized: `dist:arm64` sets
+# CSC_IDENTITY_AUTO_DISCOVERY=false, so no Apple secrets are needed and the
+# workflow runs on a fresh clone with nothing provisioned. See the note the
+# job appends to the release body for what that means for anyone downloading it.
+on:
+  release:
+    types: [published]
+  # Lets a build be re-run against an existing release without re-publishing,
+  # for example after fixing a build failure.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and upload to
+        required: true
+
+concurrency:
+  group: release-build-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    strategy:
+      # One arch failing should not delete the other's artifacts.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            dist_script: dist:arm64
+          - arch: x64
+            dist_script: dist:amd64
+
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4
+        with:
+          node-version: '22'
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # prepare-runtime.mjs compiles analyze-go, status-go and repos-go and
+      # copies the shell runtime in, so the Go toolchain above is required even
+      # though this is "the desktop build".
+      - name: Build desktop app
+        working-directory: apps/desktop
+        run: bun run ${{ matrix.dist_script }}
+
+      - name: Collect artifacts
+        id: collect
+        working-directory: apps/desktop/dist-electron
+        run: |
+          shopt -s nullglob
+          files=(*.dmg *.zip)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "::error::No .dmg or .zip produced in dist-electron"
+            ls -la
+            exit 1
+          fi
+          # Arch-tag the names so the two matrix legs cannot overwrite each
+          # other on the release, and so the download is self-describing.
+          mkdir -p upload
+          for f in "${files[@]}"; do
+            base="${f%.*}"
+            ext="${f##*.}"
+            if [[ "$base" == *"${{ matrix.arch }}"* ]]; then
+              cp "$f" "upload/$f"
+            else
+              cp "$f" "upload/${base}-${{ matrix.arch }}.${ext}"
+            fi
+          done
+          ls -la upload
+          echo "count=$(ls -1 upload | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Checksums
+        working-directory: apps/desktop/dist-electron/upload
+        run: |
+          shasum -a 256 * > "SHA256SUMS-${{ matrix.arch }}.txt"
+          cat "SHA256SUMS-${{ matrix.arch }}.txt"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: apps/desktop/dist-electron/upload
+        run: gh release upload "${{ steps.tag.outputs.tag }}" * --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Keep artifacts even if the upload step fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-${{ matrix.arch }}
+          path: apps/desktop/dist-electron/upload
+          retention-days: 14
+
+  note:
+    name: Add unsigned-build note
+    needs: build
+    # Runs even if one arch failed, so whatever did upload is explained.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      # Gatekeeper quarantines anything downloaded from a browser, and these
+      # builds are neither signed nor notarized, so a plain double-click fails
+      # with "damaged and can't be opened". Without this note the release looks
+      # broken rather than unsigned.
+      - name: Append install note to the release body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
+          if [[ "$body" == *"<!-- unsigned-build-note -->"* ]]; then
+            echo "note already present"
+            exit 0
+          fi
+          # The note lives in its own markdown file rather than a heredoc: a
+          # heredoc body has to sit at column 0 to render correctly, and a bare
+          # "---" at column 0 ends the YAML document.
+          { printf '%s\n' "$body"; cat .github/release-note-unsigned.md; } \
+            | gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file -
+          echo "note appended"

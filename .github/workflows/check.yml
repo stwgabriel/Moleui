@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: github.ref != 'refs/heads/main'
+
 permissions:
   contents: read
 
@@ -12,6 +16,7 @@ jobs:
   format:
     name: Format
     runs-on: macos-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -22,12 +27,12 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Homebrew
-            /usr/local/Cellar/shfmt
-            /usr/local/Cellar/shellcheck
-            /usr/local/Cellar/golangci-lint
-          key: ${{ runner.os }}-brew-quality-v2-${{ hashFiles('**/Brewfile') }}
+            /opt/homebrew/Cellar/shfmt
+            /opt/homebrew/Cellar/shellcheck
+            /opt/homebrew/Cellar/golangci-lint
+          key: ${{ runner.os }}-brew-quality-v3-${{ hashFiles('**/Brewfile') }}
           restore-keys: |
-            ${{ runner.os }}-brew-quality-v2-
+            ${{ runner.os }}-brew-quality-v3-
 
       - name: Install tools
         run: brew install shfmt shellcheck
@@ -66,6 +71,7 @@ jobs:
   quality:
     name: Check
     runs-on: macos-latest
+    timeout-minutes: 30
     needs: format
     permissions:
       contents: read
@@ -79,12 +85,12 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Homebrew
-            /usr/local/Cellar/shfmt
-            /usr/local/Cellar/shellcheck
-            /usr/local/Cellar/golangci-lint
-          key: ${{ runner.os }}-brew-quality-v2-${{ hashFiles('**/Brewfile') }}
+            /opt/homebrew/Cellar/shfmt
+            /opt/homebrew/Cellar/shellcheck
+            /opt/homebrew/Cellar/golangci-lint
+          key: ${{ runner.os }}-brew-quality-v3-${{ hashFiles('**/Brewfile') }}
           restore-keys: |
-            ${{ runner.os }}-brew-quality-v2-
+            ${{ runner.os }}-brew-quality-v3-
 
       - name: Install tools
         run: brew install shfmt shellcheck

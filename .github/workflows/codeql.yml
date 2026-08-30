@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: '17 3 * * 1'
 
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: github.ref != 'refs/heads/main'
+
 permissions:
   contents: read
   security-events: write
@@ -16,6 +20,7 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
