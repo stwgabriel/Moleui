@@ -412,7 +412,11 @@ safe_sudo_remove() {
     fi
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        if [[ "${MO_DEBUG:-}" == "1" && _mole_sudo_session_available ]]; then
+        # _mole_sudo_session_available must be called, not named: inside [[ ]] a
+        # bare word is a non-empty string and always tests true, so this guard
+        # used to reduce to "is MO_DEBUG set". The helper is non-interactive
+        # (sudo -n true) and returns 1 in test mode, so calling it cannot prompt.
+        if [[ "${MO_DEBUG:-}" == "1" ]] && _mole_sudo_session_available; then
             local file_type="file"
             [[ -d "$path" ]] && file_type="directory"
 

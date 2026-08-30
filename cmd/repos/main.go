@@ -63,7 +63,7 @@ type stringList []string
 
 func (s *stringList) String() string { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error {
-	for _, part := range strings.Split(v, ",") {
+	for part := range strings.SplitSeq(v, ",") {
 		if p := strings.TrimSpace(part); p != "" {
 			*s = append(*s, p)
 		}
@@ -320,9 +320,9 @@ func resolveRoots(args []string) []string {
 		if c == "" {
 			continue
 		}
-		if strings.HasPrefix(c, "~") {
+		if after, ok := strings.CutPrefix(c, "~"); ok {
 			if home, err := os.UserHomeDir(); err == nil {
-				c = filepath.Join(home, strings.TrimPrefix(c, "~"))
+				c = filepath.Join(home, after)
 			}
 		}
 		abs, err := filepath.Abs(c)
@@ -354,7 +354,7 @@ func selfRepoPath() string {
 		return ""
 	}
 	dir := filepath.Dir(exe)
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			return dir
 		}

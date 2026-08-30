@@ -40,13 +40,11 @@ func scan(ctx context.Context, opts scanOptions) *Report {
 	var wg sync.WaitGroup
 
 	for i, c := range cands {
-		wg.Add(1)
-		go func(i int, c candidate) {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			entries[i] = inspect(ctx, c, opts)
-		}(i, c)
+		})
 	}
 	wg.Wait()
 
@@ -197,8 +195,8 @@ func worktreeInfo(gitFile string) *Worktree {
 	}
 	// .git/worktrees/<name> lives inside the main repo's git dir; two levels up
 	// is that git dir, and its parent is the main working copy.
-	if idx := strings.Index(target, string(os.PathSeparator)+".git"+string(os.PathSeparator)+"worktrees"+string(os.PathSeparator)); idx != -1 {
-		w.MainRepo = target[:idx]
+	if before, _, ok := strings.Cut(target, string(os.PathSeparator)+".git"+string(os.PathSeparator)+"worktrees"+string(os.PathSeparator)); ok {
+		w.MainRepo = before
 	}
 	return w
 }
@@ -379,10 +377,7 @@ func activityFrom(last time.Time, source string, opts scanOptions) Activity {
 		return a
 	}
 	a.Last = last.UTC().Format(time.RFC3339)
-	days := int(opts.Now.Sub(last).Hours() / 24)
-	if days < 0 {
-		days = 0
-	}
+	days := max(int(opts.Now.Sub(last).Hours()/24), 0)
 	a.DaysIdle = days
 	a.Cold = days >= opts.ColdDays
 	return a
@@ -560,9 +555,7 @@ func verifyRemotes(ctx context.Context, entries []Entry, opts scanOptions) {
 		if e.Remote == nil || !e.HasCommits {
 			continue
 		}
-		wg.Add(1)
-		go func(e *Entry) {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
@@ -633,7 +626,7 @@ func verifyRemotes(ctx context.Context, entries []Entry, opts scanOptions) {
 					t.State = PushStateNoUpstream
 				}
 			}
-		}(e)
+		})
 	}
 	wg.Wait()
 }

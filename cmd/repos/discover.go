@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -302,7 +303,7 @@ func onDiskBytes(info os.FileInfo) int64 {
 }
 
 func inArtifactPath(rel string) bool {
-	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+	for part := range strings.SplitSeq(rel, string(os.PathSeparator)) {
 		if artifactDirNames[part] {
 			return true
 		}
@@ -312,10 +313,8 @@ func inArtifactPath(rel string) bool {
 
 func isRisky(name string) bool {
 	lower := strings.ToLower(name)
-	for _, n := range riskyNames {
-		if lower == n {
-			return true
-		}
+	if slices.Contains(riskyNames, lower) {
+		return true
 	}
 	if strings.HasPrefix(lower, ".env") && !strings.HasSuffix(lower, ".example") &&
 		!strings.HasSuffix(lower, ".sample") && !strings.HasSuffix(lower, ".template") {
