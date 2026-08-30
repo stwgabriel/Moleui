@@ -610,6 +610,84 @@ function withTimeout(promise, timeoutMs, message) {
   ]);
 }
 
+// Pixels this transparent are the icon's empty corners, not its artwork.
+const ICON_ACCENT_MIN_ALPHA = 140;
+const ICON_ACCENT_NEUTRAL = "hsl(222 12% 58%)";
+
+// bitmapAccentColor picks the colour a person would name if asked "what colour
+// is this app?".
+//
+// A flat average washes every icon towards the same muddy grey, because most of
+// an icon's pixels are the white gloss, the drop shadow and the rounded-corner
+// transparency. Weighting each pixel by the square of its chroma throws those
+// away and lets the saturated brand colour win: Slack stays aubergine, Finder
+// stays blue, and a greyscale icon reports nothing so the caller can fall back.
+function bitmapAccentColor(bitmap) {
+  let weightSum = 0;
+  let redSum = 0;
+  let greenSum = 0;
+  let blueSum = 0;
+
+  // Electron hands back BGRA on every platform.
+  for (let offset = 0; offset + 3 < bitmap.length; offset += 4) {
+    if (bitmap[offset + 3] < ICON_ACCENT_MIN_ALPHA) continue;
+
+    const blue = bitmap[offset];
+    const green = bitmap[offset + 1];
+    const red = bitmap[offset + 2];
+    const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
+    if (chroma === 0) continue;
+
+    const weight = chroma * chroma;
+    weightSum += weight;
+    redSum += red * weight;
+    greenSum += green * weight;
+    blueSum += blue * weight;
+  }
+
+  if (weightSum === 0) return "";
+  return readableAccentColor(redSum / weightSum, greenSum / weightSum, blueSum / weightSum);
+}
+
+// The accent is painted as a 4px rail, a progress bar and a donut slice against
+// both a near-white and a near-black surface, so raw icon colours have to be
+// pulled into a band that stays visible on either one.
+function readableAccentColor(red, green, blue) {
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  const chroma = max - min;
+
+  let hue = 0;
+  if (chroma > 0) {
+    if (max === r) hue = ((g - b) / chroma) % 6;
+    else if (max === g) hue = (b - r) / chroma + 2;
+    else hue = (r - g) / chroma + 4;
+    hue *= 60;
+    if (hue < 0) hue += 360;
+  }
+
+  const saturation = chroma === 0 ? 0 : chroma / (1 - Math.abs(2 * lightness - 1));
+  const clampedSaturation = Math.min(0.86, Math.max(0.46, saturation));
+  const clampedLightness = Math.min(0.62, Math.max(0.44, lightness));
+
+  return `hsl(${Math.round(hue)} ${Math.round(clampedSaturation * 100)}% ${Math.round(clampedLightness * 100)}%)`;
+}
+
+function imageIconData(image) {
+  const sized = image.resize({ width: 128, height: 128 });
+  let color = "";
+  try {
+    color = bitmapAccentColor(sized.toBitmap());
+  } catch {
+    // An unreadable bitmap only costs the accent colour; the icon still renders.
+  }
+  return { ok: true, icon: sized.toDataURL(), color };
+}
+
 async function getAppIconData(appPath) {
   if (!appPath || typeof appPath !== "string") {
     return { ok: false, icon: "", message: "Invalid app path" };
@@ -652,13 +730,13 @@ async function getAppIconData(appPath) {
     );
     const result = fileIcon.isEmpty()
       ? { ok: false, icon: "", message: "No icon found" }
-      : { ok: true, icon: fileIcon.toDataURL() };
+      : imageIconData(fileIcon);
     appIconCache.set(appPath, result);
     return result;
   } catch (error) {
-    const result = { ok: false, icon: "", message: error.message };
-    appIconCache.set(appPath, result);
-    return result;
+    // A timeout says the machine was busy, not that the icon is missing, so it
+    // must not be cached as a permanent miss.
+    return { ok: false, icon: "", message: error.message };
   }
 }
 
@@ -676,7 +754,7 @@ async function getAppThumbnailIconData(appPath) {
 
     return thumbnail.isEmpty()
       ? { ok: false, icon: "", message: "No thumbnail found" }
-      : { ok: true, icon: thumbnail.toDataURL() };
+      : imageIconData(thumbnail);
   } catch (error) {
     return { ok: false, icon: "", message: error.message };
   }
@@ -855,8 +933,13 @@ function wrappedIosAppIconPath(appPath) {
   }
 }
 
+// Bundle extensions that can carry an icns of their own. .app is the common
+// case; the rest let an XPC service or an app extension show its real artwork
+// instead of dropping straight to the generic system chip.
+const ICON_BEARING_BUNDLE_EXTENSIONS = new Set([".app", ".appex", ".xpc", ".bundle", ".prefPane", ".framework"]);
+
 async function getMacAppBundleIconData(appPath) {
-  if (process.platform !== "darwin" || path.extname(appPath) !== ".app") {
+  if (process.platform !== "darwin" || !ICON_BEARING_BUNDLE_EXTENSIONS.has(path.extname(appPath))) {
     return { ok: false, icon: "", message: "Not a macOS app bundle" };
   }
 
@@ -866,14 +949,14 @@ async function getMacAppBundleIconData(appPath) {
     if (wrappedIcon) {
       const image = nativeImage.createFromPath(wrappedIcon);
       if (!image.isEmpty()) {
-        return { ok: true, icon: image.resize({ width: 128, height: 128 }).toDataURL() };
+        return imageIconData(image);
       }
       // Empty means a CgBI PNG. sips reads those.
       const convertedIcon = await convertImageToPng(wrappedIcon);
       if (convertedIcon) {
         const convertedImage = nativeImage.createFromBuffer(convertedIcon);
         if (!convertedImage.isEmpty()) {
-          return { ok: true, icon: convertedImage.resize({ width: 128, height: 128 }).toDataURL() };
+          return imageIconData(convertedImage);
         }
       }
     }
@@ -886,7 +969,7 @@ async function getMacAppBundleIconData(appPath) {
       if (!pngData) continue;
       const image = nativeImage.createFromBuffer(pngData);
       if (!image.isEmpty()) {
-        return { ok: true, icon: image.resize({ width: 128, height: 128 }).toDataURL() };
+        return imageIconData(image);
       }
     } catch {
       // Try the next candidate.
@@ -898,7 +981,7 @@ async function getMacAppBundleIconData(appPath) {
   if (pngData) {
     const image = nativeImage.createFromBuffer(pngData);
     if (!image.isEmpty()) {
-      return { ok: true, icon: image.resize({ width: 128, height: 128 }).toDataURL() };
+      return imageIconData(image);
     }
   }
 
@@ -986,12 +1069,75 @@ function svgDataUrl(svg) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-function genericProcessIconData(processInfo) {
-  const label = (String(processInfo?.name || "System").trim().charAt(0).toUpperCase() || "S")
-    .replace(/[&<>"]/g, "");
-  const hue = hashString(String(processInfo?.name || processInfo?.pid || "system")) % 360;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="20" y1="12" x2="108" y2="116" gradientUnits="userSpaceOnUse"><stop stop-color="hsl(${hue} 70% 62%)"/><stop offset="1" stop-color="hsl(${(hue + 42) % 360} 78% 48%)"/></linearGradient></defs><rect width="128" height="128" rx="30" fill="url(#g)"/><path d="M34 42h60M34 64h60M34 86h60" stroke="white" stroke-width="10" stroke-linecap="round" opacity=".42"/><text x="64" y="76" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="800" fill="white">${label}</text></svg>`;
-  return { ok: true, icon: svgDataUrl(svg), source: "generic" };
+// Apple ships no icon for a daemon, an XPC service or a bare unix binary, and
+// there are hundreds of them in the list. A per-process coloured tile turned
+// that into visual noise that read as louder than the real app icons sitting
+// next to it, so every background process now gets the same muted slate chip
+// with a gear on it. Sameness is the point: it recedes.
+const SYSTEM_PROCESS_ICON = svgDataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">'
+  + '<rect width="128" height="128" rx="30" fill="hsl(222 14% 88%)"/>'
+  + '<path d="M64 40a24 24 0 1 0 0 48 24 24 0 0 0 0-48Zm0 34a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z" fill="hsl(222 12% 52%)"/>'
+  + '<path d="M64 26v10M64 92v10M90.9 37.1l-7 7M45.1 83.9l-7 7M102 64H92M36 64H26M90.9 90.9l-7-7M45.1 44.1l-7-7" '
+  + 'stroke="hsl(222 12% 52%)" stroke-width="9" stroke-linecap="round"/>'
+  + '</svg>',
+);
+
+// A user-facing app whose bundle icon could not be read still needs to be
+// tellable apart at a glance, so it keeps a monogram. The tone is derived from
+// the name and deliberately desaturated, so a placeholder never out-shouts the
+// real icons around it.
+function monogramProcessIcon(name) {
+  const label = (String(name || "?").trim().charAt(0).toUpperCase() || "?").replace(/[&<>"]/g, "");
+  const hue = hashString(String(name || "app")) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">`
+    + `<rect width="128" height="128" rx="30" fill="hsl(${hue} 32% 84%)"/>`
+    + `<text x="64" y="83" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" `
+    + `font-size="60" font-weight="600" fill="hsl(${hue} 34% 34%)">${label}</text>`
+    + `</svg>`;
+  return { icon: svgDataUrl(svg), color: `hsl(${hue} 46% 54%)` };
+}
+
+// Roots whose .app bundles a person thinks of as "an app I have installed"
+// rather than "part of macOS". /System/Applications is in the list because
+// Music, Mail and Preview are apps by any user-facing definition; Finder is
+// spelled out because it lives in CoreServices next to a hundred agents.
+const USER_APP_BUNDLE_PATTERNS = [
+  /^\/Applications\//,
+  /^\/System\/Applications\//,
+  /^\/Users\/[^/]+\/Applications\//,
+  /^\/System\/Library\/CoreServices\/Finder\.app$/,
+];
+
+// iOS-style app bundles and Safari's extensions live behind a cryptex mount
+// whose prefix hides the real /System/Applications location underneath.
+const CRYPTEX_PATH_PREFIXES = [
+  "/System/Volumes/Preboot/Cryptexes/App",
+  "/System/Cryptexes/App",
+];
+
+function stripCryptexPrefix(inputPath) {
+  const filePath = String(inputPath || "");
+  for (const prefix of CRYPTEX_PATH_PREFIXES) {
+    if (filePath.startsWith(`${prefix}/`)) return filePath.slice(prefix.length);
+  }
+  return filePath;
+}
+
+function isUserAppPath(inputPath) {
+  const bundle = appBundlePath(stripCryptexPrefix(inputPath));
+  return bundle !== "" && USER_APP_BUNDLE_PATTERNS.some((pattern) => pattern.test(bundle));
+}
+
+function genericProcessIconData(processInfo, resolvedPath = "") {
+  const executablePath = resolvedPath || processInfo?.command || "";
+  if (!isUserAppPath(executablePath)) {
+    return { ok: true, icon: SYSTEM_PROCESS_ICON, color: ICON_ACCENT_NEUTRAL, source: "generic" };
+  }
+
+  const bundleName = path.basename(appBundlePath(stripCryptexPrefix(executablePath))).replace(/\.app$/i, "");
+  const monogram = monogramProcessIcon(bundleName || processInfo?.name);
+  return { ok: true, icon: monogram.icon, color: monogram.color, source: "generic" };
 }
 
 async function mapWithConcurrency(items, concurrency, mapper) {
@@ -2526,11 +2672,23 @@ async function processIconPaths(processInfo, bundlePath = "") {
   }
 
   // No .app in the command path: this is a bare executable, daemon, or helper.
-  // getAppIconData would return a generic exec icon for the binary, so try to
-  // map the process to an installed app by name first. Use the index-only
-  // resolver to keep the synchronous Spotlight lookup out of the per-process
-  // fan-out, and keep the bare executable as a last-resort candidate so a
-  // matched .app icon always wins over the generic exec icon.
+  //
+  // A binary under /usr, /sbin or /System is macOS itself. Looking it up by
+  // name can only produce a false match against an installed app, and asking
+  // the thumbnail bridge for its icon costs a subprocess per unique daemon
+  // (there are ~700 of them) to get back the same washed-out unix-executable
+  // placeholder every time. Return nothing and let the caller draw the uniform
+  // system chip instead.
+  if (isSystemBinaryPath(processPath)) {
+    return [];
+  }
+
+  // Anything else is a user-installed CLI tool or helper: getAppIconData would
+  // return the generic exec icon for the binary, so try to map the process to
+  // an installed app by name first. Use the index-only resolver to keep the
+  // synchronous Spotlight lookup out of the per-process fan-out, and keep the
+  // bare executable as a last-resort candidate so a matched .app icon always
+  // wins over the generic exec icon.
   const paths = [];
   const lookupNames = [
     processInfo?.name,
@@ -2545,6 +2703,13 @@ async function processIconPaths(processInfo, bundlePath = "") {
 
   addUniquePath(paths, processPath);
   return paths;
+}
+
+const SYSTEM_BINARY_PREFIXES = ["/usr/", "/bin/", "/sbin/", "/System/", "/Library/Apple/", "/private/var/"];
+
+function isSystemBinaryPath(inputPath) {
+  const filePath = stripCryptexPrefix(inputPath);
+  return filePath !== "" && SYSTEM_BINARY_PREFIXES.some((prefix) => filePath.startsWith(prefix));
 }
 
 function processIconPath(commandPath) {
@@ -3190,21 +3355,37 @@ ipcMain.handle("mole:status", async (_event, options = {}) => {
   return runMole(args);
 });
 
+// The System Events bridge asks AppleScript about one PID at a time inside a
+// single osascript run, so its cost grows with the batch while its timeout does
+// not. It only ever helps GUI apps, and those already resolve through `ps`, so
+// past this many unresolved PIDs the whole round trip is a guaranteed timeout
+// spent on daemons that were never going to have an icon.
+const PROCESS_BUNDLE_BRIDGE_MAX_PIDS = 24;
+
 ipcMain.handle("mole:process:icons", async (_event, processes) => {
   if (!Array.isArray(processes)) {
-    return { ok: false, icons: {}, message: "Invalid processes" };
+    return { ok: false, icons: {}, colors: {}, generic: [], message: "Invalid processes" };
   }
 
-  const pids = processes.map((proc) => proc?.pid);
-  // `ps` gives the full executable path (and therefore the .app bundle) for
-  // every PID without needing Automation permission. The System Events bridge
-  // is kept only as a fallback for the few PIDs `ps` can't resolve, so the
-  // whole-batch osascript timeout no longer gates the common case.
-  const executablePathsByPid = await getProcessExecutablePathsByPid(pids);
-  const unresolvedPids = pids.filter((pid) => !executablePathsByPid.get(Number(pid)));
-  const bundlePathsByPid = await getProcessAppBundlePathsByPid(unresolvedPids);
+  // `mo status` now reports each PID's executable path, so the common case
+  // needs no subprocess at all. `ps` covers PIDs the status snapshot missed
+  // (it is a few seconds old by the time icons are requested), and the System
+  // Events bridge stays as a last resort for the handful `ps` cannot resolve.
+  const pidsWithoutPath = processes
+    .filter((proc) => !String(proc?.path || "").startsWith("/"))
+    .map((proc) => proc?.pid);
+  const executablePathsByPid = pidsWithoutPath.length > 0
+    ? await getProcessExecutablePathsByPid(pidsWithoutPath)
+    : new Map();
+  const unresolvedPids = pidsWithoutPath.filter((pid) => !executablePathsByPid.get(Number(pid)));
+  const bundlePathsByPid = unresolvedPids.length > 0 && unresolvedPids.length <= PROCESS_BUNDLE_BRIDGE_MAX_PIDS
+    ? await getProcessAppBundlePathsByPid(unresolvedPids)
+    : new Map();
+
   const resolvedProcessIconEntries = await mapWithConcurrency(processes, 8, async (proc) => {
-    const executablePath = executablePathsByPid.get(Number(proc?.pid));
+    const executablePath = String(proc?.path || "").startsWith("/")
+      ? proc.path
+      : executablePathsByPid.get(Number(proc?.pid)) || "";
     // Enrich command with the real executable path so the existing .app
     // extraction, executable-name lookup, and binary-path fallback all work off
     // a real path instead of the bare accounting name the renderer received.
@@ -3212,43 +3393,45 @@ ipcMain.handle("mole:process:icons", async (_event, processes) => {
     return {
       pid: proc?.pid,
       processInfo: proc,
+      executablePath,
       iconPaths: await processIconPaths(enrichedProc, bundlePathsByPid.get(Number(proc?.pid))),
     };
   });
-  const processIconEntries = resolvedProcessIconEntries.filter(({ pid, iconPaths }) => Number.isFinite(pid) && iconPaths.length > 0);
 
-  const uniqueIconPaths = [...new Set(processIconEntries.flatMap(({ iconPaths }) => iconPaths))];
+  const uniqueIconPaths = [...new Set(
+    resolvedProcessIconEntries
+      .filter(({ pid }) => Number.isFinite(pid))
+      .flatMap(({ iconPaths }) => iconPaths),
+  )];
   const iconResults = await mapWithConcurrency(uniqueIconPaths, 8, async (iconPath) => {
     const result = await getAppIconData(iconPath);
     return [iconPath, result];
   });
   const iconsByPath = new Map(iconResults.filter(([, result]) => result.ok && result.icon));
+
   const icons = {};
-  const missing = [];
-  const fallbackEntries = [];
+  const colors = {};
+  const generic = [];
 
-  for (const { pid, processInfo, iconPaths } of processIconEntries) {
-    const result = iconPaths.map((iconPath) => iconsByPath.get(iconPath)).find((iconResult) => iconResult?.icon);
-    if (result?.icon) {
-      icons[pid] = result.icon;
-    } else {
-      fallbackEntries.push({ pid, processInfo });
+  for (const { pid, processInfo, executablePath, iconPaths } of resolvedProcessIconEntries) {
+    if (!Number.isFinite(pid)) continue;
+
+    const resolved = iconPaths.map((iconPath) => iconsByPath.get(iconPath)).find((result) => result?.icon);
+    if (resolved?.icon) {
+      icons[pid] = resolved.icon;
+      if (resolved.color) colors[pid] = resolved.color;
+      continue;
     }
+
+    // Nothing on disk matched. Say so explicitly instead of handing back a
+    // placeholder the renderer cannot tell apart from a real icon.
+    const fallback = genericProcessIconData(processInfo, executablePath);
+    icons[pid] = fallback.icon;
+    colors[pid] = fallback.color;
+    generic.push(pid);
   }
 
-  for (const { pid, processInfo, iconPaths } of resolvedProcessIconEntries) {
-    if (!Number.isFinite(pid) || iconPaths.length > 0 || icons[pid]) continue;
-    fallbackEntries.push({ pid, processInfo });
-  }
-
-  const fallbackIcons = await mapWithConcurrency(fallbackEntries, 6, async ({ pid, processInfo }) => {
-    return [pid, genericProcessIconData(processInfo).icon];
-  });
-  for (const [pid, icon] of fallbackIcons) {
-    icons[pid] = icon;
-  }
-
-  return { ok: true, icons, missing };
+  return { ok: true, icons, colors, generic, missing: generic };
 });
 
 ipcMain.handle("mole:appIcon:list", async () => ({

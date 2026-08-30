@@ -37,12 +37,28 @@ import {
 
 const INITIAL_STATUS_PROCESS_LIMIT = 40;
 const FULL_STATUS_FETCH_DELAY_MS = 2_500;
-const PROCESS_ICON_FETCH_DELAY_MS = 1_200;
+// Long enough to coalesce the burst of renders around a metrics tick, short
+// enough that a scroll into new rows fills them in before it reads as broken.
+const PROCESS_ICON_FETCH_DELAY_MS = 350;
+// One request covers the rows the list can paint plus the donut. Anything past
+// this waits for the next tick; a 900-PID batch is what used to time out.
+const PROCESS_ICON_BATCH_LIMIT = 150;
 const MAX_HISTORY = 30;
 const BATTERY_SAMPLE_INTERVAL = 6 * 60_000;
 const PROCESS_MENU_WIDTH = 232;
 const PROCESS_MENU_HEIGHT = 276;
 const PROCESS_MENU_MARGIN = 8;
+const PROCESS_SCOPES: ProcessScope[] = ['app', 'system', 'all'];
+const PROCESS_SCOPE_LABELS: Record<ProcessScope, string> = {
+  app: 'Apps',
+  system: 'System',
+  all: 'All',
+};
+const PROCESS_SCOPE_EMPTY: Record<ProcessScope, string> = {
+  app: 'No matching apps',
+  system: 'No matching system processes',
+  all: 'No matching processes',
+};
 const PROCESS_DONUT_OTHER_ID = 'other-processes';
 const PROCESS_DONUT_OTHER_COLOR = '#d1d5db';
 const GRAPH_EDGE_FADE = '[mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]';
@@ -57,6 +73,19 @@ interface HistoryPoint {
   tx: number;
   gpu: number;
   battery: number | null;
+  // Bytes per second, differenced from the cumulative counters in the two
+  // surrounding samples. `mo status` is a fresh process per poll and cannot
+  // compute these itself.
+  diskRead: number;
+  diskWrite: number;
+  pageIn: number;
+  pageOut: number;
+  // Cumulative byte counters carried so the next sample has something to
+  // difference against.
+  diskReadTotal: number;
+  diskWriteTotal: number;
+  pageInTotal: number;
+  pageOutTotal: number;
 }
 
 interface MyMacPageProps {
@@ -98,15 +127,26 @@ interface ProcessDonutItem {
   isOther?: boolean;
 }
 
+type ProcessKind = 'app' | 'system';
+type ProcessScope = ProcessKind | 'all';
+
+interface ProcessIconState {
+  icons: Record<number, string>;
+  colors: Record<number, string>;
+  generic: Record<number, boolean>;
+}
+
 interface ProcessAppGroup {
   id: string;
   name: string;
+  kind: ProcessKind;
   processes: ProcessInfo[];
   totalCpu: number;
   totalMemory: number;
   iconProcess: ProcessInfo;
   icon?: string;
-  iconMissing?: boolean;
+  iconGeneric: boolean;
+  color: string;
   pinnedRank: number;
 }
 
@@ -229,7 +269,57 @@ function MyMacSkeleton() {
   );
 }
 
-function ProcessAppIcon({ process, icon, iconMissing }: { process: ProcessInfo; icon?: string; iconMissing?: boolean }) {
+// Idle machines sit at a few KB/s. Without a floor, recharts autoscales that
+// noise to full height and the card reads as a system under load.
+const THROUGHPUT_AXIS_FLOOR = 2 * 1024 * 1024;
+
+function formatThroughput(bytesPerSecond: number): string {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond < 1024) return '0 KB/s';
+  return `${formatBytes(bytesPerSecond)}/s`;
+}
+
+// The read/write companion to the fullness donut: a donut says how much of the
+// disk is spoken for, this says whether anything is moving right now.
+function ThroughputStrip({ id, data, readKey, writeKey, readLabel, writeLabel }: {
+  id: string;
+  data: HistoryPoint[];
+  readKey: 'diskRead' | 'pageIn';
+  writeKey: 'diskWrite' | 'pageOut';
+  readLabel: string;
+  writeLabel: string;
+}) {
+  const latest = data[data.length - 1];
+
+  return (
+    <div className="mt-auto shrink-0">
+      <div className={`h-9 ${GRAPH_EDGE_FADE}`}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id={`${id}-read`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.42} />
+                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id={`${id}-write`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f97316" stopOpacity={0.4} />
+                <stop offset="100%" stopColor="#f97316" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <YAxis hide domain={[0, (max: number) => Math.max(max, THROUGHPUT_AXIS_FLOOR)]} />
+            <Area type="monotone" dataKey={readKey} stroke="#3b82f6" strokeWidth={1.5} fill={`url(#${id}-read)`} dot={false} isAnimationActive={false} />
+            <Area type="monotone" dataKey={writeKey} stroke="#f97316" strokeWidth={1.5} fill={`url(#${id}-write)`} dot={false} isAnimationActive={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex items-center justify-center gap-3 text-[10px] font-semibold tabular-nums">
+        <span className="text-blue-500 dark:text-blue-400">{readLabel} {formatThroughput(latest?.[readKey] ?? 0)}</span>
+        <span className="text-orange-500 dark:text-orange-400">{writeLabel} {formatThroughput(latest?.[writeKey] ?? 0)}</span>
+      </div>
+    </div>
+  );
+}
+
+function ProcessAppIcon({ process, icon }: { process: ProcessInfo; icon?: string }) {
   return (
     <span
       className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden"
@@ -238,13 +328,10 @@ function ProcessAppIcon({ process, icon, iconMissing }: { process: ProcessInfo; 
     >
       {icon ? (
         <img src={icon} alt="" className="h-7 w-7 object-contain" draggable={false} />
-      ) : iconMissing ? (
-        <svg viewBox="0 0 32 32" className="h-7 w-7 text-slate-400 dark:text-slate-500" fill="none" aria-hidden="true">
-          <rect x="7" y="7" width="18" height="18" rx="5" fill="currentColor" opacity="0.16" />
-          <path d="M11 16h10M16 11v10M10 23l12-14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
       ) : (
-        <span className="h-2 w-2 rounded-full bg-slate-400/45 dark:bg-slate-500/45" />
+        // Waiting on the icon request. A neutral placeholder keeps the row
+        // height steady without claiming the app has no icon.
+        <span className="h-7 w-7 rounded-lg bg-slate-900/5 dark:bg-white/10" />
       )}
     </span>
   );
@@ -427,10 +514,48 @@ export function getReadableTextColor(color: string): { fill: string; halo: strin
 // cramming a 22px icon + percent into a sliver collides with neighbours.
 const PROCESS_DONUT_MIN_INLINE_PERCENT = 5;
 
+// Safari's extensions and the iOS-style bundles live behind a cryptex mount
+// whose prefix hides the real /System/Applications location underneath.
+const CRYPTEX_PATH_PREFIXES = [
+  '/System/Volumes/Preboot/Cryptexes/App',
+  '/System/Cryptexes/App',
+];
+
+// Where a bundle has to live to count as "an app I have installed" rather than
+// "part of macOS". /System/Applications is included because Music, Mail and
+// Preview are apps by any user-facing definition. Finder is spelled out because
+// it sits in CoreServices alongside a hundred background agents.
+const USER_APP_BUNDLE_PATTERNS = [
+  /^\/Applications\//,
+  /^\/System\/Applications\//,
+  /^\/Users\/[^/]+\/Applications\//,
+  /^\/System\/Library\/CoreServices\/Finder\.app$/,
+];
+
+function stripCryptexPrefix(filePath: string): string {
+  for (const prefix of CRYPTEX_PATH_PREFIXES) {
+    if (filePath.startsWith(`${prefix}/`)) return filePath.slice(prefix.length);
+  }
+  return filePath;
+}
+
+// The outermost .app wins on purpose. Arc's renderer runs from
+// /Applications/Arc.app/Contents/Frameworks/.../Browser Helper.app, and the
+// row a person wants to see is Arc, not Browser Helper.
+function getProcessBundlePath(process: ProcessInfo): string {
+  const executablePath = stripCryptexPrefix(process.path ?? '');
+  if (!executablePath.startsWith('/')) return '';
+  return executablePath.match(/^(.+?\.app)(?:\/|$)/i)?.[1] ?? '';
+}
+
+function classifyProcess(process: ProcessInfo): ProcessKind {
+  const bundlePath = getProcessBundlePath(process);
+  if (!bundlePath) return 'system';
+  return USER_APP_BUNDLE_PATTERNS.some((pattern) => pattern.test(bundlePath)) ? 'app' : 'system';
+}
+
 function getProcessAppIdentity(process: ProcessInfo): { id: string; name: string } {
-  const command = process.command ?? '';
-  const appBundleMatch = command.match(/^(.+?\.app)(?:\/|$)/i);
-  const appBundlePath = appBundleMatch?.[1] ?? '';
+  const appBundlePath = getProcessBundlePath(process);
   const bundleName = formatAppBundleName(appBundlePath);
   const name = bundleName || normalizeProcessAppName(process.name) || process.name || `PID ${process.pid}`;
   const normalizedName = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -441,12 +566,35 @@ function getProcessAppIdentity(process: ProcessInfo): { id: string; name: string
   };
 }
 
+// Picks the icon and accent colour that represent a whole group.
+//
+// Every PID now comes back with something drawable, so "first icon wins" would
+// let a helper's placeholder chip stand in for an app whose real artwork
+// arrived on a sibling PID. Real artwork is preferred over a placeholder, and
+// the accent colour is sampled from whichever icon ends up on the row so the
+// rail, the bar and the donut slice all match what the user sees.
+function applyGroupIcon(group: ProcessAppGroup, iconState: ProcessIconState): void {
+  const realIconProcess = group.processes.find((process) => (
+    iconState.icons[process.pid] && !iconState.generic[process.pid]
+  ));
+  const iconProcess = realIconProcess ?? group.processes.find((process) => iconState.icons[process.pid]);
+
+  if (iconProcess) {
+    group.iconProcess = iconProcess;
+    group.icon = iconState.icons[iconProcess.pid];
+    group.iconGeneric = Boolean(iconState.generic[iconProcess.pid]);
+    group.color = iconState.colors[iconProcess.pid] ?? getProcessColor(group.name, group.icon);
+    return;
+  }
+
+  group.color = getProcessColor(group.name);
+}
+
 function buildProcessAppGroups(
   processes: ProcessInfo[],
   pinnedPids: number[],
   processSort: ProcessSort,
-  processIcons: Record<number, string>,
-  processIconMisses: Record<number, boolean>,
+  iconState: ProcessIconState,
 ): ProcessAppGroup[] {
   const groups = new Map<string, ProcessAppGroup>();
 
@@ -462,24 +610,18 @@ function buildProcessAppGroups(
       if (pinnedIndex >= 0 && (current.pinnedRank === -1 || pinnedIndex < current.pinnedRank)) {
         current.pinnedRank = pinnedIndex;
       }
-      if (!current.icon && processIcons[process.pid]) {
-        current.iconProcess = process;
-        current.icon = processIcons[process.pid];
-        current.iconMissing = false;
-      }
-      if (!current.icon && !current.iconMissing && processIconMisses[process.pid]) {
-        current.iconMissing = true;
-      }
     } else {
       groups.set(identity.id, {
         id: identity.id,
         name: identity.name,
+        kind: classifyProcess(process),
         processes: [process],
         totalCpu: Math.max(process.cpu, 0),
         totalMemory: getProcessMemoryValue(process),
         iconProcess: process,
-        icon: processIcons[process.pid],
-        iconMissing: processIconMisses[process.pid],
+        icon: undefined,
+        iconGeneric: true,
+        color: '',
         pinnedRank: pinnedPids.indexOf(process.pid),
       });
     }
@@ -501,14 +643,7 @@ function buildProcessAppGroups(
       return a.pid - b.pid;
     });
 
-    if (!group.icon) {
-      const iconProcess = group.processes.find((process) => processIcons[process.pid]);
-      if (iconProcess) {
-        group.iconProcess = iconProcess;
-        group.icon = processIcons[iconProcess.pid];
-        group.iconMissing = false;
-      }
-    }
+    applyGroupIcon(group, iconState);
 
     return group;
   }).sort((a, b) => {
@@ -590,8 +725,22 @@ function formatMacName(host?: string): string {
     .replace(/-/g, ' ');
 }
 
-function makeHistoryPoint(metrics: SystemMetrics, t: number): HistoryPoint {
+// A counter that went backwards means a reboot or a device that disappeared,
+// and an elapsed time of zero means two samples landed in the same millisecond.
+// Both would produce a nonsense spike, so both report no throughput.
+function throughputRate(current: number, previous: number, elapsedSeconds: number): number {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return 0;
+  if (elapsedSeconds <= 0 || current < previous) return 0;
+  return (current - previous) / elapsedSeconds;
+}
+
+function makeHistoryPoint(metrics: SystemMetrics, t: number, previous?: HistoryPoint): HistoryPoint {
   const networkTotals = getNetworkTotals(metrics);
+  const diskReadTotal = metrics.disk_io?.read_bytes ?? 0;
+  const diskWriteTotal = metrics.disk_io?.write_bytes ?? 0;
+  const pageInTotal = metrics.memory.page_in_bytes ?? 0;
+  const pageOutTotal = metrics.memory.page_out_bytes ?? 0;
+  const elapsedSeconds = previous ? (t - previous.t) / 1000 : 0;
 
   return {
     t,
@@ -600,6 +749,14 @@ function makeHistoryPoint(metrics: SystemMetrics, t: number): HistoryPoint {
     tx: networkTotals.tx,
     gpu: getGPUUsage(metrics) ?? 0,
     battery: getBatteryPercent(metrics),
+    diskRead: previous ? throughputRate(diskReadTotal, previous.diskReadTotal, elapsedSeconds) : 0,
+    diskWrite: previous ? throughputRate(diskWriteTotal, previous.diskWriteTotal, elapsedSeconds) : 0,
+    pageIn: previous ? throughputRate(pageInTotal, previous.pageInTotal, elapsedSeconds) : 0,
+    pageOut: previous ? throughputRate(pageOutTotal, previous.pageOutTotal, elapsedSeconds) : 0,
+    diskReadTotal,
+    diskWriteTotal,
+    pageInTotal,
+    pageOutTotal,
   };
 }
 
@@ -679,14 +836,15 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
   const [pinnedPids, setPinnedPids] = useState<number[]>([]);
   const [processSort, setProcessSort] = useState<ProcessSort>({ key: 'cpu', direction: 'desc' });
   const [processMenu, setProcessMenu] = useState<ProcessMenuState | null>(null);
-  const [processIcons, setProcessIcons] = useState<Record<number, string>>({});
-  const [processIconMisses, setProcessIconMisses] = useState<Record<number, boolean>>({});
+  const [iconState, setIconState] = useState<ProcessIconState>(() => ({ icons: {}, colors: {}, generic: {} }));
   const [isProcessExpanded, setIsProcessExpanded] = useState(false);
+  const [processScope, setProcessScope] = useState<ProcessScope>('app');
   const [processSearch, setProcessSearch] = useState('');
   const [expandedProcessGroups, setExpandedProcessGroups] = useState<Set<string>>(() => new Set());
   const historyRef = useRef<HistoryPoint[]>([]);
   const batteryHistoryRef = useRef<BatteryHistoryPoint[]>([]);
-  const requestedProcessIconsRef = useRef<Set<string>>(new Set());
+  const requestedProcessIconsRef = useRef<Set<number>>(new Set());
+  const processByPidRef = useRef<Map<number, ProcessInfo>>(new Map());
   const mountedRef = useRef(true);
 
   const fetchMetrics = useCallback(async (processLimit?: number) => {
@@ -709,7 +867,8 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
 
       if (mountedRef.current) {
         const now = Date.now();
-        const nextHistory = trimHistory([...historyRef.current, makeHistoryPoint(data, now)], MAX_HISTORY);
+        const previousPoint = historyRef.current[historyRef.current.length - 1];
+        const nextHistory = trimHistory([...historyRef.current, makeHistoryPoint(data, now, previousPoint)], MAX_HISTORY);
         const nextBatteryHistory = appendBatteryHistory(batteryHistoryRef.current, data, now);
 
         historyRef.current = nextHistory;
@@ -809,66 +968,41 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
     };
   }, [processMenu]);
 
-  useEffect(() => {
-    if (!metrics || !window.moleDesktop?.getProcessIcons) return;
+  const loadProcessIcons = useCallback(async (pids: number[]) => {
+    const payload = pids
+      .map((pid) => processByPidRef.current.get(pid))
+      .filter((proc): proc is ProcessInfo => Boolean(proc))
+      .map((proc) => ({ pid: proc.pid, name: proc.name, command: proc.command, path: proc.path }));
 
-    const sourceProcesses = metrics.processes?.length ? metrics.processes : metrics.top_processes ?? [];
-    const processesForIcons = Array.from(
-      new Map(sourceProcesses.map((proc) => [proc.pid, proc])).values(),
-    );
-    const processesNeedingIcons = processesForIcons.filter((proc) => {
-      const requestKey = `${proc.pid}:${proc.command ?? ''}:${proc.name}`;
-      return (proc.command || proc.name) && !processIcons[proc.pid] && !processIconMisses[proc.pid] && !requestedProcessIconsRef.current.has(requestKey);
-    });
+    if (payload.length === 0) return;
 
-    if (processesNeedingIcons.length === 0) return;
+    // Claim the PIDs here rather than when the request was scheduled: a timer
+    // that the next metrics tick cancels must not leave them marked as already
+    // asked for, which is how they used to end up permanently icon-less.
+    payload.forEach((proc) => requestedProcessIconsRef.current.add(proc.pid));
 
-    processesNeedingIcons.forEach((proc) => requestedProcessIconsRef.current.add(`${proc.pid}:${proc.command ?? ''}:${proc.name}`));
+    try {
+      const result = await window.moleDesktop.getProcessIcons?.(payload);
 
-    let isCancelled = false;
+      // Deliberately not cancelled on unmount-adjacent renders. Metrics land
+      // every 2s and this round trip can outlast one, so throwing the answer
+      // away on a re-render is what made icons never show up.
+      if (!mountedRef.current || !result?.ok) return;
 
-    async function loadProcessIcons() {
-      try {
-        const result = await window.moleDesktop.getProcessIcons?.(processesNeedingIcons.map((proc) => ({
-          pid: proc.pid,
-          name: proc.name,
-          command: proc.command,
-        })));
-
-        if (!isCancelled && result?.ok) {
-          setProcessIcons((currentIcons) => ({ ...currentIcons, ...result.icons }));
-          setProcessIconMisses((currentMisses) => {
-            const nextMisses = { ...currentMisses };
-            const missingPids = result.missing?.length
-              ? result.missing
-              : processesNeedingIcons
-                .map((proc) => proc.pid)
-                .filter((pid) => !result.icons[pid]);
-
-            missingPids.forEach((pid) => {
-              nextMisses[pid] = true;
-            });
-            Object.keys(result.icons).forEach((pid) => {
-              delete nextMisses[Number(pid)];
-            });
-
-            return nextMisses;
-          });
-        }
-      } catch (err) {
-        if (!isCancelled) console.error('Failed to load process icons:', err);
-      }
+      setIconState((current) => ({
+        icons: { ...current.icons, ...result.icons },
+        colors: { ...current.colors, ...(result.colors ?? {}) },
+        generic: (result.generic ?? []).reduce(
+          (acc, pid) => { acc[pid] = true; return acc; },
+          { ...current.generic } as Record<number, boolean>,
+        ),
+      }));
+    } catch (err) {
+      // Let a later tick try again rather than leaving the rows blank forever.
+      payload.forEach((proc) => requestedProcessIconsRef.current.delete(proc.pid));
+      console.error('Failed to load process icons:', err);
     }
-
-    const iconTimer = setTimeout(() => {
-      void loadProcessIcons();
-    }, PROCESS_ICON_FETCH_DELAY_MS);
-
-    return () => {
-      isCancelled = true;
-      clearTimeout(iconTimer);
-    };
-  }, [metrics, processIcons, processIconMisses]);
+  }, []);
 
   const openProcessMenuAt = (process: ProcessInfo, x: number, y: number) => {
     const maxX = Math.max(PROCESS_MENU_MARGIN, window.innerWidth - PROCESS_MENU_WIDTH - PROCESS_MENU_MARGIN);
@@ -969,10 +1103,21 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
   const batteryCharging = battery ? isBatteryCharging(battery.status) : false;
   const batteryPredictionStroke = batteryPrediction.direction === 'down' ? '#f97316' : '#22c55e';
   const allProcesses = metrics?.processes?.length ? metrics.processes : metrics?.top_processes ?? [];
-  const processAppGroups = buildProcessAppGroups(allProcesses, pinnedPids, processSort, processIcons, processIconMisses);
+  processByPidRef.current = new Map(allProcesses.map((proc) => [proc.pid, proc]));
+  const processAppGroups = buildProcessAppGroups(allProcesses, pinnedPids, processSort, iconState);
+  const appGroupCount = processAppGroups.filter((group) => group.kind === 'app').length;
+  const systemGroupCount = processAppGroups.length - appGroupCount;
+  // Splitting apps from system processes needs the executable path, and a
+  // `mo status` too old to report one would classify every row as system and
+  // leave the default tab empty. Fall back to the unsplit list instead.
+  const canSplitProcesses = allProcesses.some((proc) => Boolean(proc.path));
+  const activeProcessScope: ProcessScope = canSplitProcesses ? processScope : 'all';
+  const scopedProcessAppGroups = activeProcessScope === 'all'
+    ? processAppGroups
+    : processAppGroups.filter((group) => group.kind === activeProcessScope);
   const normalizedProcessSearch = processSearch.trim().toLowerCase();
   const visibleProcessAppGroups = normalizedProcessSearch
-    ? processAppGroups.filter((group) => (
+    ? scopedProcessAppGroups.filter((group) => (
       group.name.toLowerCase().includes(normalizedProcessSearch) ||
       group.processes.some((proc) => (
         proc.name.toLowerCase().includes(normalizedProcessSearch) ||
@@ -980,11 +1125,12 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
         (proc.command ?? '').toLowerCase().includes(normalizedProcessSearch)
       ))
     ))
-    : processAppGroups;
-  const topCpuProcessGroups = [...processAppGroups]
+    : scopedProcessAppGroups;
+  const scopedProcessCount = scopedProcessAppGroups.reduce((sum, group) => sum + group.processes.length, 0);
+  const topCpuProcessGroups = [...scopedProcessAppGroups]
     .sort((a, b) => b.totalCpu - a.totalCpu)
     .slice(0, 5);
-  const allProcessCpu = processAppGroups.reduce((sum, group) => sum + Math.max(group.totalCpu, 0), 0);
+  const allProcessCpu = scopedProcessAppGroups.reduce((sum, group) => sum + Math.max(group.totalCpu, 0), 0);
   const topProcessCpu = topCpuProcessGroups.reduce((sum, group) => sum + Math.max(group.totalCpu, 0), 0);
   const otherProcessCpu = Math.max(allProcessCpu - topProcessCpu, 0);
   const topProcessDonutData = allProcessCpu > 0 ? [
@@ -995,10 +1141,10 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
       name: group.name,
       cpu: group.totalCpu,
       value: Math.max(group.totalCpu, 0),
-      color: getProcessColor(group.name, group.icon),
+      color: group.color,
       totalPercent: (Math.max(group.totalCpu, 0) / allProcessCpu) * 100,
       icon: group.icon,
-      iconMissing: group.iconMissing,
+      iconMissing: !group.icon,
     })),
     ...(otherProcessCpu > 0 ? [{
       id: PROCESS_DONUT_OTHER_ID,
@@ -1010,10 +1156,38 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
       isOther: true,
     }] : []),
   ] : [];
+  const pendingIconPids: number[] = [];
+  const claimPendingIconPid = (pid: number) => {
+    if (pendingIconPids.length >= PROCESS_ICON_BATCH_LIMIT) return;
+    if (iconState.icons[pid] || requestedProcessIconsRef.current.has(pid) || pendingIconPids.includes(pid)) return;
+    pendingIconPids.push(pid);
+  };
+  for (const group of scopedProcessAppGroups) {
+    // One icon per group is what the collapsed row shows; the expanded rows
+    // need their own, and only groups the user opened are expanded.
+    if (expandedProcessGroups.has(group.id)) {
+      group.processes.forEach((proc) => claimPendingIconPid(proc.pid));
+    } else {
+      claimPendingIconPid(group.iconProcess.pid);
+    }
+  }
+  const pendingIconSignature = pendingIconPids.join(',');
+
   const memoryFree = Math.max((metrics?.memory.total ?? 0) - (metrics?.memory.used ?? 0), 0);
   const storageFree = Math.max((metrics?.disks?.[0]?.total ?? 0) - (metrics?.disks?.[0]?.used ?? 0), 0);
   const memoryFreeLabel = formatFreeGigabytes(memoryFree, metrics?.memory.total ?? 0).replace(' Free', '');
   const storageFreeLabel = formatFreeGigabytes(storageFree, metrics?.disks?.[0]?.total ?? 0).replace(' Free', '');
+
+  useEffect(() => {
+    if (!pendingIconSignature || !window.moleDesktop?.getProcessIcons) return;
+
+    const pids = pendingIconSignature.split(',').map(Number);
+    const iconTimer = setTimeout(() => {
+      void loadProcessIcons(pids);
+    }, PROCESS_ICON_FETCH_DELAY_MS);
+
+    return () => clearTimeout(iconTimer);
+  }, [pendingIconSignature, loadProcessIcons]);
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
@@ -1284,7 +1458,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                     <span className="mt-0.5 text-[10px] font-semibold leading-none text-slate-500 dark:text-slate-400">Free</span>
                   </div>
                 </div>
-                <div className="mt-auto space-y-0.5 text-center">
+                <div className="space-y-0.5 text-center">
                   <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{formatBytes(metrics.memory.used)} / {formatBytes(metrics.memory.total)}</div>
                   {metrics.memory.swap_total != null && metrics.memory.swap_total > 0 && (
                     <div className="text-xs font-medium text-amber-500">
@@ -1292,6 +1466,14 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                     </div>
                   )}
                 </div>
+                <ThroughputStrip
+                  id="memory-paging"
+                  data={chartHistory}
+                  readKey="pageIn"
+                  writeKey="pageOut"
+                  readLabel="In"
+                  writeLabel="Out"
+                />
               </div>
             </Card>
 
@@ -1332,9 +1514,17 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                     <span className="mt-0.5 text-[10px] font-semibold leading-none text-slate-500 dark:text-slate-400">Free</span>
                   </div>
                 </div>
-                <div className="mt-auto text-center">
+                <div className="text-center">
                   <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{formatBytes(metrics.disks?.[0]?.used || 0)} / {formatBytes(metrics.disks?.[0]?.total || 0)}</div>
                 </div>
+                <ThroughputStrip
+                  id="storage-io"
+                  data={chartHistory}
+                  readKey="diskRead"
+                  writeKey="diskWrite"
+                  readLabel="Read"
+                  writeLabel="Write"
+                />
               </div>
             </Card>
 
@@ -1497,8 +1687,8 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                         </ResponsiveContainer>
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                           <div className="flex flex-col items-center justify-center text-center">
-                            <span className="text-2xl font-black leading-none text-slate-950 dark:text-slate-100">{allProcesses.length}</span>
-                            <span className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Processes</span>
+                            <span className="text-2xl font-black leading-none text-slate-950 dark:text-slate-100">{scopedProcessCount}</span>
+                            <span className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{PROCESS_SCOPE_LABELS[activeProcessScope]}</span>
                           </div>
                         </div>
                       </>
@@ -1509,7 +1699,31 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                 </div>
                 <div className="flex min-h-0 flex-col">
                   <div className="mb-2 flex items-center justify-between gap-3 px-2">
-                    <div className="text-xl font-bold text-slate-950 dark:text-slate-100">Apps & Processes</div>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="shrink-0 text-xl font-bold text-slate-950 dark:text-slate-100">Apps & Processes</div>
+                      <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-slate-300/70 bg-slate-100/70 p-0.5 dark:border-white/10 dark:bg-white/10" role="group" aria-label="Filter processes">
+                        {PROCESS_SCOPES.map((scope) => (
+                          <button
+                            key={scope}
+                            type="button"
+                            aria-pressed={activeProcessScope === scope}
+                            disabled={!canSplitProcesses}
+                            title={canSplitProcesses ? undefined : 'Process paths are unavailable, so apps cannot be told apart from system processes'}
+                            onClick={() => setProcessScope(scope)}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-45 ${
+                              activeProcessScope === scope
+                                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
+                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {PROCESS_SCOPE_LABELS[scope]}
+                            <span className="ml-1.5 tabular-nums opacity-60">
+                              {scope === 'app' ? appGroupCount : scope === 'system' ? systemGroupCount : processAppGroups.length}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <div className="flex min-w-0 items-center gap-2">
                       <label className="relative min-w-0 w-[18rem]" aria-label="Search processes">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" aria-hidden="true" />
@@ -1556,10 +1770,10 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                   </div>
                   <div className="flex-1 overflow-auto pr-1 custom-scrollbar">
                     {visibleProcessAppGroups.length === 0 ? (
-                      <div className="flex h-full items-center justify-center text-sm font-medium text-slate-500 dark:text-slate-400">No matching processes</div>
+                      <div className="flex h-full items-center justify-center text-sm font-medium text-slate-500 dark:text-slate-400">{PROCESS_SCOPE_EMPTY[activeProcessScope]}</div>
                     ) : visibleProcessAppGroups.map((group, idx) => {
                       const cpuBar = Math.min(group.totalCpu, 100);
-                      const appColor = getProcessColor(group.name, group.icon);
+                      const appColor = group.color;
                       const isExpanded = expandedProcessGroups.has(group.id);
                       const canExpand = group.processes.length > 1;
                       const primaryProcess = group.processes[0];
@@ -1583,7 +1797,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                               >
                                 {isExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
                               </button>
-                              <ProcessAppIcon process={group.iconProcess} icon={group.icon} iconMissing={group.iconMissing} />
+                              <ProcessAppIcon process={group.iconProcess} icon={group.icon} />
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200" title={group.name}>{group.name}</div>
                                 <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">{groupMeta}</div>
@@ -1621,7 +1835,7 @@ export function MyMacPage({ onNavigate, active = true }: MyMacPageProps) {
                                   onContextMenu={(event) => handleProcessContextMenu(event, proc)}
                                 >
                                   <div className="flex min-w-0 items-center gap-2.5">
-                                    <ProcessAppIcon process={proc} icon={processIcons[proc.pid] ?? group.icon} iconMissing={processIconMisses[proc.pid] ?? group.iconMissing} />
+                                    <ProcessAppIcon process={proc} icon={iconState.icons[proc.pid] ?? group.icon} />
                                     <div className="min-w-0">
                                       <div className="truncate text-sm font-medium text-slate-700 dark:text-slate-200" title={proc.name}>{proc.name}</div>
                                       <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">PID {proc.pid}</div>

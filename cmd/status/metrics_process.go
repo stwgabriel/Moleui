@@ -26,9 +26,61 @@ func collectProcesses() ([]ProcessInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		return parsePsAuxOutput(out), nil
+		return withExecutablePaths(ctx, parsePsAuxOutput(out)), nil
 	}
-	return parseProcessOutput(out), nil
+	return withExecutablePaths(ctx, parseProcessOutput(out)), nil
+}
+
+// withExecutablePaths fills ProcessInfo.Path from a second ps pass.
+//
+// The primary pass uses -c so Command holds the bare accounting name, which is
+// what the dashboard prints. Dropping -c makes comm= print the full executable
+// path instead, and that is the only cheap way to learn which .app bundle a PID
+// belongs to. Path lookup is best effort: on failure every process keeps an
+// empty Path and callers fall back to name matching.
+func withExecutablePaths(ctx context.Context, procs []ProcessInfo) []ProcessInfo {
+	if len(procs) == 0 {
+		return procs
+	}
+	out, err := runCmd(ctx, "ps", "-Awwo", "pid=,comm=")
+	if err != nil {
+		return procs
+	}
+	paths := parseProcessPathOutput(out)
+	if len(paths) == 0 {
+		return procs
+	}
+	for i := range procs {
+		if path, ok := paths[procs[i].PID]; ok {
+			procs[i].Path = path
+		}
+	}
+	return procs
+}
+
+// parseProcessPathOutput maps PID to executable path from `ps -o pid=,comm=`.
+// Executable paths contain spaces often enough (every "/Applications/Some
+// App.app/Contents/MacOS/Some App") that the remainder of the line has to be
+// taken whole rather than split into fields.
+func parseProcessPathOutput(raw string) map[int]string {
+	paths := make(map[int]string, strings.Count(raw, "\n"))
+	for line := range strings.Lines(strings.TrimSpace(raw)) {
+		trimmed := strings.TrimSpace(line)
+		sep := strings.IndexByte(trimmed, ' ')
+		if sep <= 0 {
+			continue
+		}
+		pid, err := strconv.Atoi(trimmed[:sep])
+		if err != nil || pid <= 0 {
+			continue
+		}
+		path := strings.TrimSpace(trimmed[sep+1:])
+		if !strings.HasPrefix(path, "/") {
+			continue
+		}
+		paths[pid] = path
+	}
+	return paths
 }
 
 func parseProcessOutput(raw string) []ProcessInfo {

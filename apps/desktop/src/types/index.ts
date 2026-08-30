@@ -317,7 +317,16 @@ export interface MoleDesktopAPI {
   deletePath: (path: string) => Promise<{ ok: boolean; message?: string }>;
   openActivityMonitor: () => Promise<{ ok: boolean; message?: string }>;
   signalProcess: (pid: number, signal: 'SIGTERM' | 'SIGKILL') => Promise<{ ok: boolean; message?: string }>;
-  getProcessIcons?: (processes: Array<{ pid: number; name?: string; command?: string }>) => Promise<{ ok: boolean; icons: Record<number, string>; missing?: number[]; message?: string }>;
+  getProcessIcons?: (processes: Array<{ pid: number; name?: string; command?: string; path?: string }>) => Promise<{
+    ok: boolean;
+    icons: Record<number, string>;
+    /** Accent colour sampled from each icon's artwork, as an hsl() string. */
+    colors?: Record<number, string>;
+    /** PIDs whose icon is a drawn placeholder rather than real artwork. */
+    generic?: number[];
+    missing?: number[];
+    message?: string;
+  }>;
   runStatus: (options?: { processLimit?: number }) => Promise<MoleResult>;
   uninstall: {
     list: () => Promise<MoleResult>;
@@ -430,6 +439,18 @@ export interface HardwareInfo {
   refresh_rate?: string;
 }
 
+export interface ProcessEntry {
+  name: string;
+  pid: number;
+  cpu: number;
+  memory: number;
+  memory_bytes?: number;
+  /** Accounting name from `ps -c comm=`; never a path. */
+  command?: string;
+  /** Full executable path from `ps comm=`. Empty for processes ps could not resolve. */
+  path?: string;
+}
+
 export interface SystemMetrics {
   host?: string;
   uptime?: string;
@@ -458,6 +479,9 @@ export interface SystemMetrics {
     pressure?: string;
     swap_used?: number;
     swap_total?: number;
+    /** Cumulative bytes paged between RAM and disk since boot. */
+    page_in_bytes?: number;
+    page_out_bytes?: number;
   };
   disks: Array<{
     mount: string;
@@ -474,6 +498,9 @@ export interface SystemMetrics {
   disk_io: {
     read_rate: number;
     write_rate: number;
+    /** Cumulative bytes since boot; difference two samples to get a rate. */
+    read_bytes?: number;
+    write_bytes?: number;
   };
   batteries: Array<{
     percent: number;
@@ -488,22 +515,8 @@ export interface SystemMetrics {
     memory_used?: number;
     memory_total?: number;
   }>;
-  processes?: Array<{
-    name: string;
-    pid: number;
-    cpu: number;
-    memory: number;
-    memory_bytes?: number;
-    command?: string;
-  }>;
-  top_processes?: Array<{
-    name: string;
-    pid: number;
-    cpu: number;
-    memory: number;
-    memory_bytes?: number;
-    command?: string;
-  }>;
+  processes?: ProcessEntry[];
+  top_processes?: ProcessEntry[];
   hardware?: HardwareInfo;
   health_score: number;
 }

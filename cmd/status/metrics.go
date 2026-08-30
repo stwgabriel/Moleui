@@ -100,6 +100,11 @@ type HardwareInfo struct {
 type DiskIOStatus struct {
 	ReadRate  float64 `json:"read_rate"`  // MB/s
 	WriteRate float64 `json:"write_rate"` // MB/s
+	// Cumulative bytes since boot, across every device. The rates above need
+	// two samples from one long-lived collector, so they stay zero for one-shot
+	// `--json` runs; these let such a caller compute its own rates.
+	ReadBytes  uint64 `json:"read_bytes,omitempty"`
+	WriteBytes uint64 `json:"write_bytes,omitempty"`
 }
 
 type ProcessInfo struct {
@@ -110,6 +115,10 @@ type ProcessInfo struct {
 	CPU         float64 `json:"cpu"`
 	Memory      float64 `json:"memory"` // Percent of physical memory, kept for compatibility.
 	MemoryBytes uint64  `json:"memory_bytes,omitempty"`
+	// Path is the full executable path from `ps -o comm=` (no -c). Consumers use
+	// it to find the owning .app bundle, which the accounting name in Command
+	// never carries.
+	Path string `json:"path,omitempty"`
 }
 
 type CPUStatus struct {
@@ -143,6 +152,12 @@ type MemoryStatus struct {
 	SwapTotal   uint64  `json:"swap_total"`
 	Cached      uint64  `json:"cached"`   // File cache that can be freed if needed
 	Pressure    string  `json:"pressure"` // macOS memory pressure: normal/warn/critical
+	// Cumulative bytes paged between RAM and disk since boot. Rates are the
+	// caller's job: `mo status --json` is one shot per invocation and has no
+	// previous sample to difference against, while a live consumer polling on
+	// an interval does.
+	PageInBytes  uint64 `json:"page_in_bytes,omitempty"`
+	PageOutBytes uint64 `json:"page_out_bytes,omitempty"`
 }
 
 type DiskStatus struct {

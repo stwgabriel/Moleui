@@ -434,7 +434,7 @@ func (c *Collector) collectDiskIO(now time.Time) DiskIOStatus {
 	if c.lastDiskAt.IsZero() {
 		c.prevDiskIO = total
 		c.lastDiskAt = now
-		return DiskIOStatus{}
+		return DiskIOStatus{ReadBytes: total.ReadBytes, WriteBytes: total.WriteBytes}
 	}
 
 	elapsed := now.Sub(c.lastDiskAt).Seconds()
@@ -455,7 +455,12 @@ func (c *Collector) collectDiskIO(now time.Time) DiskIOStatus {
 		writeRate = 0
 	}
 
-	return DiskIOStatus{ReadRate: readRate, WriteRate: writeRate}
+	return DiskIOStatus{
+		ReadRate:   readRate,
+		WriteRate:  writeRate,
+		ReadBytes:  total.ReadBytes,
+		WriteBytes: total.WriteBytes,
+	}
 }
 
 func counterDelta(current, previous uint64) uint64 {

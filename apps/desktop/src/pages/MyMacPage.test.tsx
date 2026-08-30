@@ -207,13 +207,14 @@ describe('MyMacPage layout', () => {
     expect(batteryCard).toHaveClass('col-start-4', 'row-start-2');
   });
 
-  it('requests icons for every process so lower-ranked rows can receive app artwork', async () => {
+  it('requests one icon per app group, including the lowest-ranked row', async () => {
     const processes = Array.from({ length: 40 }, (_, index) => ({
       name: `Process ${index + 1}`,
       pid: 3000 + index,
       cpu: 40 - index,
       memory: 40 - index,
-      command: `/Applications/Process ${index + 1}.app/Contents/MacOS/Process ${index + 1}`,
+      command: `Process ${index + 1}`,
+      path: `/Applications/Process ${index + 1}.app/Contents/MacOS/Process ${index + 1}`,
     }));
     mockMoleDesktop(metricsWithProcesses(processes));
 
@@ -225,10 +226,70 @@ describe('MyMacPage layout', () => {
     const firstIconRequest = getProcessIcons.mock.calls[0];
     expect(firstIconRequest).toBeDefined();
     const requestedProcesses = firstIconRequest![0];
+    // 40 processes in 40 distinct bundles is 40 groups, so every row is covered.
     expect(requestedProcesses).toHaveLength(40);
     expect(requestedProcesses).toEqual(expect.arrayContaining([
       expect.objectContaining({ pid: 3039 }),
     ]));
+    // The executable path has to reach the main process: it is what lets the
+    // icon lookup find the .app bundle without shelling out per PID.
+    expect(requestedProcesses[0]).toEqual(expect.objectContaining({
+      path: expect.stringContaining('.app/Contents/MacOS/'),
+    }));
+  });
+
+  it('only asks for icons the collapsed rows will paint, not every helper process', async () => {
+    const processes = Array.from({ length: 6 }, (_, index) => ({
+      name: `Arc Helper ${index + 1}`,
+      pid: 5100 + index,
+      cpu: 6 - index,
+      memory: 3,
+      command: `Arc Helper ${index + 1}`,
+      path: '/Applications/Arc.app/Contents/Frameworks/Arc Helper.app/Contents/MacOS/Arc Helper',
+    }));
+    mockMoleDesktop(metricsWithProcesses(processes));
+
+    render(<MyMacPage onNavigate={vi.fn()} />);
+
+    const getProcessIcons = vi.mocked(window.moleDesktop.getProcessIcons!);
+    await waitFor(() => expect(getProcessIcons).toHaveBeenCalled(), { timeout: 2_000 });
+
+    expect(getProcessIcons.mock.calls[0]![0]).toHaveLength(1);
+  });
+
+  it('splits installed apps from system processes and switches between them', async () => {
+    mockMoleDesktop(metricsWithProcesses([
+      {
+        name: 'Arc',
+        pid: 6001,
+        cpu: 9,
+        memory: 4,
+        command: 'Arc',
+        path: '/Applications/Arc.app/Contents/MacOS/Arc',
+      },
+      {
+        name: 'WindowServer',
+        pid: 6002,
+        cpu: 30,
+        memory: 2,
+        command: 'WindowServer',
+        path: '/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer',
+      },
+    ]));
+
+    render(<MyMacPage onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Apps & Processes')).toBeInTheDocument());
+
+    // Apps is the default scope, so the highest-CPU row on the machine is
+    // deliberately hidden when it belongs to macOS rather than to an app.
+    expect(screen.getAllByText('Arc').length).toBeGreaterThan(0);
+    expect(screen.queryByText('WindowServer')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^System/ }));
+
+    expect(screen.getAllByText('WindowServer').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Arc')).not.toBeInTheDocument();
   });
 
   it('groups related processes by app and expands to show each process amount', async () => {

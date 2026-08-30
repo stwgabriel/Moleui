@@ -33,33 +33,51 @@ func collectMemoryWithOptions(includeSlowAnnotations bool) (MemoryStatus, error)
 		pressure = getMemoryPressure()
 	}
 
+	// One vm_stat run answers both questions, so read it once and share it.
+	var stats vmStatCounters
+	if includeSlowAnnotations && runtime.GOOS == "darwin" {
+		stats = readVMStat()
+	}
+
 	// On macOS, vm.Cached is 0, so we calculate from file-backed pages.
 	cached := vm.Cached
-	if includeSlowAnnotations && runtime.GOOS == "darwin" && cached == 0 {
-		cached = getFileBackedMemory()
+	if cached == 0 {
+		cached = stats.fileBackedBytes
 	}
 
 	return MemoryStatus{
-		Used:        vm.Used,
-		Total:       vm.Total,
-		Available:   vm.Available,
-		UsedPercent: vm.UsedPercent,
-		SwapUsed:    swap.Used,
-		SwapTotal:   swap.Total,
-		Cached:      cached,
-		Pressure:    pressure,
+		Used:         vm.Used,
+		Total:        vm.Total,
+		Available:    vm.Available,
+		UsedPercent:  vm.UsedPercent,
+		SwapUsed:     swap.Used,
+		SwapTotal:    swap.Total,
+		Cached:       cached,
+		Pressure:     pressure,
+		PageInBytes:  stats.pageInBytes,
+		PageOutBytes: stats.pageOutBytes,
 	}, nil
 }
 
-func getFileBackedMemory() uint64 {
+type vmStatCounters struct {
+	fileBackedBytes uint64
+	// Cumulative since boot. Paging is the only read/write traffic the kernel
+	// attributes to memory itself, so it is what a memory throughput graph can
+	// honestly plot.
+	pageInBytes  uint64
+	pageOutBytes uint64
+}
+
+func readVMStat() vmStatCounters {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	out, err := runCmd(ctx, "vm_stat")
 	if err != nil {
-		return 0
+		return vmStatCounters{}
 	}
 
 	// Parse page size from first line: "Mach Virtual Memory Statistics: (page size of 16384 bytes)"
+	var counters vmStatCounters
 	var pageSize uint64 = 4096 // Default
 	firstLine := true
 	for line := range strings.Lines(out) {
@@ -76,18 +94,26 @@ func getFileBackedMemory() uint64 {
 			}
 		}
 
-		// Parse "File-backed pages: 388975."
-		if strings.Contains(line, "File-backed pages:") {
-			if _, after, found := strings.Cut(line, ":"); found {
-				numStr := strings.TrimSpace(after)
-				numStr = strings.TrimSuffix(numStr, ".")
-				if pages, err := strconv.ParseUint(numStr, 10, 64); err == nil {
-					return pages * pageSize
-				}
-			}
+		// Lines look like "File-backed pages:              388975."
+		label, after, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		pages, err := strconv.ParseUint(strings.TrimSuffix(strings.TrimSpace(after), "."), 10, 64)
+		if err != nil {
+			continue
+		}
+
+		switch strings.TrimSpace(label) {
+		case "File-backed pages":
+			counters.fileBackedBytes = pages * pageSize
+		case "Pageins":
+			counters.pageInBytes = pages * pageSize
+		case "Pageouts":
+			counters.pageOutBytes = pages * pageSize
 		}
 	}
-	return 0
+	return counters
 }
 
 func getMemoryPressure() string {
